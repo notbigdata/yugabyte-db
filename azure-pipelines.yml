@@ -11,6 +11,6 @@ pool:
 
 steps:
 - script: |
-    docker run yugabytedb/yb_build_infra_ubuntu1804:v2019-04-26T16_05_29_mbautin bash -c "sudo -u yugabuilder bash -c 'mkdir -p ~/code && cd ~/code && git clone https://github.com/yugabyte/yugabyte-db && yugabyte-db && ./yb_build.sh'"
+    docker run yugabytedb/yb_build_infra_ubuntu1804:v2019-04-26T16_05_29_mbautin bash -c "sudo -i -u yugabuilder bash -c 'set -x; mkdir -p ~/code && cd ~/code && git clone https://github.com/yugabyte/yugabyte-db && yugabyte-db && ./yb_build.sh'"
   displayName: 'Build code'
 
