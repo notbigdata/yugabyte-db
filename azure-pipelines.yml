@@ -13,11 +13,9 @@ steps:
 - script: |
     docker run --mount type=bind,src=$PWD,target=/mnt/yugabyte-db \
         yugabytedb/yb_build_infra_ubuntu1804:v2019-04-26T19_47_12_mikhail \
-        bash -c 'cp -R /mnt/yugabyte-db /home/yugabuilder/yugabyte-db && \
-                 chown -R yugabuilder /home/yugabuilder/yugabyte-db && \
-                 sudo su - yugabuilder bash -c "mkdir -p ~/code && cd ~/code && \
-                                                cp -R /mnt/yugabyte-db . && \
-                                                cd yugabyte-db && \
-                                                ./yb_build.sh"'
+        bash -c 'mkdir -p /home/yugabuilder/code &&
+                 cp -R /mnt/yugabyte-db /home/yugabuilder/code && \
+                 chown -R yugabuilder /home/yugabuilder/code && \
+                 sudo su - yugabuilder bash -c "cd ~/code/yugabyte-db && ./yb_build.sh"'
   displayName: 'Build code'
 
