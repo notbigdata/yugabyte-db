@@ -12,7 +12,7 @@ pool:
 steps:
 - script: |
     docker run --mount type=bind,src=$PWD,target=/mnt/yugabyte-db \
-        push yugabytedb/yb_build_infra_ubuntu1804:v2019-04-26T16_52_44_mbautin \
+        yugabytedb/yb_build_infra_ubuntu1804:v2019-04-26T17_37_51_mbautin \
         bash -c 'cp -R /mnt/yugabyte-db /home/yugabuilder/yugabyte-db && \
                  chown -R yugabuilder /home/yugabuilder/yugabyte-db && \
                  sudo su - yugabuilder bash -c "mkdir -p ~/code && cd ~/code && \
