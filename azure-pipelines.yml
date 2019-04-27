@@ -6,16 +6,17 @@
 trigger:
 - master
 
-pool:
-  vmImage: 'Ubuntu-16.04'
-
-steps:
-- script: |
-    docker run --mount type=bind,src=$PWD,target=/mnt/yugabyte-db \
-        yugabytedb/yb_build_infra_ubuntu1804:v2019-04-27T08_37_04_mikhail \
-        bash -c 'mkdir -p /home/yugabuilder/code &&
-                 cp -R /mnt/yugabyte-db /home/yugabuilder/code && \
-                 chown -R yugabuilder /home/yugabuilder/code && \
-                 sudo su - yugabuilder bash -c "cd ~/code/yugabyte-db && ./yb_build.sh"'
-  displayName: 'Build code'
-
+jobs:
+  - job: "Ubuntu 18.04"
+    pool:
+      vmImage: 'Ubuntu-16.04'
+    timeoutInMinutes: 0
+    steps:
+      - script: |
+          docker run --mount type=bind,src=$PWD,target=/mnt/yugabyte-db \
+              yugabytedb/yb_build_infra_ubuntu1804:v2019-04-27T08_37_04_mikhail \
+              bash -c 'mkdir -p /home/yugabuilder/code &&
+                      cp -R /mnt/yugabyte-db /home/yugabuilder/code && \
+                      chown -R yugabuilder /home/yugabuilder/code && \
+                      sudo su - yugabuilder bash -c "cd ~/code/yugabyte-db && ./yb_build.sh"'
+        displayName: 'Build code'
