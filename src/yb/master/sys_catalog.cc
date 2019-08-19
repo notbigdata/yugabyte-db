@@ -493,9 +493,9 @@ Status SysCatalogTable::OpenTablet(const scoped_refptr<tablet::RaftGroupMetadata
       tablet_peer()->log_anchor_registry(),
       tablet_options,
       " P " + tablet_peer()->permanent_uuid(),
-      nullptr, // transaction_participant_context
+      tablet_peer().get(), // transaction_participant_context
       client::LocalTabletFilter(),
-      nullptr, // transaction_coordinator_context
+      tablet_peer().get(), // transaction_coordinator_context
       append_pool()};
   RETURN_NOT_OK(BootstrapTablet(data, &tablet, &log, &consensus_info));
 
