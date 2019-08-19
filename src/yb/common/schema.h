@@ -718,7 +718,7 @@ class Schema {
     return cotable_id_;
   }
   void set_cotable_id(const Uuid& cotable_id) {
-    cotable_id_ = cotable_id;;
+    cotable_id_ = cotable_id;
   }
 
   // Extract a given column from a row where the type is

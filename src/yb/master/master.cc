@@ -160,6 +160,17 @@ Status Master::Init() {
 
   RETURN_NOT_OK(path_handlers_->Register(web_server_.get()));
 
+  async_client_init_.emplace(
+      "master_client", 0 /* num_reactors */,
+      // TODO: use the correct flag
+      60, // FLAGS_tserver_yb_client_default_timeout_ms / 1000,
+      "" /* tserver_uuid */,
+      &options(),
+      metric_entity(),
+      mem_tracker(),
+      messenger());
+  async_client_init_->Start();
+
   state_ = kInitialized;
   return Status::OK();
 }

@@ -262,9 +262,10 @@ class Tablet : public AbstractTablet, public TransactionIntentApplier {
       const rocksdb::UserFrontiers* frontiers,
       HybridTime hybrid_time);
 
-  void WriteBatch(const rocksdb::UserFrontiers* frontiers,
-                  rocksdb::WriteBatch* write_batch,
-                  rocksdb::DB* dest_db);
+  void WriteToRocksDB(
+      const rocksdb::UserFrontiers* frontiers,
+      rocksdb::WriteBatch* write_batch,
+      docdb::StorageDbType storage_db_type);
 
   //------------------------------------------------------------------------------------------------
   // Redis Request Processing.

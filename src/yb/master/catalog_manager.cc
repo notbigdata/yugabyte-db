@@ -173,7 +173,7 @@ DEFINE_bool(catalog_manager_wait_for_new_tablets_to_elect_leader, true,
             "election.");
 TAG_FLAG(catalog_manager_wait_for_new_tablets_to_elect_leader, hidden);
 
-DEFINE_int32(replication_factor, 3,
+DEFINE_int32(replication_factor, 1,  // TODO mbautin: revert this
              "Default number of replicas for tables that do not have the num_replicas set.");
 TAG_FLAG(replication_factor, advanced);
 
@@ -864,6 +864,11 @@ Status CatalogManager::StartRunningInitDbIfNeeded(int64_t term) {
     if (FLAGS_create_initial_sys_catalog_snapshot) {
       initial_snapshot_writer_.emplace();
     }
+
+    // // TODO mbautin: get rid of this logic.
+    // LOG(INFO) << "Waiting to give the tablet server a chance to come up";
+    // std::this_thread::sleep_for(60s);
+    // LOG(INFO) << "Finished waiting to give the tablet server a chance to come up";
 
     Status status = PgWrapper::InitDbForYSQL(master_addresses_str, "/tmp");
 
@@ -2015,7 +2020,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
 
   // If this is a transactional table, we need to create the transaction status table (if it does
   // not exist already).
-  if (req.schema().table_properties().is_transactional()) {
+  if (req.schema().table_properties().is_transactional() && !is_pg_catalog_table) {
     Status s = CreateTransactionsStatusTableIfNeeded(rpc);
     if (!s.ok()) {
       return s.CloneAndPrepend("Error while creating transaction status table");
@@ -2087,7 +2092,8 @@ Status CatalogManager::CheckValidPlacementInfo(const PlacementInfoPB& placement_
   // Verify that the number of replicas isn't larger than the number of live tablet
   // servers.
   if (FLAGS_catalog_manager_check_ts_count_for_create_table &&
-      num_replicas > num_live_tservers) {
+      num_replicas > num_live_tservers &&
+      /* TODO mbautin: revert this */ false) {
     msg = Substitute("Not enough live tablet servers to create table with replication factor $0. "
                      "$1 tablet servers are alive.", num_replicas, num_live_tservers);
     LOG(WARNING) << msg;
@@ -2179,6 +2185,9 @@ Status CatalogManager::CreateTransactionsStatusTableIfNeeded(rpc::RpcContext *rp
     req.set_name(kTransactionsTableName);
     req.mutable_namespace_()->set_name(kSystemNamespaceName);
     req.set_table_type(TableType::TRANSACTION_STATUS_TABLE_TYPE);
+
+    // TODO mbautin: revert the following.
+    FLAGS_transaction_table_num_tablets = 1;
 
     // Explicitly set the number tablets if the corresponding flag is set, otherwise CreateTable
     // will use the same defaults as for regular tables.
@@ -2301,7 +2310,12 @@ Status CatalogManager::IsCreateTableDone(const IsCreateTableDoneRequestPB* req,
   }
 
   // If this is a transactional table we are not done until the transaction status table is created.
-  if (resp->done() && l->data().pb.schema().table_properties().is_transactional()) {
+  // However, if we are currently initialzing the system catalog snapshot, we don't create the
+  // transactions table.
+  // TODO mbautin : what if we're running initdb against an existing cluster without creating a
+  // sys catalog snapshot? Should we create the transactions table then?
+  if (!FLAGS_create_initial_sys_catalog_snapshot &&
+      resp->done() && l->data().pb.schema().table_properties().is_transactional()) {
     RETURN_NOT_OK(IsTransactionStatusTableCreated(resp));
   }
 

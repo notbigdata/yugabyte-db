@@ -50,7 +50,7 @@ class CreateInitialSysCatalogSnapshotTest : public PgWrapperTestBase {
   }
 
   int GetNumTabletServers() const override {
-    // No tablet servers necessary to run initdb.
+    // Needed for txn status table.
     return 0;
   }
 };
