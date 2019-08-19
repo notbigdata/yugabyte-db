@@ -41,10 +41,12 @@ YBSession::YBSession(YBClient* client, const scoped_refptr<ClockBase>& clock)
   async_rpc_metrics_ = metric_entity ? std::make_shared<AsyncRpcMetrics>(metric_entity) : nullptr;
 }
 
-void YBSession::SetReadPoint(const Restart restart) {
+void YBSession::SetReadPoint(Restart restart, Deferrable deferrable) {
   DCHECK_NOTNULL(read_point_.get());
   if (restart && read_point_->IsRestartRequired()) {
     read_point_->Restart();
+  } else if (deferrable) {
+    read_point_->SetDeferrableReadTime();
   } else {
     read_point_->SetCurrentReadTime();
   }

@@ -23,6 +23,7 @@
 #include "yb/util/async_util.h"
 #include "yb/util/locks.h"
 #include "yb/util/monotime.h"
+#include "yb/util/enums.h"
 
 namespace yb {
 
@@ -39,6 +40,7 @@ class ErrorCollector;
 
 YB_STRONGLY_TYPED_BOOL(VerifyResponse);
 YB_STRONGLY_TYPED_BOOL(Restart);
+YB_STRONGLY_TYPED_BOOL(Deferrable);
 
 // A YBSession belongs to a specific YBClient, and represents a context in
 // which all read/write data access should take place. Within a session,
@@ -94,9 +96,9 @@ class YBSession : public std::enable_shared_from_this<YBSession> {
 
   // Set the consistent read point used by the non-transactional operations in this session. If the
   // operations are restarted and last read point indicates the operations do need to be restarted,
-  // the read point will be updated to restart read-time. Otherwise, the read point will be set to
-  // the current time.
-  void SetReadPoint(Restart restart);
+  // the read point will be updated to the read restart time. Otherwise, the read point will be set
+  // to the current time.
+  void SetReadPoint(Restart restart, Deferrable deferrable = Deferrable::kFalse);
 
   void SetReadPoint(const ReadHybridTime& read_time);
 

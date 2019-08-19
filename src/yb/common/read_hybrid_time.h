@@ -28,10 +28,10 @@ struct ReadHybridTime {
   // Hybrid time of read operation.
   HybridTime read;
 
-  // Read time limit, that is used for local records of requested tablet.
+  // Read time limit that is used for local records of requested tablet.
   HybridTime local_limit;
 
-  // Read time limit, that is used for global entries, for instance transactions.
+  // Read time limit that is used for global entries, e.g. transasctions.
   HybridTime global_limit;
 
   // Read time limit for intents from the same transaction.
@@ -58,6 +58,11 @@ struct ReadHybridTime {
 
   static ReadHybridTime FromHybridTimeRange(const HybridTimeRange& range) {
     return {range.first, range.second, range.second, HybridTime::kMax, 0};
+  }
+
+  // Creates a ReadHybridTime that guarantees there will be no read restarts.
+  static ReadHybridTime DeferrableFromHybridTimeRange(const HybridTimeRange& range) {
+    return {range.second, range.second, range.second, HybridTime::kMax, 0};
   }
 
   template <class PB>

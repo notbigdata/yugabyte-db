@@ -32,9 +32,12 @@ void ConsistentReadPoint::SetReadTime(
 
 void ConsistentReadPoint::SetCurrentReadTime() {
   read_time_ = ReadHybridTime::FromHybridTimeRange(clock_->NowRange());
-  restart_read_ht_ = read_time_.read;
-  local_limits_.clear();
-  restarts_.clear();
+  FinishSettingReadTime();
+}
+
+void ConsistentReadPoint::SetDeferrableReadTime() {
+  read_time_ = ReadHybridTime::DeferrableFromHybridTimeRange(clock_->NowRange());
+  FinishSettingReadTime();
 }
 
 ReadHybridTime ConsistentReadPoint::GetReadTime(const TabletId& tablet) const {

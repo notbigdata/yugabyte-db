@@ -48,26 +48,28 @@ PgTxnManager::~PgTxnManager() {
   ResetTxnAndSession();
 }
 
-Status PgTxnManager::BeginTransaction(int isolation_level) {
+Status PgTxnManager::BeginTransaction(int isolation_level, bool deferrable) {
   VLOG(2) << "BeginTransaction: txn_in_progress_=" << txn_in_progress_;
   if (txn_in_progress_) {
     return STATUS(IllegalState, "Transaction is already in progress");
   }
   ResetTxnAndSession();
   isolation_level_ = isolation_level;
+  deferrable_ = deferrable;
   txn_in_progress_ = true;
   StartNewSession();
   return Status::OK();
 }
 
-Status PgTxnManager::SetIsolationLevel(int level) {
+Status PgTxnManager::SetIsolationLevel(int level, bool deferrable) {
   isolation_level_ = level;
+  deferrable_ = deferrable;
   return Status::OK();
 }
 
 void PgTxnManager::StartNewSession() {
   session_ = std::make_shared<YBSession>(async_client_init_->client(), clock_);
-  session_->SetReadPoint(client::Restart::kFalse);
+  session_->SetReadPoint(client::Restart::kFalse, client::Deferrable(deferrable_));
   session_->SetForceConsistentRead(client::ForceConsistentRead::kTrue);
 }
 
@@ -169,7 +171,7 @@ TransactionManager* PgTxnManager::GetOrCreateTransactionManager() {
 
 Result<client::YBSession*> PgTxnManager::GetTransactionalSession() {
   if (!txn_in_progress_) {
-    RETURN_NOT_OK(BeginTransaction(isolation_level_));
+    RETURN_NOT_OK(BeginTransaction(isolation_level_, deferrable_));
   }
   return session_.get();
 }

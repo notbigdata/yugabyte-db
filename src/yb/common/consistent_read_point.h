@@ -37,6 +37,9 @@ class ConsistentReadPoint {
   // Set the current time as the read point.
   void SetCurrentReadTime();
 
+  // Set the read time so that no read restarts are possible. Useful for long-running scans.
+  void SetDeferrableReadTime();
+
   // Set the read point to the specified read time with local limits.
   void SetReadTime(const ReadHybridTime& read_time, HybridTimeMap&& local_limits);
 
@@ -76,6 +79,12 @@ class ConsistentReadPoint {
   ConsistentReadPoint& operator=(ConsistentReadPoint&& other);
 
  private:
+  void FinishSettingReadTime() {
+    restart_read_ht_ = read_time_.read;
+    local_limits_.clear();
+    restarts_.clear();
+  }
+
   scoped_refptr<ClockBase> clock_;
 
   std::mutex mutex_;

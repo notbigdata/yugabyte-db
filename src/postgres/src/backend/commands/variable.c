@@ -590,7 +590,10 @@ assign_XactIsoLevel(const char *newval, void *extra)
 	XactIsoLevel = *((int *) extra);
 	if (YBTransactionsEnabled())
 	{
-		YBCPgTxnManager_SetIsolationLevel(YBCGetPgTxnManager(), XactIsoLevel);
+		YBCPgTxnManager_SetIsolationLevel(
+			YBCGetPgTxnManager(),
+			XactIsoLevel, 
+			XactReadOnly && XactDeferrable);
 	}
 }
 

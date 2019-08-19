@@ -35,10 +35,18 @@ YBC_CLASS_START_REF_COUNTED_THREAD_SAFE
 
 YBC_VIRTUAL_DESTRUCTOR
 
-YBC_STATUS_METHOD(BeginTransaction, ((int, isolation)))
+YBC_STATUS_METHOD(
+    BeginTransaction,
+    ((int, isolation))
+    ((bool, deferrable))
+)
 YBC_STATUS_METHOD_NO_ARGS(CommitTransaction)
 YBC_STATUS_METHOD_NO_ARGS(AbortTransaction)
-YBC_STATUS_METHOD(SetIsolationLevel, ((int, isolation)));
+YBC_STATUS_METHOD(
+    SetIsolationLevel,
+    ((int, isolation))
+    ((bool, deferrable))
+);
 
 #ifdef YBC_CXX_DECLARATION_MODE
   PgTxnManager(client::AsyncClientInitialiser* async_client_init,
@@ -70,6 +78,7 @@ YBC_STATUS_METHOD(SetIsolationLevel, ((int, isolation)));
   std::mutex transaction_manager_mutex_;
   std::unique_ptr<client::TransactionManager> transaction_manager_holder_;
   int isolation_level_ = 1;
+  bool deferrable_ = false;
 
   std::atomic<bool> can_restart_{true};
 

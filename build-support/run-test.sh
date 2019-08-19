@@ -189,6 +189,12 @@ if [ ! -d "$TEST_DIR" ]; then
 fi
 
 TEST_NAME_WITH_EXT=$(basename "$TEST_PATH")
+
+if [[ -z $exact_test && $TEST_NAME_WITH_EXT == create_initial_sys_catalog_snapshot ]]; then
+  log "Un-setting YB_GTEST_FILTER"
+  unset YB_GTEST_FILTER
+fi
+
 abs_test_binary_path=$TEST_DIR/$TEST_NAME_WITH_EXT
 
 # Remove path and extension, if any.

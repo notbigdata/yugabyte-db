@@ -733,5 +733,118 @@ TEST_F(PgLibPqTest, YB_DISABLE_TEST_IN_TSAN(NoTxnOnConflict)) {
   LogResult(ASSERT_RESULT(Fetch(conn.get(), "SELECT * FROM test ORDER BY k")).get());
 }
 
+// https://github.com/YugaByte/yugabyte-db/issues/2021
+TEST_F(PgLibPqTest, YB_DISABLE_TEST_IN_TSAN(DefaultValueNow)) {
+  auto conn = ASSERT_RESULT(Connect());
+  ASSERT_OK(Execute(conn.get(),
+            "CREATE TABLE t (k TIMESTAMP DEFAULT NOW(), v INT);"));
+  constexpr int kWriters = 5;
+  constexpr int kReaders = 1;
+
+  std::atomic<int32_t> next_key{0};
+  std::atomic<int32_t> num_keys_written{0};
+
+  TestThreadHolder thread_holder;
+  for (int i = 0; i != kWriters; ++i) {
+    thread_holder.AddThreadFunctor(
+        [this, &next_key, &num_keys_written, &stop = thread_holder.stop_flag()] {
+          SetFlagOnExit set_flag_on_exit(&stop);
+          auto conn = ASSERT_RESULT(Connect());
+          while (!stop.load(std::memory_order_acquire)) {
+            int key = next_key.fetch_add(1);
+            ASSERT_OK(Execute(conn.get(), "START TRANSACTION ISOLATION LEVEL SERIALIZABLE"));
+            auto status = Execute(
+                conn.get(),
+                Format("INSERT INTO t (v) VALUES ($0)", key));
+            if (status.ok()) {
+              status = Execute(conn.get(), "COMMIT");
+            }
+            if (status.ok()) {
+              continue;
+            }
+            ASSERT_OK(Execute(conn.get(), "ROLLBACK"));
+            if (TransactionalFailure(status)) {
+              continue;
+            }
+            ASSERT_OK(status);
+            num_keys_written.fetch_add(1);
+          }
+        });
+  }
+  std::atomic<size_t> num_reads_done{0};
+  for (int i = 0; i != kReaders; ++i) {
+    thread_holder.AddThreadFunctor(
+        [this, &num_reads_done, &num_keys_written, &stop = thread_holder.stop_flag()] {
+          SetFlagOnExit set_flag_on_exit(&stop);
+          auto conn = ASSERT_RESULT(Connect());
+          while (!stop.load(std::memory_order_acquire)) {
+            ASSERT_OK(Execute(
+                conn.get(),
+                "START TRANSACTION ISOLATION LEVEL SERIALIZABLE READ ONLY DEFERRABLE"));
+
+            int32_t min_num_written = num_keys_written.load(std::memory_order_acquire);
+            auto select_result = Fetch(conn.get(), "SELECT * FROM t ORDER BY v");
+            Status status;
+            if (select_result.ok()) {
+              auto res = std::move(*select_result);
+              auto lines = PQntuples(res.get());
+
+              auto columns = PQnfields(res.get());
+              ASSERT_EQ(2, columns);
+              ASSERT_GE(lines, min_num_written);
+
+              int32_t prev_value = -1;
+              for (int i = 0; i < lines; ++i) {
+                ASSERT_FALSE(PQgetisnull(res.get(), i, 0));
+                auto key = ASSERT_RESULT(GetInt64(res.get(), i, 0));
+                ASSERT_GT(key, 0);
+                auto value = ASSERT_RESULT(GetInt32(res.get(), i, 1));
+                ASSERT_GT(value, prev_value);
+                prev_value = value;
+              }
+              status = Execute(conn.get(), "COMMIT");
+            } else {
+              status = select_result.status();
+            }
+
+            if (status.ok()) {
+              continue;
+            }
+            ASSERT_OK(Execute(conn.get(), "ROLLBACK"));
+            if (TransactionalFailure(status)) {
+              continue;
+            }
+            ASSERT_OK(status);
+            num_reads_done.fetch_add(1);
+          }
+        });
+  }
+  thread_holder.WaitAndStop(30s);
+
+  // for (int i = 0; i < kNumRows; ++i) {
+  //   ASSERT_OK(Execute(conn.get(), Format("INSERT INTO t (v) VALUES ($0)", i)));
+  // }
+
+  LOG(INFO) << "Wrote " << num_keys_written << " keys, read " << num_reads_done << " times";
+  ASSERT_GE(num_reads_done, 2);
+  ASSERT_GE(num_keys_written, 100);
+}
+
+//   {
+//     auto lines = PQntuples(res.get());
+//     // ASSERT_EQ(kNumRows, lines);
+//     LOG(INFO) << "Read lines: " << lines;
+
+//     auto columns = PQnfields(res.get());
+//     ASSERT_EQ(2, columns);
+
+//     for (int i = 0; i < lines; ++i) {
+//       auto key = ASSERT_RESULT(GetInt64(res.get(), i, 0));
+//       auto value = ASSERT_RESULT(GetInt32(res.get(), i, 1));
+//       LOG(INFO) << "key=" << key << ", value=" << value;
+//     }
+//   }
+// }
+
 } // namespace pgwrapper
 } // namespace yb

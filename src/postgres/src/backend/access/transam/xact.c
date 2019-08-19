@@ -1969,7 +1969,10 @@ StartTransaction(void)
 
 	if (YBTransactionsEnabled())
 	{
-		YBCPgTxnManager_BeginTransaction(YBCGetPgTxnManager(), XactIsoLevel);
+		YBCPgTxnManager_BeginTransaction(
+			YBCGetPgTxnManager(),
+			XactIsoLevel,
+			XactReadOnly && XactDeferrable);
 	}
 
 	ShowTransactionState("StartTransaction");
