@@ -54,16 +54,22 @@ Status PgTxnManager::BeginTransaction(int isolation_level, bool deferrable) {
     return STATUS(IllegalState, "Transaction is already in progress");
   }
   ResetTxnAndSession();
-  isolation_level_ = isolation_level;
+  
+  // TODO: Dedup this logic.
+  isolation_level_ = deferrable ? XACT_REPEATABLE_READ : isolation_level;
   deferrable_ = deferrable;
+  
   txn_in_progress_ = true;
   StartNewSession();
   return Status::OK();
 }
 
 Status PgTxnManager::SetIsolationLevel(int level, bool deferrable) {
-  isolation_level_ = level;
+  // TODO: handle READ ONLY at REPEATABLE READ level as well.
+  // TODO: Dedup this logic.
+  isolation_level_ = deferrable ? XACT_REPEATABLE_READ : level;
   deferrable_ = deferrable;
+  
   return Status::OK();
 }
 

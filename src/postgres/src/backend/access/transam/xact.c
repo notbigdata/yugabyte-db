@@ -1969,6 +1969,7 @@ StartTransaction(void)
 
 	if (YBTransactionsEnabled())
 	{
+		YBC_LOG_INFO("DEBUG(mbautin): XactReadOnly=%d, XactDeferrable=%d", XactReadOnly, XactDeferrable);
 		YBCPgTxnManager_BeginTransaction(
 			YBCGetPgTxnManager(),
 			XactIsoLevel,

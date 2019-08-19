@@ -590,6 +590,7 @@ assign_XactIsoLevel(const char *newval, void *extra)
 	XactIsoLevel = *((int *) extra);
 	if (YBTransactionsEnabled())
 	{
+		YBC_LOG_INFO("DEBUG(mbautin): XactReadOnly=%d, XactDeferrable=%d", XactReadOnly, XactDeferrable);
 		YBCPgTxnManager_SetIsolationLevel(
 			YBCGetPgTxnManager(),
 			XactIsoLevel, 

@@ -63,6 +63,11 @@ YBC_STATUS_METHOD(
 
  private:
 
+  enum PgIsolationLevel {
+    XACT_REPEATABLE_READ = 2,
+    XACT_SERIALIZABLE = 3
+  };
+
   client::TransactionManager* GetOrCreateTransactionManager();
   void ResetTxnAndSession();
   void StartNewSession();
@@ -77,7 +82,9 @@ YBC_STATUS_METHOD(
   std::atomic<client::TransactionManager*> transaction_manager_{nullptr};
   std::mutex transaction_manager_mutex_;
   std::unique_ptr<client::TransactionManager> transaction_manager_holder_;
-  int isolation_level_ = 1;
+
+
+  int isolation_level_ = XACT_REPEATABLE_READ;  // TODO: use a constant
   bool deferrable_ = false;
 
   std::atomic<bool> can_restart_{true};

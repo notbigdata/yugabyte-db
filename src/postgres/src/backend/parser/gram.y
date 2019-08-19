@@ -10704,6 +10704,7 @@ transaction_mode_item:
 				{
 					$$ = makeDefElem("transaction_deferrable",
 									 makeIntConst(true, @1), @1);
+					YBC_LOG_INFO("DEBUG mbautin: txn deferrable!");
 				}
 			| NOT DEFERRABLE
 				{
