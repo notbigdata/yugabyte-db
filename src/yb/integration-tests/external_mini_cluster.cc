@@ -349,6 +349,10 @@ Status ExternalMiniCluster::Start(rpc::Messenger* messenger) {
     LOG(INFO) << "No need to start tablet servers";
   }
 
+  if (opts_.start_pgsql_proxy) {
+    RETURN_NOT_OK(WaitForInitDb());
+  }
+
   running_ = true;
   return Status::OK();
 }
@@ -966,9 +970,6 @@ Status ExternalMiniCluster::StartMasters() {
     masters_.push_back(peer);
   }
 
-  if (opts_.start_pgsql_proxy) {
-    RETURN_NOT_OK(WaitForInitDb());
-  }
   return Status::OK();
 }
 
