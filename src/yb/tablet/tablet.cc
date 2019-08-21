@@ -371,7 +371,7 @@ Tablet::Tablet(
 
   if ((transaction_participant_context &&
        metadata->schema().table_properties().is_transactional()) ||
-      // TODO: a better check. 
+      // TODO: a better check.
       tablet_id() == "00000000000000000000000000000000") {
     transaction_participant_ = std::make_unique<TransactionParticipant>(
         transaction_participant_context, this, metric_entity_);

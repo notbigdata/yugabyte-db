@@ -2022,6 +2022,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
 
   // If this is a transactional table, we need to create the transaction status table (if it does
   // not exist already).
+  // TODO mbautin: if we pre-create the txn status table early, we don't need this.
   if (req.schema().table_properties().is_transactional() && !is_pg_catalog_table) {
     Status s = CreateTransactionsStatusTableIfNeeded(rpc);
     if (!s.ok()) {
@@ -2181,7 +2182,7 @@ Status CatalogManager::CreateTransactionsStatusTableIfNeeded(rpc::RpcContext *rp
   RETURN_NOT_OK(FindTable(table_indentifier, &table_info));
 
   if (!table_info) {
-    LOG(INFO) << "DEBUG mbautin: initiating transaction status table creation: " 
+    LOG(INFO) << "DEBUG mbautin: initiating transaction status table creation: "
               << GetStackTrace();
     // Set up a CreateTable request internally.
     CreateTableRequestPB req;
@@ -2314,11 +2315,11 @@ Status CatalogManager::IsCreateTableDone(const IsCreateTableDoneRequestPB* req,
   }
 
   // If this is a transactional table we are not done until the transaction status table is created.
-  // However, if we are currently initialzing the system catalog snapshot, we don't create the 
+  // However, if we are currently initialzing the system catalog snapshot, we don't create the
   // transactions table.
-  // TODO mbautin : what if we're running initdb against an existing cluster without creating a 
+  // TODO mbautin : what if we're running initdb against an existing cluster without creating a
   // sys catalog snapshot? Should we create the transactions table then?
-  if (!FLAGS_create_initial_sys_catalog_snapshot && 
+  if (!FLAGS_create_initial_sys_catalog_snapshot &&
       resp->done() && l->data().pb.schema().table_properties().is_transactional()) {
     RETURN_NOT_OK(IsTransactionStatusTableCreated(resp));
   }
@@ -5742,6 +5743,9 @@ Status CatalogManager::GetTableLocations(const GetTableLocationsRequestPB* req,
   RETURN_NOT_OK(FindTable(req->table(), &table));
 
   if (table == nullptr) {
+    LOG(INFO) << "DEBUG mbautin: GetTableLocations: unable to find table: "
+              << req->table().ShortDebugString()
+              << "; full request: " << req->DebugString();
     Status s = STATUS(NotFound, "The object does not exist");
     return SetupError(resp->mutable_error(), MasterErrorPB::OBJECT_NOT_FOUND, s);
   }
