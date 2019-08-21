@@ -369,7 +369,10 @@ Tablet::Tablet(
     mem_tracker_->SetMetricEntity(metric_entity_);
   }
 
-  if (transaction_participant_context && metadata->schema().table_properties().is_transactional()) {
+  if ((transaction_participant_context &&
+       metadata->schema().table_properties().is_transactional()) ||
+      // TODO: a better check. 
+      tablet_id() == "00000000000000000000000000000000") {
     transaction_participant_ = std::make_unique<TransactionParticipant>(
         transaction_participant_context, this, metric_entity_);
     // Create transaction manager for secondary index update.

@@ -51,7 +51,7 @@ class CreateInitialSysCatalogSnapshotTest : public PgWrapperTestBase {
 
   int GetNumTabletServers() const override {
     // Needed for txn status table.
-    return 1;
+    return 0;
   }
 };
 

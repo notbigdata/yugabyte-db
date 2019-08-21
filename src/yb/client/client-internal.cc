@@ -127,6 +127,9 @@ Status RetryFunc(
       return s;
     }
 
+    if (s.ToString().find("transactions") != std::string::npos) {
+      LOG(INFO) << "DEBUG mbautin: " << retry_msg << " status=" << s.ToString() << GetStackTrace();
+    }
     VLOG(1) << retry_msg << " status=" << s.ToString();
     wait_time = std::min(wait_time * 5 / 4, kMaxSleep);
 

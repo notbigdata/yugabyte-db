@@ -769,13 +769,11 @@ void YBCUpdateSysCatalogTuple(Relation rel, HeapTuple oldtuple, HeapTuple tuple)
 
 void YBCStartBufferingWriteOperations()
 {
-	return;  /* TODO mbautin: revert this */
 	HandleYBStatus(YBCPgStartBufferingWriteOperations(ybc_pg_session));
 }
 
 void YBCFlushBufferedWriteOperations()
 {
-	return;  /* TODO mbautin: revert this */
 	HandleYBStatus(YBCPgFlushBufferedWriteOperations(ybc_pg_session));
 }
 
