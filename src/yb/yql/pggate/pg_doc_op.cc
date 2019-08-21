@@ -246,8 +246,12 @@ void PgDocReadOp::ReceiveResponse(Status exec_status) {
     // Save it to cache.
     WriteToCacheUnlocked(read_op_);
 
+    LOG(INFO) << "DEBUG mbautin: got response for read op: " << read_op_->request().DebugString()
+        << ", response:" << read_op_->response().DebugString();
+
     // Setup request for the next batch of data.
     const PgsqlResponsePB& res = read_op_->response();
+
     if (res.has_paging_state()) {
       PgsqlReadRequestPB *req = read_op_->mutable_request();
       // Set up paging state for next request.
@@ -316,6 +320,7 @@ void PgDocWriteOp::ReceiveResponse(Status exec_status) {
     // Save it to cache.
     WriteToCacheUnlocked(write_op_);
   }
+  LOG(INFO) << "DEBUG mbautin: got response for write op: " << write_op_->response().DebugString();
   end_of_data_ = true;
   VLOG(1) << __PRETTY_FUNCTION__ << ": Received response for request " << this;
 }
