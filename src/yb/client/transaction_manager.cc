@@ -75,12 +75,6 @@ class PickStatusTabletTask {
   }
 
   void Run() {
-    // // TODO mbautin : this is a hack to always use the sys catalog tablet.
-    // std::vector<TabletId> tablets { "00000000000000000000000000000000" };
-    // InvokeCallback(table_state_->local_tablet_filter, tablets, callback_);
-
-    // return;
-
     // TODO(dtxn) async
     std::vector<TabletId> tablets;
     auto status = client_->GetTablets(kTransactionTableName, 0, &tablets, /* ranges */ nullptr);

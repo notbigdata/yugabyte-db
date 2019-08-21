@@ -867,10 +867,10 @@ Status CatalogManager::StartRunningInitDbIfNeeded(int64_t term) {
       initial_snapshot_writer_.emplace();
     }
 
-    // TODO mbautin: get rid of this logic.
-    LOG(INFO) << "Waiting to give the tablet server a chance to come up";
-    std::this_thread::sleep_for(60s);
-    LOG(INFO) << "Finished waiting to give the tablet server a chance to come up";
+    // // TODO mbautin: get rid of this logic.
+    // LOG(INFO) << "Waiting to give the tablet server a chance to come up";
+    // std::this_thread::sleep_for(60s);
+    // LOG(INFO) << "Finished waiting to give the tablet server a chance to come up";
 
     Status status = PgWrapper::InitDbForYSQL(master_addresses_str, "/tmp");
 
@@ -1757,11 +1757,6 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   }
 
   if (is_pg_catalog_table) {
-    // TODO: dedup this logic with the other place we're doing this below in this function.
-    Status s = CreateTransactionsStatusTableIfNeeded(rpc);
-    if (!s.ok()) {
-      return s.CloneAndPrepend("Error while creating transaction status table");
-    }
     return CreatePgsqlSysTable(orig_req, resp, rpc);
   }
 
@@ -2027,7 +2022,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
 
   // If this is a transactional table, we need to create the transaction status table (if it does
   // not exist already).
-  if (req.schema().table_properties().is_transactional()) {
+  if (req.schema().table_properties().is_transactional() && !is_pg_catalog_table) {
     Status s = CreateTransactionsStatusTableIfNeeded(rpc);
     if (!s.ok()) {
       return s.CloneAndPrepend("Error while creating transaction status table");
@@ -2186,6 +2181,8 @@ Status CatalogManager::CreateTransactionsStatusTableIfNeeded(rpc::RpcContext *rp
   RETURN_NOT_OK(FindTable(table_indentifier, &table_info));
 
   if (!table_info) {
+    LOG(INFO) << "DEBUG mbautin: initiating transaction status table creation: " 
+              << GetStackTrace();
     // Set up a CreateTable request internally.
     CreateTableRequestPB req;
     CreateTableResponsePB resp;
@@ -2317,7 +2314,12 @@ Status CatalogManager::IsCreateTableDone(const IsCreateTableDoneRequestPB* req,
   }
 
   // If this is a transactional table we are not done until the transaction status table is created.
-  if (resp->done() && l->data().pb.schema().table_properties().is_transactional()) {
+  // However, if we are currently initialzing the system catalog snapshot, we don't create the 
+  // transactions table.
+  // TODO mbautin : what if we're running initdb against an existing cluster without creating a 
+  // sys catalog snapshot? Should we create the transactions table then?
+  if (!FLAGS_create_initial_sys_catalog_snapshot && 
+      resp->done() && l->data().pb.schema().table_properties().is_transactional()) {
     RETURN_NOT_OK(IsTransactionStatusTableCreated(resp));
   }
 
