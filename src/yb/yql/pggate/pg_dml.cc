@@ -27,9 +27,6 @@ using docdb::ValueType;
 
 using namespace std::literals;  // NOLINT
 
-// TODO(neil) This should be derived from a GFLAGS.
-static MonoDelta kSessionTimeout = 60s;
-
 //--------------------------------------------------------------------------------------------------
 // PgDml
 //--------------------------------------------------------------------------------------------------
@@ -269,8 +266,11 @@ Status PgDml::WritePgTuple(PgTuple *pg_tuple) {
       return STATUS(InternalError, "Unexpected expression, only column refs supported here");
     }
     const auto *col_ref = static_cast<const PgColumnRef *>(target);
+    const char* start_ptr = cursor_.cdata();
     PgWireDataHeader header = PgDocData::ReadDataHeader(&cursor_);
     target->TranslateData(&cursor_, header, col_ref->attr_num() - 1, pg_tuple);
+    LOG(INFO) << "DEBUG mbautin: received column: " 
+        << util::FormatSliceAsStr(Slice(start_ptr, cursor_.cdata()));
   }
   return Status::OK();
 }

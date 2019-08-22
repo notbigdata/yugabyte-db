@@ -24,9 +24,6 @@ using std::shared_ptr;
 using std::string;
 using namespace std::literals;  // NOLINT
 
-// TODO(neil) This should be derived from a GFLAGS.
-static MonoDelta kSessionTimeout = 60s;
-
 //--------------------------------------------------------------------------------------------------
 // PgInsert
 //--------------------------------------------------------------------------------------------------

@@ -22,7 +22,7 @@ namespace yb {
 namespace pggate {
 
 // PgTuple.
-// TODO(neil) This code needs to be optimize. We might be able to use DocDB buffer directly for
+// TODO(neil) This code needs to be optimized. We might be able to use DocDB buffer directly for
 // most datatype except numeric. A simpler optimization would be allocate one buffer for each
 // tuple and write the value there.
 //

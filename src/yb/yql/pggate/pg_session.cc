@@ -431,7 +431,7 @@ Result<PgTableDesc::ScopedRefPtr> PgSession::LoadTable(const PgObjectId& table_i
   if (cached_yb_table == table_cache_.end()) {
     Status s = client_->OpenTable(yb_table_id, &table);
     if (!s.ok()) {
-      VLOG(3) << "LoadTable: Server returns an error: " << s;
+      VLOG(2) << "LoadTable: Server returned an error: " << s;
       // TODO: NotFound might not always be the right status here.
       return STATUS_FORMAT(NotFound, "Error loading table with oid $0 in database with oid $1: $2",
                            table_id.object_oid, table_id.database_oid, s.ToUserMessage());

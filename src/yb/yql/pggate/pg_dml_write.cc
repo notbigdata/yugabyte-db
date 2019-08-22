@@ -31,9 +31,6 @@ using client::YBTable;
 using client::YBTableName;
 using client::YBPgsqlWriteOp;
 
-// TODO(neil) This should be derived from a GFLAGS.
-static MonoDelta kSessionTimeout = 60s;
-
 //--------------------------------------------------------------------------------------------------
 // PgDmlWrite
 //--------------------------------------------------------------------------------------------------

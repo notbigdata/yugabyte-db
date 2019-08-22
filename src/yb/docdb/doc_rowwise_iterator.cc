@@ -65,6 +65,14 @@ class ScanChoices {
   // current target.
   virtual CHECKED_STATUS SeekToCurrentTarget(IntentAwareIterator* db_iter) = 0;
 
+  virtual string ToString() {
+    return Format(
+        "is_forward_scan: $0 "
+        "current_scan_target: $1 "
+        "finished: $2",
+        is_forward_scan_, current_scan_target_, finished_);
+  };
+
  protected:
   const bool is_forward_scan_;
   KeyBytes current_scan_target_;
@@ -99,6 +107,12 @@ class DiscreteScanChoices : public ScanChoices {
   CHECKED_STATUS DoneWithCurrentTarget() override;
   CHECKED_STATUS SkipTargetsUpTo(const Slice& new_target) override;
   CHECKED_STATUS SeekToCurrentTarget(IntentAwareIterator* db_iter) override;
+
+  string ToString() override {
+    return Format(
+        "DiscreteScanChoices { $0 range_cols_scan_options: $1 }",
+        ScanChoices::ToString(), range_cols_scan_options_);
+  }
 
  protected:
   // Utility function for (multi)key scans. Updates the target scan key by incrementing the option
@@ -298,6 +312,12 @@ class RangeBasedScanChoices : public ScanChoices {
   CHECKED_STATUS SkipTargetsUpTo(const Slice& new_target) override;
   CHECKED_STATUS DoneWithCurrentTarget() override;
   CHECKED_STATUS SeekToCurrentTarget(IntentAwareIterator* db_iter) override;
+
+  string ToString() override {
+    return Format(
+        "RangeBasedScanChoices { $0 lower: $1 upper: $2 prev_scan_target: $3}",
+        ScanChoices::ToString(), lower_, upper_, prev_scan_target_);
+  }  
 
  private:
   std::vector<PrimitiveValue> lower_, upper_;
@@ -576,21 +596,47 @@ Result<bool> DocRowwiseIterator::HasNext() const {
   if (done_) {
     return false;
   }
+  
+  bool mydebug = (schema_.cotable_id().ToString() == "eb040000-0000-0080-0030-0000a7300000");
 
   bool doc_found = false;
+
+  bool mydebug_begin = true;
+
   while (!doc_found) {
+    if (mydebug) {
+      LOG(INFO) << "DEBUG mbautin: db_iter_->valid()=" 
+                << db_iter_->valid()
+                << ", scan_choices_ is defined=" << !!scan_choices_
+                << ", scan_choices_=" << (scan_choices_ ? scan_choices_->ToString() : "N/A")
+                << ", FinishedWithScanChoices=" 
+                << (scan_choices_ && scan_choices_->FinishedWithScanChoices());
+    }
     if (!db_iter_->valid() || (scan_choices_ && scan_choices_->FinishedWithScanChoices())) {
+      if (mydebug && mydebug_begin) {
+        LOG(INFO) << "DEBUG mbautin: Did not find anything! TODO: log more info here";
+      }
       done_ = true;
       return false;
+    }
+    mydebug_begin = false;
+    if (mydebug) {
+      LOG(INFO) << "DEBUG mbautin";
     }
 
     const auto key_data = db_iter_->FetchKey();
     if (!key_data.ok()) {
       has_next_status_ = key_data.status();
+      if (mydebug) {
+        LOG(INFO) << "DEBUG mbautin: status=" << has_next_status_;
+      }
       return has_next_status_;
     }
 
     VLOG(4) << "*fetched_key is " << SubDocKey::DebugSliceToString(key_data->key);
+    if (mydebug) {
+      LOG(INFO) << "*fetched_key is " << SubDocKey::DebugSliceToString(key_data->key);
+    }
 
     // The iterator is positioned by the previous GetSubDocument call (which places the iterator
     // outside the previous doc_key). Ensure the iterator is pushed forward/backward indeed. We
@@ -605,6 +651,9 @@ Result<bool> DocRowwiseIterator::HasNext() const {
     }
     iter_key_.Reset(key_data->key);
     VLOG(4) << " Current iter_key_ is " << iter_key_;
+    if (mydebug) {
+      LOG(INFO) << " Current iter_key_ is " << iter_key_;
+    }
 
     const auto dockey_sizes = DocKey::EncodedHashPartAndDocKeySizes(iter_key_);
     if (!dockey_sizes.ok()) {
@@ -623,6 +672,9 @@ Result<bool> DocRowwiseIterator::HasNext() const {
     // Prepare the DocKey to get the SubDocument. Trim the DocKey to contain just the primary key.
     Slice sub_doc_key = row_key_;
     VLOG(4) << " sub_doc_key part of iter_key_ is " << DocKey::DebugSliceToString(sub_doc_key);
+    if (mydebug) {
+      LOG(INFO) << " sub_doc_key part of iter_key_ is " << DocKey::DebugSliceToString(sub_doc_key);
+    }
 
     bool is_static_column = IsNextStaticColumn();
     if (scan_choices_ && !is_static_column) {

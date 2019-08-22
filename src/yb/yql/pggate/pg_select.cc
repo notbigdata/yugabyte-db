@@ -105,7 +105,7 @@ PgsqlExpressionPB *PgSelect::AllocIndexColumnBindPB(PgColumn *col) {
 
 PgsqlExpressionPB *PgSelect::AllocColumnAssignPB(PgColumn *col) {
   // SELECT statement should not have an assign expression (SET clause).
-  LOG(FATAL) << "Pure virtual function is being call";
+  LOG(FATAL) << "Pure virtual function is being called";
   return nullptr;
 }
 

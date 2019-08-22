@@ -29,9 +29,6 @@ using client::YBClient;
 using client::YBSession;
 using client::YBMetaDataCache;
 
-// TODO(neil) This should be derived from a GFLAGS.
-static MonoDelta kSessionTimeout = 60s;
-
 //--------------------------------------------------------------------------------------------------
 // Class PgStatement
 //--------------------------------------------------------------------------------------------------

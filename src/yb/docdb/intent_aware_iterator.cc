@@ -658,6 +658,8 @@ void IntentAwareIterator::ProcessIntent() {
   auto max_allowed_time = decode_result->same_transaction
       ? read_time_.in_txn_limit : read_time_.global_limit;
   if (decode_result->value_time.hybrid_time() > max_allowed_time) {
+    VLOG(3) << "Skipped intent past read limit (max allowed time: " << max_allowed_time << "): "
+            << ": " << decode_result->ToString();
     return;
   }
 

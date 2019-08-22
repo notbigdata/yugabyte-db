@@ -150,6 +150,9 @@ DEFINE_test_flag(bool, rpc_delete_tablet_fail, false, "Should delete tablet RPC 
 
 DECLARE_uint64(max_clock_skew_usec);
 
+DEFINE_test_flag(bool, debug_log_tserver_read_requests, false, "Log tablet server read requests");
+DEFINE_test_flag(bool, debug_log_tserver_write_requests, false, "Log tablet server write requests");
+
 namespace yb {
 namespace tserver {
 
@@ -728,6 +731,9 @@ void TabletServiceAdminImpl::FlushTablets(const FlushTabletsRequestPB* req,
 void TabletServiceImpl::Write(const WriteRequestPB* req,
                               WriteResponsePB* resp,
                               rpc::RpcContext context) {
+  if (FLAGS_debug_log_tserver_write_requests) {
+    LOG(INFO) << __PRETTY_FUNCTION__ << ": " << req->DebugString();
+  }
   if (FLAGS_tserver_noop_read_write) {
     for (int i = 0; i < req->ql_write_batch_size(); ++i) {
       resp->add_ql_response_batch();
@@ -1077,6 +1083,9 @@ class ReadOperationCompletionCallback : public OperationCompletionCallback {
 void TabletServiceImpl::Read(const ReadRequestPB* req,
                              ReadResponsePB* resp,
                              rpc::RpcContext context) {
+  if (FLAGS_debug_log_tserver_read_requests) {
+    LOG(INFO) << __PRETTY_FUNCTION__ << ": " << req->DebugString();
+  }
   if (FLAGS_tserver_noop_read_write) {
     context.RespondSuccess();
     return;
