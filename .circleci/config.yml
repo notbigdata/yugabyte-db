@@ -13,6 +13,7 @@ jobs:
                 bash -c 'mkdir -p /home/yugabuilder/code && \
                          cp -R /mnt/yugabyte-db /home/yugabuilder/code && \
                          chown -R yugabuilder /home/yugabuilder/code && \
+                         export YB_SKIP_INITIAL_SYS_CATALOG_SNAPSHOT=1 && \
                          sudo su - yugabuilder bash -c "cd ~/code/yugabyte-db && ./yb_build.sh release"'
       - deploy:
           name: Publish the build result to Docker Hub
@@ -30,9 +31,10 @@ jobs:
             docker run --mount type=bind,src=$PWD,target=/mnt/yugabyte-db \
                 --name yb_build_container \
                 yugabytedb/yb_build_infra_centos7:v2019-07-22T01_21_10_mikhail \
-                bash -c 'mkdir -p /home/yugabuilder/code && \
-                         cp -R /mnt/yugabyte-db /home/yugabuilder/code && \
-                         chown -R yugabyte-ci/home/yugabuilder/code && \
+                bash -c 'mkdir -p /home/yugabyte-ci/code && \
+                         cp -R /mnt/yugabyte-db /home/yugabyte-ci/code && \
+                         chown -R yugabyte-ci /home/yugabyte-ci/code && \
+                         export YB_SKIP_INITIAL_SYS_CATALOG_SNAPSHOT=1 && \
                          sudo su - yugabyte-ci bash -c "cd ~/code/yugabyte-db && ./yb_build.sh release"'
       - deploy:
           name: Publish the build result to Docker Hub
