@@ -4,20 +4,42 @@ jobs:
     machine: true
     steps:
       - checkout
-      - run: |
-          docker run --mount type=bind,src=$PWD,target=/mnt/yugabyte-db \
-              --name yb_build_container \
-              yugabytedb/yb_build_infra_ubuntu1804:v2019-04-27T08_37_04_mikhail \
-              bash -c 'mkdir -p /home/yugabuilder/code && \
-                       cp -R /mnt/yugabyte-db /home/yugabuilder/code && \
-                       chown -R yugabuilder /home/yugabuilder/code && \
-                       sudo su - yugabuilder bash -c "cd ~/code/yugabyte-db && ./yb_build.sh release"'
+      - run: 
+          no_output_timeout: 1h
+          command: |
+            docker run --mount type=bind,src=$PWD,target=/mnt/yugabyte-db \
+                --name yb_build_container \
+                yugabytedb/yb_build_infra_ubuntu1804:v2019-04-27T08_37_04_mikhail \
+                bash -c 'mkdir -p /home/yugabuilder/code && \
+                         cp -R /mnt/yugabyte-db /home/yugabuilder/code && \
+                         chown -R yugabuilder /home/yugabuilder/code && \
+                         sudo su - yugabuilder bash -c "cd ~/code/yugabyte-db && ./yb_build.sh release"'
       - deploy:
           name: Publish the build result to Docker Hub
           command: |
             echo "$DOCKERHUB_PASSWORD" | docker login -u "$DOCKERHUB_USER" --password-stdin
             docker commit yb_build_container "$DOCKERHUB_USER/yugabytedb_ci_build_ubuntu1804:$CIRCLE_SHA1"
             docker push "$DOCKERHUB_USER/yugabytedb_ci_build_ubuntu1804:$CIRCLE_SHA1"
+  centos7:
+    machine: true
+    steps:
+      - checkout
+      - run: 
+          no_output_timeout: 1h
+          command: |
+            docker run --mount type=bind,src=$PWD,target=/mnt/yugabyte-db \
+                --name yb_build_container \
+                yugabytedb/yb_build_infra_centos7:v2019-07-22T01_21_10_mikhail \
+                bash -c 'mkdir -p /home/yugabuilder/code && \
+                         cp -R /mnt/yugabyte-db /home/yugabuilder/code && \
+                         chown -R yugabyte-ci/home/yugabuilder/code && \
+                         sudo su - yugabyte-ci bash -c "cd ~/code/yugabyte-db && ./yb_build.sh release"'
+      - deploy:
+          name: Publish the build result to Docker Hub
+          command: |
+            echo "$DOCKERHUB_PASSWORD" | docker login -u "$DOCKERHUB_USER" --password-stdin
+            docker commit yb_build_container "$DOCKERHUB_USER/yugabytedb_ci_build_centos7:$CIRCLE_SHA1"
+            docker push "$DOCKERHUB_USER/yugabytedb_ci_build_centos7:$CIRCLE_SHA1"
 #&&
 
 workflows:
@@ -26,3 +48,4 @@ workflows:
   build_yugabyte_db:
     jobs:
       - ubuntu1804 
+      - centos7
