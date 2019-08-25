@@ -4,7 +4,6 @@ jobs:
     machine: true
     steps:
       - checkout
-      - setup_remote_docker
       - run: |
           docker run --mount type=bind,src=$PWD,target=/mnt/yugabyte-db \
               yugabytedb/yb_build_infra_ubuntu1804:v2019-04-27T08_37_04_mikhail \
