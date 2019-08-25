@@ -13,8 +13,7 @@ jobs:
                 bash -c 'mkdir -p /home/yugabuilder/code && \
                          cp -R /mnt/yugabyte-db /home/yugabuilder/code && \
                          chown -R yugabuilder /home/yugabuilder/code && \
-                         export YB_SKIP_INITIAL_SYS_CATALOG_SNAPSHOT=1 && \
-                         sudo su - yugabuilder bash -c "cd ~/code/yugabyte-db && ./yb_build.sh release"'
+                         sudo su - yugabuilder bash -c "export YB_SKIP_INITIAL_SYS_CATALOG_SNAPSHOT=1 && cd ~/code/yugabyte-db && ./yb_build.sh release"'
       - deploy:
           name: Publish the build result to Docker Hub
           command: |
@@ -34,8 +33,7 @@ jobs:
                 bash -c 'mkdir -p /home/yugabyte-ci/code && \
                          cp -R /mnt/yugabyte-db /home/yugabyte-ci/code && \
                          chown -R yugabyte-ci /home/yugabyte-ci/code && \
-                         export YB_SKIP_INITIAL_SYS_CATALOG_SNAPSHOT=1 && \
-                         sudo su - yugabyte-ci bash -c "cd ~/code/yugabyte-db && ./yb_build.sh release"'
+                         sudo su - yugabyte-ci bash -c "export YB_SKIP_INITIAL_SYS_CATALOG_SNAPSHOT=1 && cd ~/code/yugabyte-db && ./yb_build.sh release"'
       - deploy:
           name: Publish the build result to Docker Hub
           command: |
