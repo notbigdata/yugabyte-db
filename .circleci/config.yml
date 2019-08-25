@@ -7,13 +7,14 @@ jobs:
       - run: |
           docker run --mount type=bind,src=$PWD,target=/mnt/yugabyte-db \
               yugabytedb/yb_build_infra_ubuntu1804:v2019-04-27T08_37_04_mikhail \
-              -t "$DOCKERHUB_USER/yugabytedb_ci_build_ubuntu1804:$CIRCLE_SHA1" \
-              -t "$DOCKERHUB_USER/yugabytedb_ci_build_ubuntu1804:latest" \
+              --name yb_build_container \
               bash -c 'mkdir -p /home/yugabuilder/code'
       - deploy:
           name: Publish the build result to docker hub
           command: |
             echo "$DOCKERHUB_PASSWORD" | docker login -u "$DOCKERHUB_USER" --password-stdin
+            docker tag yb_build_container "$DOCKERHUB_USER/yugabytedb_ci_build_ubuntu1804:$CIRCLE_SHA1"
+            docker tag yb_build_container "$DOCKERHUB_USER/yugabytedb_ci_build_ubuntu1804:latest"
             docker push "$DOCKERHUB_USER/yugabytedb_ci_build_ubuntu1804:$CIRCLE_SHA1"
             docker push "$DOCKERHUB_USER/yugabytedb_ci_build_ubuntu1804:latest"
 #&&
