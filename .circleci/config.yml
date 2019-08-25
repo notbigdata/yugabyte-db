@@ -11,7 +11,7 @@ jobs:
               bash -c 'mkdir -p /home/yugabuilder/code && \
                        cp -R /mnt/yugabyte-db /home/yugabuilder/code && \
                        chown -R yugabuilder /home/yugabuilder/code && \
-                       sudo su - yugabuilder bash -c "cd ~/code/yugabyte-db && ./yb_build.sh release'
+                       sudo su - yugabuilder bash -c "cd ~/code/yugabyte-db && ./yb_build.sh release"'
       - deploy:
           name: Publish the build result to Docker Hub
           command: |
