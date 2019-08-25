@@ -6,8 +6,8 @@ jobs:
       - checkout
       - run: |
           docker run --mount type=bind,src=$PWD,target=/mnt/yugabyte-db \
-              yugabytedb/yb_build_infra_ubuntu1804:v2019-04-27T08_37_04_mikhail \
               --name yb_build_container \
+              yugabytedb/yb_build_infra_ubuntu1804:v2019-04-27T08_37_04_mikhail \
               bash -c 'mkdir -p /home/yugabuilder/code'
       - deploy:
           name: Publish the build result to docker hub
