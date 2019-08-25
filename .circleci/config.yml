@@ -8,17 +8,17 @@ jobs:
           docker run --mount type=bind,src=$PWD,target=/mnt/yugabyte-db \
               --name yb_build_container \
               yugabytedb/yb_build_infra_ubuntu1804:v2019-04-27T08_37_04_mikhail \
-              bash -c 'mkdir -p /home/yugabuilder/code'
+              bash -c 'mkdir -p /home/yugabuilder/code && \
+                       cp -R /mnt/yugabyte-db /home/yugabuilder/code && \
+                       chown -R yugabuilder /home/yugabuilder/code && \
+                       sudo su - yugabuilder bash -c "cd ~/code/yugabyte-db && ./yb_build.sh release'
       - deploy:
-          name: Publish the build result to docker hub
+          name: Publish the build result to Docker Hub
           command: |
             echo "$DOCKERHUB_PASSWORD" | docker login -u "$DOCKERHUB_USER" --password-stdin
             docker commit yb_build_container "$DOCKERHUB_USER/yugabytedb_ci_build_ubuntu1804:$CIRCLE_SHA1"
             docker push "$DOCKERHUB_USER/yugabytedb_ci_build_ubuntu1804:$CIRCLE_SHA1"
 #&&
-#                       cp -R /mnt/yugabyte-db /home/yugabuilder/code && \
-#                       chown -R yugabuilder /home/yugabuilder/code && \
-#                       sudo su - yugabuilder bash -c "cd ~/code/yugabyte-db && ./yb_build.sh --ctest --java-tests"'
 
 workflows:
   # See https://circleci.com/docs/2.0/workflows/
