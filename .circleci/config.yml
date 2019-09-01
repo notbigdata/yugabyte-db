@@ -32,7 +32,7 @@ jobs:
           command: |
             docker run --mount type=bind,src=$PWD,target=/mnt/yugabyte-db \
                 --name yb_build_container \
-                yugabytedb/yb_build_infra_centos7:v2019-09-01T06_40_19_mbautin \
+                yugabytedb/yb_build_infra_centos7:v2019-09-01T14_58_09_mbautin \
                 bash -c 'mkdir -p /home/yugabyte-ci/code && \
                          cp -R /mnt/yugabyte-db /home/yugabyte-ci/code && \
                          chown -R yugabyte-ci /home/yugabyte-ci/code && \
