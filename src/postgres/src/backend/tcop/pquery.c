@@ -602,6 +602,7 @@ PortalStart(Portal portal, ParamListInfo params,
 	}
 	PG_CATCH();
 	{
+		YBC_LOG_INFO("DEBUG mbautin: uncaught error in portal");
 		/* Uncaught error while executing portal: mark it dead */
 		MarkPortalFailed(portal);
 
@@ -825,6 +826,7 @@ PortalRun(Portal portal, long count, bool isTopLevel, bool run_once,
 	}
 	PG_CATCH();
 	{
+		YBC_LOG_INFO("DEBUG mbautin: MARKING PORTAL AS FAILED");
 		/* Uncaught error while executing portal: mark it dead */
 		MarkPortalFailed(portal);
 

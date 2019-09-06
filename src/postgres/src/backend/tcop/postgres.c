@@ -4425,10 +4425,10 @@ PostgresMain(int argc, char *argv[],
 				}
 				PG_CATCH();
 				{
-          bool need_retry = false;
-          YBPrepareCacheRefreshIfNeeded(oldcontext,
-                                        check_retry_allowed(query_string),
-                                        &need_retry);
+					bool need_retry = false;
+					YBPrepareCacheRefreshIfNeeded(oldcontext,
+						check_retry_allowed(query_string),
+						&need_retry);
 
 					if (need_retry)
 					{

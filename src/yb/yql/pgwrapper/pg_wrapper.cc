@@ -254,6 +254,8 @@ Status PgWrapper::Start() {
   argv.push_back("yb_pg_metrics.node_name=" + FLAGS_metric_node_name);
   argv.push_back("-c");
   argv.push_back("yb_pg_metrics.port=" + std::to_string(FLAGS_pgsql_proxy_webserver_port));
+  argv.push_back("-c");
+  argv.push_back("yb_debug_mode=on"); // DEBUG mbautin -- TODO: remove
 
   auto config_file_args = CHECK_RESULT(WritePgConfigFiles(conf_.data_dir));
   argv.insert(argv.end(), config_file_args.begin(), config_file_args.end());

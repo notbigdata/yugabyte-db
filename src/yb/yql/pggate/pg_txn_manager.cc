@@ -182,6 +182,12 @@ void PgTxnManager::ResetTxnAndSession() {
 }
 
 void PgTxnManager::PreventRestart() {
+  if (can_restart_.load(std::memory_order_acquire)) {
+    auto s = GetStackTrace();
+    if (s.find("Fetch") != string::npos) {
+      LOG(INFO) << "DEBUG mbautin: PreventRestart:\n" << s;
+    }
+  }
   can_restart_.store(false, std::memory_order_release);
 }
 

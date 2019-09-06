@@ -40,14 +40,14 @@ TEST_F(PgReadRestartTest, YB_DISABLE_TEST_IN_TSAN(CountWithConcurrentInserts)) {
   ASSERT_OK(Execute(conn.get(), "CREATE TABLE t (key INT PRIMARY KEY)"));
   TestThreadHolder thread_holder;
 
-  std::atomic<int> num_successful_inserts(0);
-  std::atomic<int> num_successful_reads(0);
+  std::atomic<int> inserts(0);
+  std::atomic<int> reads(0);
 
   const auto kWriterThreads = RegularBuildVsSanitizers(4, 2);
   const auto kTotalNumKeys = 1000;
   for (int i = 1; i <= kWriterThreads; ++i) {
     thread_holder.AddThreadFunctor(
-        [this, i, &stop_flag = thread_holder.stop_flag(), &num_successful_inserts]() {
+        [this, i, &stop_flag = thread_holder.stop_flag(), &inserts]() {
       auto write_conn = ASSERT_RESULT(Connect());
       int write_key = RandomUniformInt(1, kTotalNumKeys);
       while (!stop_flag.load(std::memory_order_acquire)) {
@@ -60,7 +60,7 @@ TEST_F(PgReadRestartTest, YB_DISABLE_TEST_IN_TSAN(CountWithConcurrentInserts)) {
           status = Execute(write_conn.get(), "COMMIT");
         }
         if (status.ok()) {
-          num_successful_inserts.fetch_add(1, std::memory_order_acq_rel);
+          inserts.fetch_add(1, std::memory_order_acq_rel);
           ++write_key;
         } else {
           LOG(WARNING) << "Write " << write_key << " failed: " << status;
@@ -77,12 +77,13 @@ TEST_F(PgReadRestartTest, YB_DISABLE_TEST_IN_TSAN(CountWithConcurrentInserts)) {
     });
   }
 
+  // One reader thread.
   thread_holder.AddThreadFunctor(
       [this, &stop_flag = thread_holder.stop_flag(), 
-       &num_successful_inserts, &num_successful_reads]() {
+       &inserts, &reads]() {
     auto read_conn = ASSERT_RESULT(Connect());
     while (!stop_flag.load(std::memory_order_acquire)) {
-      const int min_expected_count = num_successful_inserts.load(std::memory_order_acquire);
+      const int64_t min_expected_count = inserts.load(std::memory_order_acquire);
       ASSERT_OK(Execute(read_conn.get(), "START TRANSACTION ISOLATION LEVEL REPEATABLE READ"));
       auto res = ASSERT_RESULT(Fetch(read_conn.get(), "SELECT COUNT(*) FROM t"));
       auto num_rows = PQntuples(res.get());
@@ -91,17 +92,23 @@ TEST_F(PgReadRestartTest, YB_DISABLE_TEST_IN_TSAN(CountWithConcurrentInserts)) {
       auto num_columns = PQnfields(res.get());
       ASSERT_EQ(1, num_columns);
 
-      const int32_t count = ASSERT_RESULT(GetInt32(res.get(), 0, 0));
+      const int64_t count = ASSERT_RESULT(GetInt64(res.get(), 0, 0));
       ASSERT_GE(count, min_expected_count);
       
       ASSERT_OK(Execute(read_conn.get(), "COMMIT"));
-      num_successful_reads.fetch_add(1, std::memory_order_acq_rel);
+      reads.fetch_add(1, std::memory_order_acq_rel);
     }
   });
 
-  std::this_thread::sleep_for(30s);
-  LOG(INFO) << "Number of successful inserts: " << num_successful_inserts;
-  LOG(INFO) << "Number of successful reads: " << num_successful_reads;
+  const auto kRequiredWrites = 100;
+  const auto kRequiredReads = 10;
+  const auto kTimeout = 30s;
+  auto wait_status = WaitFor([&reads, &inserts, &stop = thread_holder.stop_flag()] {
+    return stop.load() || (inserts.load() >= kRequiredWrites && reads.load() >= kRequiredReads);
+  }, kTimeout, Format("At least $0 reads and $1 writes", kRequiredReads, kRequiredWrites));
+
+  LOG(INFO) << "Number of successful inserts: " << inserts;
+  LOG(INFO) << "Number of successful reads: " << reads;
   thread_holder.Stop();
 }
 
