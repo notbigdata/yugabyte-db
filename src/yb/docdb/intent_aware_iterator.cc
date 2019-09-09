@@ -30,9 +30,6 @@
 #include "yb/server/hybrid_clock.h"
 #include "yb/util/backoff_waiter.h"
 
-#undef VLOG
-#define VLOG(verboselevel) if (debug_mode_) LOG(INFO)
-
 using namespace std::literals;
 
 DEFINE_bool(transaction_allow_rerequest_status_in_tests, true,
@@ -128,9 +125,9 @@ Result<HybridTime> TransactionStatusCache::DoGetCommitTime(const TransactionId& 
       return STATUS(TimedOut, "");
     }
   }
-  // VLOG(4) << "Transaction_id " << transaction_id << " at " << read_time_
-  //         << ": status: " << TransactionStatus_Name(txn_status.status)
-  //         << ", status_time: " << txn_status.status_time;
+  VLOG(4) << "Transaction_id " << transaction_id << " at " << read_time_
+          << ": status: " << TransactionStatus_Name(txn_status.status)
+          << ", status_time: " << txn_status.status_time;
   // There could be case when transaction was committed and applied between previous call to
   // GetLocalCommitTime, in this case coordinator does not know transaction and will respond
   // with ABORTED status. So we recheck whether it was committed locally.
@@ -196,8 +193,8 @@ Result<DecodeStrongWriteIntentResult> DecodeStrongWriteIntent(
       auto commit_ht = VERIFY_RESULT(transaction_status_cache->GetCommitTime(txn_id));
       result.value_time = DocHybridTime(
           commit_ht, commit_ht != HybridTime::kMin ? in_txn_write_id : 0);
-      // VLOG(4) << "Transaction id: " << txn_id << ", value time: " << result.value_time
-      //         << ", value: " << result.intent_value.ToDebugHexString();
+      VLOG(4) << "Transaction id: " << txn_id << ", value time: " << result.value_time
+              << ", value: " << result.intent_value.ToDebugHexString();
     }
   } else {
     result.value_time = DocHybridTime::kMin;
@@ -271,12 +268,7 @@ void IntentAwareIterator::Seek(const DocKey &doc_key) {
 }
 
 void IntentAwareIterator::Seek(const Slice& key) {
-  if (key.ToString().find("mytesttable") != std::string::npos) {
-    // TODO mbautin: remove
-    debug_mode_ = true;
-  }
   VLOG(4) << "Seek(" << SubDocKey::DebugSliceToString(key) << ")";
-
   DOCDB_DEBUG_SCOPE_LOG(
       key.ToDebugString(),
       std::bind(&IntentAwareIterator::DebugDump, this));
@@ -561,7 +553,7 @@ void IntentAwareIterator::SeekIntentIterIfNeeded() {
     case SeekIntentIterNeeded::kNoNeed:
       break;
     case SeekIntentIterNeeded::kSeek:
-     ROCKSDB_SEEK(&intent_iter_, seek_key_buffer_);
+      ROCKSDB_SEEK(&intent_iter_, seek_key_buffer_);
       SeekToSuitableIntent<Direction::kForward>();
       seek_intent_iter_needed_ = SeekIntentIterNeeded::kNoNeed;
       return;
@@ -910,7 +902,6 @@ void IntentAwareIterator::SkipFutureRecords(const Direction direction) {
     if (!SatisfyBounds(iter_.key())) {
       VLOG(4) << "Out of bounds: " << SubDocKey::DebugSliceToString(iter_.key())
               << ", upperbound: " << SubDocKey::DebugSliceToString(upperbound_);
-
       iter_valid_ = false;
       return;
     }

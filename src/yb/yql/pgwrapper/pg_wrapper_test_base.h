@@ -28,7 +28,7 @@ class PgWrapperTestBase : public YBMiniClusterTestBase<ExternalMiniCluster> {
 
   virtual int GetNumTabletServers() const {
     // Test that we can start PostgreSQL servers on non-colliding ports within each tablet server.
-    return 1;
+    return 3;
   }
 
   virtual void UpdateMiniClusterOptions(ExternalMiniClusterOptions* options) {}

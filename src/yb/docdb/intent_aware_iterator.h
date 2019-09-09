@@ -306,8 +306,6 @@ class IntentAwareIterator {
 
   // Reusable buffer to prepare seek key to avoid reallocating temporary buffers in critical paths.
   KeyBytes seek_key_buffer_;
-
-  bool debug_mode_ = false;
 };
 
 // Utility class that controls stack of prefixes in IntentAwareIterator.

@@ -173,7 +173,7 @@ DEFINE_bool(catalog_manager_wait_for_new_tablets_to_elect_leader, true,
             "election.");
 TAG_FLAG(catalog_manager_wait_for_new_tablets_to_elect_leader, hidden);
 
-DEFINE_int32(replication_factor, 1,  // TODO mbautin: revert this
+DEFINE_int32(replication_factor, 3,
              "Default number of replicas for tables that do not have the num_replicas set.");
 TAG_FLAG(replication_factor, advanced);
 
@@ -864,11 +864,6 @@ Status CatalogManager::StartRunningInitDbIfNeeded(int64_t term) {
     if (FLAGS_create_initial_sys_catalog_snapshot) {
       initial_snapshot_writer_.emplace();
     }
-
-    // // TODO mbautin: get rid of this logic.
-    // LOG(INFO) << "Waiting to give the tablet server a chance to come up";
-    // std::this_thread::sleep_for(60s);
-    // LOG(INFO) << "Finished waiting to give the tablet server a chance to come up";
 
     Status status = PgWrapper::InitDbForYSQL(master_addresses_str, "/tmp");
 
