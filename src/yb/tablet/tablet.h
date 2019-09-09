@@ -262,10 +262,9 @@ class Tablet : public AbstractTablet, public TransactionIntentApplier {
       const rocksdb::UserFrontiers* frontiers,
       HybridTime hybrid_time);
 
-  void WriteToRocksDB(
-      const rocksdb::UserFrontiers* frontiers,
-      rocksdb::WriteBatch* write_batch,
-      docdb::StorageDbType storage_db_type);
+  void WriteBatch(const rocksdb::UserFrontiers* frontiers,
+                  rocksdb::WriteBatch* write_batch,
+                  rocksdb::DB* dest_db);
 
   //------------------------------------------------------------------------------------------------
   // Redis Request Processing.
@@ -729,6 +728,8 @@ class Tablet : public AbstractTablet, public TransactionIntentApplier {
   client::LocalTabletFilter local_tablet_filter_;
 
   std::string log_prefix_suffix_;
+
+  bool is_sys_catalog_tablet_;
 
   DISALLOW_COPY_AND_ASSIGN(Tablet);
 };

@@ -119,6 +119,8 @@
 #include "yb/util/trace.h"
 #include "yb/util/url-coding.h"
 
+#include "yb/master/sys_catalog_constants.h"
+
 DEFINE_bool(tablet_do_dup_key_checks, true,
             "Whether to check primary keys for duplicate on insertion. "
             "Use at your own risk!");
@@ -155,6 +157,9 @@ DEFINE_test_flag(
     bool, tablet_verify_flushed_frontier_after_modifying, false,
     "After modifying the flushed frontier in RocksDB, verify that the restored value of it "
     "is as expected. Used for testing.");
+
+DEFINE_bool(txn_ddl, false,
+            "Enable transactional DDL. This will become default at some point.");
 
 DECLARE_int32(rocksdb_level0_slowdown_writes_trigger);
 DECLARE_int32(rocksdb_level0_stop_writes_trigger);
@@ -337,7 +342,8 @@ Tablet::Tablet(
       tablet_options_(tablet_options),
       client_future_(client_future),
       local_tablet_filter_(std::move(local_tablet_filter)),
-      log_prefix_suffix_(std::move(log_prefix_suffix)) {
+      log_prefix_suffix_(std::move(log_prefix_suffix)),
+      is_sys_catalog_tablet_(tablet_id() == master::kSysCatalogTabletId) {
   CHECK(schema()->has_column_ids());
 
   if (metric_registry) {
@@ -369,7 +375,9 @@ Tablet::Tablet(
     mem_tracker_->SetMetricEntity(metric_entity_);
   }
 
-  if (transaction_participant_context && metadata->schema().table_properties().is_transactional()) {
+  if ((transaction_participant_context &&
+       metadata->schema().table_properties().is_transactional()) ||
+      (FLAGS_txn_ddl && is_sys_catalog_tablet_)) {
     transaction_participant_ = std::make_unique<TransactionParticipant>(
         transaction_participant_context, this, metric_entity_);
     // Create transaction manager for secondary index update.
@@ -1812,7 +1820,10 @@ Status Tablet::StartDocWriteOperation(WriteOperation* operation) {
   auto write_batch = operation->request()->mutable_write_batch();
   auto isolation_level = VERIFY_RESULT(GetIsolationLevelFromPB(*write_batch));
 
-  const bool transactional_table = metadata_->schema().table_properties().is_transactional();
+  const bool transactional_table =
+      metadata_->schema().table_properties().is_transactional() ||
+      (FLAGS_txn_ddl && is_sys_catalog_tablet_ &&
+       isolation_level != IsolationLevel::NON_TRANSACTIONAL);
   const auto partial_range_key_intents = UsePartialRangeKeyIntents(metadata_.get());
   auto prepare_result = VERIFY_RESULT(docdb::PrepareDocWriteOperation(
       operation->doc_ops(), write_batch->read_pairs(), metrics_->write_lock_latency,
