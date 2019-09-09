@@ -85,8 +85,6 @@
 #include "yb/docdb/primitive_value.h"
 #include "yb/docdb/redis_operation.h"
 
-#include "yb/rocksutil/write_batch_formatter.h"
-
 #include "yb/gutil/atomicops.h"
 #include "yb/gutil/map-util.h"
 #include "yb/gutil/stl_util.h"
@@ -120,8 +118,6 @@
 #include "yb/util/stopwatch.h"
 #include "yb/util/trace.h"
 #include "yb/util/url-coding.h"
-
-#include "yb/master/sys_catalog_constants.h"
 
 DEFINE_bool(tablet_do_dup_key_checks, true,
             "Whether to check primary keys for duplicate on insertion. "
@@ -160,15 +156,8 @@ DEFINE_test_flag(
     "After modifying the flushed frontier in RocksDB, verify that the restored value of it "
     "is as expected. Used for testing.");
 
-DEFINE_test_flag(
-    bool, log_rocksdb_write_batches, false,
-    "Log batches of key/value pairs written to RocksDB");
-
 DECLARE_int32(rocksdb_level0_slowdown_writes_trigger);
 DECLARE_int32(rocksdb_level0_stop_writes_trigger);
-
-DEFINE_bool(txn_ddl, false,
-            "Enable transactional DDL. This will become default at some point.")
 
 using namespace std::placeholders;
 
@@ -218,7 +207,6 @@ using docdb::DocRowwiseIterator;
 using docdb::DocWriteBatch;
 using docdb::SubDocKey;
 using docdb::PrimitiveValue;
-using docdb::StorageDbType;
 
 ////////////////////////////////////////////////////////////
 // Tablet
@@ -381,9 +369,7 @@ Tablet::Tablet(
     mem_tracker_->SetMetricEntity(metric_entity_);
   }
 
-  if ((transaction_participant_context &&
-       metadata->schema().table_properties().is_transactional()) ||
-      (FLAGS_txn_ddl && tablet_id() == master::kSysCatalogTabletId)) {
+  if (transaction_participant_context && metadata->schema().table_properties().is_transactional()) {
     transaction_participant_ = std::make_unique<TransactionParticipant>(
         transaction_participant_context, this, metric_entity_);
     // Create transaction manager for secondary index update.
@@ -850,26 +836,20 @@ Status Tablet::ApplyKeyValueRowOperations(const KeyValueWriteBatchPB& put_batch,
   if (put_batch.has_transaction()) {
     RequestScope request_scope(transaction_participant_.get());
     RETURN_NOT_OK(PrepareTransactionWriteBatch(put_batch, hybrid_time, &write_batch));
-    WriteToRocksDB(frontiers, &write_batch, StorageDbType::kIntents);
+    WriteBatch(frontiers, &write_batch, intents_db_.get());
   } else {
     PrepareNonTransactionWriteBatch(put_batch, hybrid_time, &write_batch);
-    WriteToRocksDB(frontiers, &write_batch, StorageDbType::kRegular);
+    WriteBatch(frontiers, &write_batch, regular_db_.get());
   }
 
   return Status::OK();
 }
 
-void Tablet::WriteToRocksDB(
-    const rocksdb::UserFrontiers* frontiers,
-    rocksdb::WriteBatch* write_batch,
-    docdb::StorageDbType storage_db_type) {
+void Tablet::WriteBatch(const rocksdb::UserFrontiers* frontiers,
+                        rocksdb::WriteBatch* write_batch,
+                        rocksdb::DB* dest_db) {
   if (write_batch->Count() == 0) {
     return;
-  }
-  rocksdb::DB* dest_db = nullptr;
-  switch (storage_db_type) {
-    case StorageDbType::kRegular: dest_db = regular_db_.get(); break;
-    case StorageDbType::kIntents: dest_db = intents_db_.get(); break;
   }
 
   write_batch->SetFrontiers(frontiers);
@@ -878,14 +858,6 @@ void Tablet::WriteToRocksDB(
   // all members of this write batch.
   rocksdb::WriteOptions write_options;
   InitRocksDBWriteOptions(&write_options);
-
-  if (FLAGS_log_rocksdb_write_batches) {
-    WriteBatchFormatter formatter;
-    CHECK_OK(write_batch->Iterate(&formatter));
-    LOG_WITH_PREFIX(INFO)
-        << "Writing a WriteBatch with " << write_batch->Count() << " records to "
-        << storage_db_type << " RocksDB: " << formatter.str();
-  }
 
   auto rocksdb_write_status = dest_db->Write(write_options, write_batch);
   if (!rocksdb_write_status.ok()) {
@@ -1453,7 +1425,7 @@ Status Tablet::ApplyIntents(const TransactionApplyData& data) {
   // We don't set transaction field of put_batch, otherwise we would write another bunch of intents.
   docdb::ConsensusFrontiers frontiers;
   InitFrontiers(data, &frontiers);
-  WriteToRocksDB(&frontiers, &regular_write_batch, StorageDbType::kRegular);
+  WriteBatch(&frontiers, &regular_write_batch, regular_db_.get());
   return Status::OK();
 }
 
@@ -1471,7 +1443,7 @@ CHECKED_STATUS Tablet::RemoveIntentsImpl(const RemoveIntentsData& data, const Id
 
   docdb::ConsensusFrontiers frontiers;
   InitFrontiers(data, &frontiers);
-  WriteToRocksDB(&frontiers, &intents_write_batch, StorageDbType::kIntents);
+  WriteBatch(&frontiers, &intents_write_batch, intents_db_.get());
   return Status::OK();
 }
 
@@ -1808,6 +1780,7 @@ Result<HybridTime> Tablet::OldestMutableMemtableWriteHybridTime() const {
   return result;
 }
 
+
 Status Tablet::DebugDump(vector<string> *lines) {
   switch (table_type_) {
     case TableType::PGSQL_TABLE_TYPE: FALLTHROUGH_INTENDED;
@@ -1839,9 +1812,7 @@ Status Tablet::StartDocWriteOperation(WriteOperation* operation) {
   auto write_batch = operation->request()->mutable_write_batch();
   auto isolation_level = VERIFY_RESULT(GetIsolationLevelFromPB(*write_batch));
 
-  const bool transactional_table = metadata_->schema().table_properties().is_transactional() ||
-      // TODO mbautin: use the proper way to detect transactional YSQL system catalog tables.
-      isolation_level != IsolationLevel::NON_TRANSACTIONAL;
+  const bool transactional_table = metadata_->schema().table_properties().is_transactional();
   const auto partial_range_key_intents = UsePartialRangeKeyIntents(metadata_.get());
   auto prepare_result = VERIFY_RESULT(docdb::PrepareDocWriteOperation(
       operation->doc_ops(), write_batch->read_pairs(), metrics_->write_lock_latency,
@@ -2143,10 +2114,7 @@ uint64_t Tablet::GetCurrentVersionNumSSTFiles() const {
 
 Result<TransactionOperationContextOpt> Tablet::CreateTransactionOperationContext(
     const TransactionMetadataPB& transaction_metadata) const {
-  if (metadata_->schema().table_properties().is_transactional() ||
-      // TODO: better criterion here! Master tablet has multiple tables, some of them transactional,
-      // and we need to use metadata for the correct table.
-      transaction_metadata.has_transaction_id()) {
+  if (metadata_->schema().table_properties().is_transactional()) {
     if (transaction_metadata.has_transaction_id()) {
       Result<TransactionId> txn_id = FullyDecodeTransactionId(
           transaction_metadata.transaction_id());
