@@ -2015,7 +2015,12 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
 
   // If this is a transactional table, we need to create the transaction status table (if it does
   // not exist already).
-  if (req.schema().table_properties().is_transactional() && !is_pg_catalog_table) {
+  //
+  // Avoid creating the transaction status table during the initial sys catalog snapshot creation,
+  // because that table won't survive being backed up and restored into a new cluster anyway.
+  // Also initdb runs without transactions enabled.
+  if (req.schema().table_properties().is_transactional() &&
+      !FLAGS_create_initial_sys_catalog_snapshot) {
     Status s = CreateTransactionsStatusTableIfNeeded(rpc);
     if (!s.ok()) {
       return s.CloneAndPrepend("Error while creating transaction status table");
@@ -2303,8 +2308,6 @@ Status CatalogManager::IsCreateTableDone(const IsCreateTableDoneRequestPB* req,
   // If this is a transactional table we are not done until the transaction status table is created.
   // However, if we are currently initialzing the system catalog snapshot, we don't create the
   // transactions table.
-  // TODO mbautin : what if we're running initdb against an existing cluster without creating a
-  // sys catalog snapshot? Should we create the transactions table then?
   if (!FLAGS_create_initial_sys_catalog_snapshot &&
       resp->done() && l->data().pb.schema().table_properties().is_transactional()) {
     RETURN_NOT_OK(IsTransactionStatusTableCreated(resp));

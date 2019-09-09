@@ -67,6 +67,7 @@
 #include "yb/util/net/sockaddr.h"
 #include "yb/util/status.h"
 #include "yb/util/threadpool.h"
+#include "yb/util/tsan_util.h"
 
 DEFINE_int32(master_rpc_timeout_ms, 1500,
              "Timeout for retrieving master registration over RPC.");
@@ -116,6 +117,11 @@ DEFINE_int32(master_remote_bootstrap_svc_queue_length, 50,
              "RPC queue length for master remote bootstrap service");
 TAG_FLAG(master_remote_bootstrap_svc_queue_length, advanced);
 
+constexpr int kMasterYbClientDefaultTimeoutMs = yb::RegularBuildVsSanitizers(5, 60) * 1000;
+
+DEFINE_int32(master_yb_client_default_timeout_ms, kMasterYbClientDefaultTimeoutMs,
+             "Default timeout for the YBClient embedded into the master");
+
 DECLARE_int64(inbound_rpc_memory_limit);
 
 namespace yb {
@@ -161,9 +167,9 @@ Status Master::Init() {
   RETURN_NOT_OK(path_handlers_->Register(web_server_.get()));
 
   async_client_init_.emplace(
-      "master_client", 0 /* num_reactors */,
-      // TODO: use the correct flag
-      60, // FLAGS_tserver_yb_client_default_timeout_ms / 1000,
+      "master_client",
+      0 /* num_reactors */,
+      FLAGS_master_yb_client_default_timeout_ms,
       "" /* tserver_uuid */,
       &options(),
       metric_entity(),
