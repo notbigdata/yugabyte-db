@@ -121,6 +121,8 @@
 #include "yb/util/trace.h"
 #include "yb/util/url-coding.h"
 
+#include "yb/master/sys_catalog_constants.h"
+
 DEFINE_bool(tablet_do_dup_key_checks, true,
             "Whether to check primary keys for duplicate on insertion. "
             "Use at your own risk!");
@@ -164,6 +166,9 @@ DEFINE_test_flag(
 
 DECLARE_int32(rocksdb_level0_slowdown_writes_trigger);
 DECLARE_int32(rocksdb_level0_stop_writes_trigger);
+
+DEFINE_bool(txn_ddl, false,
+            "Enable transactional DDL. This will become default at some point.")
 
 using namespace std::placeholders;
 
@@ -378,8 +383,7 @@ Tablet::Tablet(
 
   if ((transaction_participant_context &&
        metadata->schema().table_properties().is_transactional()) ||
-      // TODO: a better check.
-      tablet_id() == "00000000000000000000000000000000") {
+      (FLAGS_txn_ddl && tablet_id() == master::kSysCatalogTabletId)) {
     transaction_participant_ = std::make_unique<TransactionParticipant>(
         transaction_participant_context, this, metric_entity_);
     // Create transaction manager for secondary index update.

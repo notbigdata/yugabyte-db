@@ -2087,8 +2087,7 @@ Status CatalogManager::CheckValidPlacementInfo(const PlacementInfoPB& placement_
   // Verify that the number of replicas isn't larger than the number of live tablet
   // servers.
   if (FLAGS_catalog_manager_check_ts_count_for_create_table &&
-      num_replicas > num_live_tservers &&
-      /* TODO mbautin: revert this */ false) {
+      num_replicas > num_live_tservers) {
     msg = Substitute("Not enough live tablet servers to create table with replication factor $0. "
                      "$1 tablet servers are alive.", num_replicas, num_live_tservers);
     LOG(WARNING) << msg;
@@ -2180,9 +2179,6 @@ Status CatalogManager::CreateTransactionsStatusTableIfNeeded(rpc::RpcContext *rp
     req.set_name(kTransactionsTableName);
     req.mutable_namespace_()->set_name(kSystemNamespaceName);
     req.set_table_type(TableType::TRANSACTION_STATUS_TABLE_TYPE);
-
-    // TODO mbautin: revert the following.
-    FLAGS_transaction_table_num_tablets = 1;
 
     // Explicitly set the number tablets if the corresponding flag is set, otherwise CreateTable
     // will use the same defaults as for regular tables.
