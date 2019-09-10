@@ -29,6 +29,9 @@ DEFINE_int32(yb_num_shards_per_tserver, kAutoDetectNumShardsPerTServer,
 DEFINE_int32(ysql_num_shards_per_tserver, 8,
     "The default number of shards per YSQL table per tablet server when a table is created.");
 
+DEFINE_bool(txn_ddl, false,
+            "Enable transactional DDL. This will become default at some point.");
+
 namespace yb {
 
 void InitCommonFlags() {

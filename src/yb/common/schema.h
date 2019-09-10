@@ -48,6 +48,7 @@
 #include "yb/common/hybrid_time.h"
 #include "yb/common/transaction.h"
 #include "yb/common/common.pb.h"
+#include "yb/common/common_flags.h"
 #include "yb/gutil/stl_util.h"
 #include "yb/gutil/strings/strcat.h"
 #include "yb/gutil/strings/substitute.h"
@@ -395,7 +396,14 @@ class TableProperties {
   }
 
   bool is_transactional() const {
-    return is_transactional_;
+    bool result = is_transactional_ || (HasCopartitionTableId() && FLAGS_txn_ddl) ;
+    if (!result) {
+      LOG(INFO) 
+          << ", is_transactional_="
+          << is_transactional_ << ", HasCopartitionTableId=" << HasCopartitionTableId()
+          << ", FLAGS_txn_ddl=" << FLAGS_txn_ddl;
+    }
+    return result;
   }
 
   YBConsistencyLevel consistency_level() const {
