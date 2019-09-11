@@ -447,7 +447,6 @@ public class TestUtils {
     LOG.info("Finished sleeping for " + ms + " milliseconds: " + msg);
   }
 
-
   public static String getTestReportFilePrefix() {
     Class testClass;
     try {
@@ -459,15 +458,19 @@ public class TestUtils {
     if (testClassesDir.endsWith("/")) {
       testClassesDir = testClassesDir.substring(0, testClassesDir.length() - 1);
     }
-    if (!testClassesDir.endsWith("test-classes")) {
-      throw new RuntimeException(
-          "Found class " + testClass + " in directory " + testClassesDir + ", expected it to be " +
-              "in a 'test-classes' directory");
+
+    String surefireDirStr = System.getProperty("yb.surefire.reports.directory");
+    if (surefireDirStr == null) {
+      if (testClassesDir.endsWith("test-classes")) {
+        surefireDirStr =
+            new File(new File(testClassesDir).getParent(), "surefire-reports").getPath();
+      } else {
+        throw new RuntimeException(
+            "Found class " + testClass + " in directory " + testClassesDir +
+            ", expected it to be in a 'test-classes' directory");
+      }
     }
-    final String defaultSurefireReportsDir =
-        new File(new File(testClassesDir).getParent(), "surefire-reports").getPath();
-    File surefireDir = new File(System.getProperty("yb.surefire.reports.directory",
-                                                   defaultSurefireReportsDir));
+    File surefireDir = new File(surefireDirStr);
     if (!surefireDir.isDirectory()) {
       LOG.warn("Directory " + surefireDir + " does not exist, attempting to create");
       if (!surefireDir.mkdirs() && !surefireDir.isDirectory()) {
