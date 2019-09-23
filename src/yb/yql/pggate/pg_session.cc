@@ -461,12 +461,16 @@ Status PgSession::FlushBufferedWriteOperations(PgsqlOpBuffer* write_ops, bool tr
   Status final_status;
   if (!write_ops->empty()) {
     client::YBSessionPtr session =
-      VERIFY_RESULT(GetSession(transactional,
+      VERIFY_RESULT(GetSession(transactional && !YBCIsInitDbModeEnvVarSet(),
                                false /* read_only_op */))->shared_from_this();
 
     int num_writes = 0;
     for (auto it = write_ops->begin(); it != write_ops->end(); ++it) {
-      DCHECK_EQ((*it)->IsTransactional(), transactional);
+      DCHECK_EQ(ShouldExecuteTransactionally(it->get()), transactional)
+          << "Table name: " << it->get()->table()->name().ToString()
+          << ", table is transactional: "
+          << it->get()->table()->schema().table_properties().is_transactional()
+          << ", initdb mode: " << YBCIsInitDbModeEnvVarSet();
       RETURN_NOT_OK(session->Apply(*it));
       num_writes++;
 
@@ -517,9 +521,15 @@ Status PgSession::FlushBufferedWriteOperations() {
   Status s;
   s = FlushBufferedWriteOperations(&buffered_write_ops_, false /* transactional */);
   final_status = CombineStatuses(final_status, s);
-  s = FlushBufferedWriteOperations(&buffered_txn_write_ops_, true /* transactional */);
-  final_status = CombineStatuses(final_status, s);
+  if (!YBCIsInitDbModeEnvVarSet()) {
+    s = FlushBufferedWriteOperations(&buffered_txn_write_ops_, true /* transactional */);
+    final_status = CombineStatuses(final_status, s);
+  }
   return final_status;
+}
+
+bool PgSession::ShouldExecuteTransactionally(client::YBPgsqlOp* op) {
+  return op->IsTransactional() && !YBCIsInitDbModeEnvVarSet();
 }
 
 Result<OpBuffered> PgSession::PgApplyAsync(const std::shared_ptr<client::YBPgsqlOp>& op,
@@ -530,8 +540,9 @@ Result<OpBuffered> PgSession::PgApplyAsync(const std::shared_ptr<client::YBPgsql
   // We allow read ops while buffering writes because it can happen when building indexes for sys
   // catalog tables during initdb. Continuing read ops to scan the table can be issued while
   // writes to its index are being buffered.
+  bool use_txn = ShouldExecuteTransactionally(op.get());
   if (buffer_write_ops_ > 0 && op->type() == YBOperation::Type::PGSQL_WRITE) {
-    if (op->IsTransactional()) {
+    if (use_txn) {
       buffered_txn_write_ops_.push_back(op);
     } else {
       buffered_write_ops_.push_back(op);
@@ -539,7 +550,7 @@ Result<OpBuffered> PgSession::PgApplyAsync(const std::shared_ptr<client::YBPgsql
     return OpBuffered::kTrue;
   }
 
-  if (op->IsTransactional()) {
+  if (use_txn) {
     has_txn_ops_ = true;
   } else {
     has_non_txn_ops_ = true;
@@ -626,15 +637,17 @@ Status PgSession::CombineStatuses(Status first_status, Status second_status) {
 }
 
 Result<YBSession*> PgSession::GetSession(bool transactional, bool read_only_op) {
-  if (transactional) {
+  if (transactional && !YBCIsInitDbModeEnvVarSet()) {
     YBSession* txn_session = VERIFY_RESULT(pg_txn_manager_->GetTransactionalSession());
     pg_txn_manager_->BeginWriteTransactionIfNecessary(read_only_op);
     VLOG(2) << __PRETTY_FUNCTION__
-            << ": read_only_op=" << read_only_op << ", returning transactional session";
+            << ": read_only_op=" << read_only_op << ", returning transactional session: "
+            << txn_session;
     return txn_session;
   }
   VLOG(2) << __PRETTY_FUNCTION__
-          << ": read_only_op=" << read_only_op << ", returning non-transactional session";
+          << ": read_only_op=" << read_only_op << ", returning non-transactional session "
+          << session_.get();
   return session_.get();
 }
 

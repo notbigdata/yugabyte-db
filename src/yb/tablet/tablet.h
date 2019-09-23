@@ -262,9 +262,10 @@ class Tablet : public AbstractTablet, public TransactionIntentApplier {
       const rocksdb::UserFrontiers* frontiers,
       HybridTime hybrid_time);
 
-  void WriteBatch(const rocksdb::UserFrontiers* frontiers,
-                  rocksdb::WriteBatch* write_batch,
-                  rocksdb::DB* dest_db);
+  void WriteToRocksDB(
+      const rocksdb::UserFrontiers* frontiers,
+      rocksdb::WriteBatch* write_batch,
+      docdb::StorageDbType storage_db_type);
 
   //------------------------------------------------------------------------------------------------
   // Redis Request Processing.
@@ -542,7 +543,11 @@ class Tablet : public AbstractTablet, public TransactionIntentApplier {
   // Flushed intents db if necessary.
   void FlushIntentsDbIfNecessary(const yb::OpId& lastest_log_entry_op_id);
 
+  bool is_sys_catalog() const { return is_sys_catalog_; }
+
+  // ==============================================================================================
  protected:
+
   friend class Iterator;
   friend class TabletPeerTest;
   friend class ScopedReadOperation;
@@ -709,6 +714,9 @@ class Tablet : public AbstractTablet, public TransactionIntentApplier {
 
   HybridTimeLeaseProvider ht_lease_provider_;
 
+  // (end of protected section)
+  // ==============================================================================================
+
  private:
   HybridTime DoGetSafeTime(
       RequireLease require_lease, HybridTime min_allowed, CoarseTimePoint deadline) const override;
@@ -726,6 +734,8 @@ class Tablet : public AbstractTablet, public TransactionIntentApplier {
   client::LocalTabletFilter local_tablet_filter_;
 
   std::string log_prefix_suffix_;
+
+  bool is_sys_catalog_;
 
   DISALLOW_COPY_AND_ASSIGN(Tablet);
 };

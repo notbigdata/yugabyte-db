@@ -73,7 +73,7 @@ void PgTxnManager::StartNewSession() {
 
 Status PgTxnManager::BeginWriteTransactionIfNecessary(bool read_only_op) {
   VLOG(2) << "BeginWriteTransactionIfNecessary: txn_in_progress_="
-          << txn_in_progress_;
+          << txn_in_progress_ << ", txn_=" << txn_.get();
 
   auto isolation = isolation_level_ == kSerializable
       ? IsolationLevel::SERIALIZABLE_ISOLATION : IsolationLevel::SNAPSHOT_ISOLATION;

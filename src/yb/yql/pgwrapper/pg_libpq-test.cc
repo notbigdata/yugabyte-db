@@ -746,5 +746,40 @@ TEST_F(PgLibPqTest, YB_DISABLE_TEST_IN_TSAN(BulkCopy)) {
   }
 }
 
+TEST_F(PgLibPqTest, SystemTableTxnTest) {
+  // Resolving conflicts between transactions on a system table.
+  //
+  // postgres=# \d pg_ts_dict;
+  //
+  //              Table "pg_catalog.pg_ts_dict"
+  //      Column     | Type | Collation | Nullable | Default
+  // ----------------+------+-----------+----------+---------
+  //  dictname       | name |           | not null |
+  //  dictnamespace  | oid  |           | not null |
+  //  dictowner      | oid  |           | not null |
+  //  dicttemplate   | oid  |           | not null |
+  //  dictinitoption | text |           |          |
+  // Indexes:
+  //     "pg_ts_dict_oid_index" PRIMARY KEY, lsm (oid)
+  //     "pg_ts_dict_dictname_index" UNIQUE, lsm (dictname, dictnamespace)
+
+  auto conn1 = ASSERT_RESULT(Connect());
+  auto conn2 = ASSERT_RESULT(Connect());
+
+  // This will create a txn status table as a side effect.
+  // TODO: create a txn status table properly.
+  ASSERT_OK(Execute(conn1.get(), "CREATE TABLE t (k INT)"));
+
+  ASSERT_OK(Execute(conn1.get(), "START TRANSACTION ISOLATION LEVEL REPEATABLE READ"));
+  ASSERT_OK(Execute(conn2.get(), "START TRANSACTION ISOLATION LEVEL REPEATABLE READ"));
+  ASSERT_OK(
+      Execute(conn1.get(), "INSERT INTO pg_ts_dict VALUES ('contendedkey', 12345, 1, 2, 'b')"));
+  ASSERT_OK(
+      Execute(conn2.get(), "INSERT INTO pg_ts_dict VALUES ('contendedkey', 12345, 3, 4, 'c')"));
+  auto commit_status1 = Execute(conn1.get(), "COMMIT");
+  auto commit_status2 = Execute(conn2.get(), "COMMIT");
+  ASSERT_TRUE(!commit_status1.ok() || !commit_status2.ok());
+}
+
 } // namespace pgwrapper
 } // namespace yb
