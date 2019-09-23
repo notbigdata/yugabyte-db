@@ -849,6 +849,11 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
             tablet.peer, context_ptr, resp, operation_state.get(), server_->Clock(),
             req->include_trace()));
   }
+
+  if (req->pgsql_write_batch_size() && tablet.peer->tablet()->is_sys_catalog()) {
+    operation_state->set_force_txn_path();
+  }
+
   tablet.peer->WriteAsync(
       std::move(operation_state), tablet.leader_term, context_ptr->GetClientDeadline());
 }

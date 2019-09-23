@@ -26,15 +26,33 @@ namespace pgwrapper {
 
 namespace {
 
+const std::string ExecStatusTypeToStr(ExecStatusType exec_status_type) {
+  switch (exec_status_type) {
+    case PGRES_EMPTY_QUERY: return "PGRES_EMPTY_QUERY";
+	  case PGRES_COMMAND_OK: return "PGRES_COMMAND_OK";
+    case PGRES_TUPLES_OK: return "PGRES_TUPLES_OK";
+    case PGRES_COPY_OUT: return "PGRES_COPY_OUT";
+    case PGRES_COPY_IN: return "PGRES_COPY_IN";
+    case PGRES_BAD_RESPONSE: return "PGRES_BAD_RESPONSE";
+    case PGRES_NONFATAL_ERROR: return "PGRES_NONFATAL_ERROR";
+    case PGRES_FATAL_ERROR: return "PGRES_FATAL_ERROR";
+    case PGRES_COPY_BOTH: return "PGRES_COPY_BOTH";
+    case PGRES_SINGLE_TUPLE: return "PGRES_SINGLE_TUPLE";
+  }
+  return Format("Unknown ExecStatusType ($0)", exec_status_type);
+}
+
 YBPgErrorCode GetSqlState(PGresult* result) {
-  auto status = PQresultStatus(result);
-  if (status == ExecStatusType::PGRES_COMMAND_OK) {
+  auto exec_status_type = PQresultStatus(result);
+  if (exec_status_type == ExecStatusType::PGRES_COMMAND_OK) {
     return YBPgErrorCode::YB_PG_SUCCESSFUL_COMPLETION;
   }
 
   const char* sqlstate_str = PQresultErrorField(result, PG_DIAG_SQLSTATE);
-  CHECK_NOTNULL(sqlstate_str);
-  CHECK_EQ(5, strlen(sqlstate_str));
+  CHECK(sqlstate_str != nullptr) << "PQresultStatus: " << ExecStatusTypeToStr(exec_status_type);
+  CHECK_EQ(5, strlen(sqlstate_str))
+      << "sqlstate_str: " << sqlstate_str
+      << ", PQresultStatus: " << ExecStatusTypeToStr(exec_status_type);
 
   uint32_t sqlstate = 0;
 

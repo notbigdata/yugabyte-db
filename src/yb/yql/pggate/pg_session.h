@@ -223,6 +223,10 @@ class PgSession : public RefCountedThreadSafe<PgSession> {
   // Flush buffered write operations from the given buffer.
   Status FlushBufferedWriteOperations(PgsqlOpBuffer* write_ops, bool transactional);
 
+  // Whether we should execute the given operation transactionally. E.g. in initdb mode we run
+  // all operations non-transactionally.
+  bool ShouldExecuteTransactionally(client::YBPgsqlOp* op);
+
   // YBClient, an API that SQL engine uses to communicate with all servers.
   client::YBClient* const client_;
 

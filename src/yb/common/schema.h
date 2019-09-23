@@ -434,6 +434,8 @@ class TableProperties {
 
   void Reset();
 
+  std::string ToString() const;
+
  private:
   static const int kNoDefaultTtl = -1;
   int64_t default_time_to_live_ = kNoDefaultTtl;
@@ -718,7 +720,7 @@ class Schema {
     return cotable_id_;
   }
   void set_cotable_id(const Uuid& cotable_id) {
-    cotable_id_ = cotable_id;;
+    cotable_id_ = cotable_id;
   }
 
   // Extract a given column from a row where the type is

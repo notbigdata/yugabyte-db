@@ -49,6 +49,10 @@ using std::set;
 using std::unordered_map;
 using std::unordered_set;
 
+// ------------------------------------------------------------------------------------------------
+// ColumnSchema
+// ------------------------------------------------------------------------------------------------
+
 // TODO: include attributes_.ToString() -- need to fix unit tests
 // first
 string ColumnSchema::ToString() const {
@@ -72,6 +76,10 @@ size_t ColumnSchema::memory_footprint_excluding_this() const {
 size_t ColumnSchema::memory_footprint_including_this() const {
   return malloc_usable_size(this) + memory_footprint_excluding_this();
 }
+
+// ------------------------------------------------------------------------------------------------
+// TableProperties
+// ------------------------------------------------------------------------------------------------
 
 void TableProperties::ToTablePropertiesPB(TablePropertiesPB *pb) const {
   if (HasDefaultTimeToLive()) {
@@ -127,6 +135,23 @@ void TableProperties::Reset() {
   consistency_level_ = YBConsistencyLevel::STRONG;
   copartition_table_id_ = kNoCopartitionTableId;
 }
+
+string TableProperties::ToString() const {
+  std::string result("{ ");
+  if (HasDefaultTimeToLive()) {
+    result += Format("default_time_to_live: $0 ", default_time_to_live_);
+  }
+  result += Format("contain_counters: $0 is_transactional: $1 ",
+                   contain_counters_, is_transactional_);
+  if (HasCopartitionTableId()) {
+    result += Format("copartition_table_id: $0 ", copartition_table_id_);
+  }
+  return result + Format("consistency_level: $0 }", consistency_level_);
+}
+
+// ------------------------------------------------------------------------------------------------
+// Schema
+// ------------------------------------------------------------------------------------------------
 
 Schema::Schema(const Schema& other)
   : name_to_index_bytes_(0),

@@ -1516,6 +1516,7 @@ CHECKED_STATUS ValidateCreateTableSchema(const Schema& schema, CreateTableRespon
 Status CatalogManager::CreatePgsqlSysTable(const CreateTableRequestPB* req,
                                            CreateTableResponsePB* resp,
                                            rpc::RpcContext* rpc) {
+  LOG(INFO) << "DEBUG mbautin: CreatePgsqlSysTable: req=" << req->DebugString();
   // Lookup the namespace and verify if it exists.
   TRACE("Looking up namespace");
   scoped_refptr<NamespaceInfo> ns;
@@ -1726,7 +1727,7 @@ Status CatalogManager::CopyPgsqlSysTables(const NamespaceId& namespace_id,
         table_req.mutable_index_info()->set_indexed_table_id(indexed_table_id);
       }
 
-      // Set depricated field for index_info.
+      // Set deprecated field for index_info.
       table_req.set_indexed_table_id(indexed_table_id);
       table_req.set_is_local_index(PROTO_GET_IS_LOCAL(l->data().pb));
       table_req.set_is_unique_index(PROTO_GET_IS_UNIQUE(l->data().pb));
@@ -2019,7 +2020,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
 
   // If this is a transactional table, we need to create the transaction status table (if it does
   // not exist already).
-  if (req.schema().table_properties().is_transactional()) {
+  if (req.schema().table_properties().is_transactional() && !is_pg_catalog_table) {
     Status s = CreateTransactionsStatusTableIfNeeded(rpc);
     if (!s.ok()) {
       return s.CloneAndPrepend("Error while creating transaction status table");
@@ -2094,7 +2095,9 @@ Status CatalogManager::CheckValidPlacementInfo(const PlacementInfoPB& placement_
       num_replicas > num_live_tservers) {
     msg = Substitute("Not enough live tablet servers to create table with replication factor $0. "
                      "$1 tablet servers are alive.", num_replicas, num_live_tservers);
-    LOG(WARNING) << msg;
+    LOG(WARNING) << msg
+                 << ". Placement info: " << placement_info.ShortDebugString()
+                 << ", replication factor flag: " << FLAGS_replication_factor;
     s = STATUS(InvalidArgument, msg);
     return SetupError(resp->mutable_error(), MasterErrorPB::REPLICATION_FACTOR_TOO_HIGH, s);
   }
@@ -2184,7 +2187,6 @@ Status CatalogManager::CreateTransactionsStatusTableIfNeeded(rpc::RpcContext *rp
     req.mutable_namespace_()->set_name(kSystemNamespaceName);
     req.set_table_type(TableType::TRANSACTION_STATUS_TABLE_TYPE);
 
-    // Explicitly set the number tablets if the corresponding flag is set, otherwise CreateTable
     // will use the same defaults as for regular tables.
     if (FLAGS_transaction_table_num_tablets > 0) {
       req.set_num_tablets(FLAGS_transaction_table_num_tablets);
@@ -2305,7 +2307,10 @@ Status CatalogManager::IsCreateTableDone(const IsCreateTableDoneRequestPB* req,
   }
 
   // If this is a transactional table we are not done until the transaction status table is created.
-  if (resp->done() && l->data().pb.schema().table_properties().is_transactional()) {
+  // However, if we are currently initialzing the system catalog snapshot, we don't create the
+  // transactions table.
+  if (!FLAGS_create_initial_sys_catalog_snapshot &&
+      resp->done() && l->data().pb.schema().table_properties().is_transactional()) {
     RETURN_NOT_OK(IsTransactionStatusTableCreated(resp));
   }
 
@@ -2401,7 +2406,7 @@ scoped_refptr<TableInfo> CatalogManager::CreateTableInfo(const CreateTableReques
   if (req.has_index_info()) {
     metadata->mutable_index_info()->CopyFrom(req.index_info());
 
-    // Set the depricated fields also for compatibility reasons.
+    // Set the deprecated fields also for compatibility reasons.
     metadata->set_indexed_table_id(req.index_info().indexed_table_id());
     metadata->set_is_local_index(req.index_info().is_local());
     metadata->set_is_unique_index(req.index_info().is_unique());
@@ -2412,12 +2417,12 @@ scoped_refptr<TableInfo> CatalogManager::CreateTableInfo(const CreateTableReques
       metadata->mutable_index_info()->CopyFrom(*index_info);
     }
   } else if (req.has_indexed_table_id()) {
-    // Read data from the depricated field and update the new fields.
+    // Read data from the deprecated field and update the new fields.
     metadata->mutable_index_info()->set_indexed_table_id(req.indexed_table_id());
     metadata->mutable_index_info()->set_is_local(req.is_local_index());
     metadata->mutable_index_info()->set_is_unique(req.is_unique_index());
 
-    // Set the depricated fields also for compatibility reasons.
+    // Set the deprecated fields also for compatibility reasons.
     metadata->set_indexed_table_id(req.indexed_table_id());
     metadata->set_is_local_index(req.is_local_index());
     metadata->set_is_unique_index(req.is_unique_index());
