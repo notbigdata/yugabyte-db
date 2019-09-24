@@ -768,16 +768,14 @@ TEST_F(PgLibPqTest, SystemTableTxnTest) {
 
   // This will create a txn status table as a side effect.
   // TODO: create a txn status table properly.
-  ASSERT_OK(Execute(conn1.get(), "CREATE TABLE t (k INT)"));
+  ASSERT_OK(conn1.Execute("CREATE TABLE t (k INT)"));
 
-  ASSERT_OK(Execute(conn1.get(), "START TRANSACTION ISOLATION LEVEL REPEATABLE READ"));
-  ASSERT_OK(Execute(conn2.get(), "START TRANSACTION ISOLATION LEVEL REPEATABLE READ"));
-  ASSERT_OK(
-      Execute(conn1.get(), "INSERT INTO pg_ts_dict VALUES ('contendedkey', 12345, 1, 2, 'b')"));
-  ASSERT_OK(
-      Execute(conn2.get(), "INSERT INTO pg_ts_dict VALUES ('contendedkey', 12345, 3, 4, 'c')"));
-  auto commit_status1 = Execute(conn1.get(), "COMMIT");
-  auto commit_status2 = Execute(conn2.get(), "COMMIT");
+  ASSERT_OK(conn1.Execute("START TRANSACTION ISOLATION LEVEL REPEATABLE READ"));
+  ASSERT_OK(conn2.Execute("START TRANSACTION ISOLATION LEVEL REPEATABLE READ"));
+  ASSERT_OK(conn1.Execute("INSERT INTO pg_ts_dict VALUES ('contendedkey', 12345, 1, 2, 'b')"));
+  ASSERT_OK(conn2.Execute("INSERT INTO pg_ts_dict VALUES ('contendedkey', 12345, 3, 4, 'c')"));
+  auto commit_status1 = conn1.Execute("COMMIT");
+  auto commit_status2 = conn2.Execute("COMMIT");
   ASSERT_TRUE(!commit_status1.ok() || !commit_status2.ok());
 }
 
