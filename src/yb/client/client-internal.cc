@@ -1065,7 +1065,6 @@ void GetTableSchemaRpc::Finished(const Status& status) {
     if (new_status.ok()) {
       info_->schema.Reset(std::move(schema));
       info_->schema.set_version(resp_.version());
-      // LOG(INFO) << "DEBUG mbautin: got schema response: " << resp_.DebugString();
       new_status = PartitionSchema::FromPB(resp_.partition_schema(),
                                            GetSchema(&info_->schema),
                                            &info_->partition_schema);

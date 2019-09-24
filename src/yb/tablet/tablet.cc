@@ -1882,14 +1882,10 @@ Status Tablet::StartDocWriteOperation(WriteOperation* operation) {
   const bool transactional_table = metadata_->schema().table_properties().is_transactional() ||
                                    operation->force_txn_path();
 
-  if (!metadata_->schema().table_properties().is_transactional() &&
-      isolation_level != IsolationLevel::NON_TRANSACTIONAL) {
-    LOG(INFO) << "DEBUG mbautin THIS FAILED: "
-        << metadata_->schema().table_properties().ToString()
-        << ", operation: " << operation->ToString() << ", stack:\n" << GetStackTrace()
-        << ", pgsql batch size: " << operation->request()->pgsql_write_batch_size()
-        << ", tablet id: " << tablet_id()
-        << ", stack: " << GetStackTrace();
+  if (!transactional_table && isolation_level != IsolationLevel::NON_TRANSACTIONAL) {
+    YB_LOG_WITH_PREFIX_EVERY_N_SECS(DFATAL, 30)
+        << "An attempt to perform a transactional operation on a non-transactional table: "
+        << operation->ToString();
   }
   const auto partial_range_key_intents = UsePartialRangeKeyIntents(metadata_.get());
   auto prepare_result = VERIFY_RESULT(docdb::PrepareDocWriteOperation(
