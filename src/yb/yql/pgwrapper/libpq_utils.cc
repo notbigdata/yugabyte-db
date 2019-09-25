@@ -59,6 +59,7 @@ YBPgErrorCode GetSqlState(PGresult* result) {
   for (int i = 0; i < 5; ++i) {
     sqlstate |= (sqlstate_str[i] - '0') << (6 * i);
   }
+  LOG(INFO) << "DEBUG mbautin: sqlstate_str=" << sqlstate_str << ", sqlstate=" << sqlstate;
   return static_cast<YBPgErrorCode>(sqlstate);
 }
 
