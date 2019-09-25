@@ -770,13 +770,61 @@ TEST_F(PgLibPqTest, SystemTableTxnTest) {
   // TODO: create a txn status table properly.
   ASSERT_OK(conn1.Execute("CREATE TABLE t (k INT)"));
 
-  ASSERT_OK(conn1.Execute("START TRANSACTION ISOLATION LEVEL REPEATABLE READ"));
-  ASSERT_OK(conn2.Execute("START TRANSACTION ISOLATION LEVEL REPEATABLE READ"));
-  ASSERT_OK(conn1.Execute("INSERT INTO pg_ts_dict VALUES ('contendedkey', 12345, 1, 2, 'b')"));
-  ASSERT_OK(conn2.Execute("INSERT INTO pg_ts_dict VALUES ('contendedkey', 12345, 3, 4, 'c')"));
-  auto commit_status1 = conn1.Execute("COMMIT");
-  auto commit_status2 = conn2.Execute("COMMIT");
-  ASSERT_TRUE(!commit_status1.ok() || !commit_status2.ok());
+  size_t success_count = 0;
+  size_t commit1_fail_count = 0;
+  size_t commit2_fail_count = 0;
+  size_t insert2_fail_count = 0;
+
+  for (int i = 1; i <= 100; ++i) {
+    std::string dictname = Format("contendedkey$0", i);
+    const int dictnamespace = i;
+    ASSERT_OK(conn1.Execute("START TRANSACTION ISOLATION LEVEL REPEATABLE READ"));
+    ASSERT_OK(conn2.Execute("START TRANSACTION ISOLATION LEVEL REPEATABLE READ"));
+    ASSERT_OK(conn1.Execute(
+        Format("INSERT INTO pg_ts_dict VALUES ('$0', $1, 1, 2, 'b')", dictname, dictnamespace)));
+    Status insert_status2 = conn2.Execute(
+        Format("INSERT INTO pg_ts_dict VALUES ('$0', $1, 3, 4, 'c')", dictname, dictnamespace));
+    bool committed1 = false;
+    bool committed2 = false;
+    Status commit_status1, commit_status2;
+    if (!insert_status2.ok()) {
+      LOG(INFO) << "MUST BE A CONFLICT: Insert failed: " << insert_status2;
+      insert2_fail_count++;
+    }
+    commit_status1 = conn1.Execute("COMMIT");
+    commit_status2 = conn2.Execute("COMMIT");
+    ASSERT_TRUE(!committed1 || !committed2) << "Both transasctions can't commit";
+
+    if (!commit_status1.ok()) {
+      LOG(INFO) << "MUST BE A CONFLICT: Commit failed (first connection): " << commit_status1;
+    }
+    if (!commit_status2.ok()) {
+      LOG(INFO) << "MUST BE A CONFLICT: Commit failed (second connection): " << commit_status2;
+    }
+    committed1 = commit_status1.ok();
+    committed2 = commit_status2.ok();
+    ASSERT_TRUE(committed1 || committed2) << "We expect one of the two transactions to commit";
+    if (!committed1) {
+      commit1_fail_count++;
+    }
+    if (!committed2) {
+      commit2_fail_count++;
+    }
+
+    if (!committed1) {
+      ASSERT_OK(conn1.Execute("ROLLBACK"));
+    }
+    if (!committed2) {
+      ASSERT_OK(conn2.Execute("ROLLBACK"));
+    }
+    if (RandomUniformBool()) {
+      std::swap(conn1, conn2);
+    }
+  }
+  LOG(INFO) << "success_count: " << success_count;
+  LOG(INFO) << "commit1_fail_count: " << commit1_fail_count;
+  LOG(INFO) << "commit2_fail_count: " << commit2_fail_count;
+  LOG(INFO) << "insert2_fail_count: " << insert2_fail_count;
 }
 
 } // namespace pgwrapper
