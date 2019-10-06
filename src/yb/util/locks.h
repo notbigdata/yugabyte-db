@@ -38,6 +38,7 @@
 #include <glog/logging.h>
 #include "yb/gutil/atomicops.h"
 #include "yb/gutil/dynamic_annotations.h"
+#include "yb/gutil/thread_annotations.h"
 #include "yb/gutil/macros.h"
 #include "yb/gutil/port.h"
 #include "yb/gutil/spinlock.h"
@@ -53,7 +54,7 @@ using base::subtle::Release_Store;
 
 // Wrapper around the Google SpinLock class to adapt it to the method names
 // expected by Boost.
-class simple_spinlock {
+class LOCKABLE simple_spinlock {
  public:
   simple_spinlock() {}
 
@@ -99,7 +100,7 @@ struct padded_spinlock : public simple_spinlock {
 // annotations also assume that the same thread the takes the lock will unlock it.
 //
 // See rw_semaphore.h for documentation on the individual methods where unclear.
-class rw_spinlock {
+class LOCKABLE rw_spinlock  {
  public:
   rw_spinlock() {
     ANNOTATE_RWLOCK_CREATE(this);
