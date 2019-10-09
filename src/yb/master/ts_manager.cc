@@ -35,13 +35,11 @@
 #include <mutex>
 #include <vector>
 
-#include <boost/thread/shared_mutex.hpp>
 #include "yb/gutil/map-util.h"
 #include "yb/master/master.pb.h"
 #include "yb/master/ts_descriptor.h"
 #include "yb/util/flag_tags.h"
 #include "yb/common/wire_protocol.h"
-#include "yb/util/shared_lock.h"
 #include "yb/util/shared_lock.h"
 
 DEFINE_int32(tserver_unresponsive_timeout_ms, 60 * 1000,
