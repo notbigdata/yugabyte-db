@@ -42,6 +42,7 @@
 #include "yb/util/flag_tags.h"
 #include "yb/common/wire_protocol.h"
 #include "yb/util/shared_lock.h"
+#include "yb/util/shared_lock.h"
 
 DEFINE_int32(tserver_unresponsive_timeout_ms, 60 * 1000,
              "The period of time that a Master can go without receiving a heartbeat from a "
@@ -83,7 +84,7 @@ Status TSManager::LookupTS(const NodeInstancePB& instance,
 
 bool TSManager::LookupTSByUUID(const string& uuid,
                                TSDescriptorPtr* ts_desc) {
-  boost::shared_lock<rw_spinlock> l(lock_);
+  SharedLock<rw_spinlock> l(lock_);
   const TSDescriptorPtr* found_ptr = FindOrNull(servers_by_id_, uuid);
   if (!found_ptr || (*found_ptr)->IsRemoved()) {
     return false;
@@ -157,7 +158,7 @@ Status TSManager::RegisterTS(const NodeInstancePB& instance,
 void TSManager::GetDescriptors(std::function<bool(const TSDescriptorPtr&)> condition,
                                TSDescriptorVector* descs) const {
   descs->clear();
-  // boost::shared_lock<rw_spinlock> l(lock_);
+  // SharedLock<rw_spinlock> l(lock_);
   SharedLock<rw_spinlock> l(lock_);
 
   descs->reserve(servers_by_id_.size());

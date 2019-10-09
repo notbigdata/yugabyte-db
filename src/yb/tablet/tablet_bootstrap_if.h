@@ -51,6 +51,7 @@
 #include "yb/tablet/tablet_options.h"
 #include "yb/tablet/tablet_fwd.h"
 #include "yb/util/threadpool.h"
+#include "yb/util/shared_lock.h"
 
 
 namespace yb {
@@ -100,7 +101,7 @@ class TabletStatusListener {
   const Schema& schema() const;
 
   std::string last_status() const {
-    boost::shared_lock<boost::shared_mutex> l(lock_);
+    SharedLock<boost::shared_mutex> l(lock_);
     return last_status_;
   }
 

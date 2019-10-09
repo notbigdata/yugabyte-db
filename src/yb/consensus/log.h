@@ -56,6 +56,7 @@
 #include "yb/util/promise.h"
 #include "yb/util/status.h"
 #include "yb/util/threadpool.h"
+#include "yb/util/shared_lock.h"
 
 namespace yb {
 
@@ -351,7 +352,7 @@ class Log : public RefCountedThreadSafe<Log> {
   CHECKED_STATUS GetSegmentsToGCUnlocked(int64_t min_op_idx, SegmentSequence* segments_to_gc) const;
 
   const SegmentAllocationState allocation_state() {
-    boost::shared_lock<boost::shared_mutex> shared_lock(allocation_lock_);
+    SharedLock<boost::shared_mutex> shared_lock(allocation_lock_);
     return allocation_state_;
   }
 

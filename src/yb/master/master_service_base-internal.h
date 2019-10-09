@@ -18,6 +18,7 @@
 #include "yb/master/catalog_manager.h"
 #include "yb/rpc/rpc_context.h"
 #include "yb/util/strongly_typed_bool.h"
+#include "yb/util/shared_lock.h"
 
 namespace yb {
 namespace master {

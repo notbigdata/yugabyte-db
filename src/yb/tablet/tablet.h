@@ -84,6 +84,7 @@
 #include "yb/gutil/thread_annotations.h"
 
 #include "yb/tablet/operations/snapshot_operation.h"
+#include "yb/util/shared_lock.h"
 
 namespace rocksdb {
 class DB;

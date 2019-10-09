@@ -20,6 +20,7 @@
 
 #include "yb/docdb/doc_key.h"
 #include "yb/docdb/value_type.h"
+#include "yb/util/shared_lock.h"
 
 namespace yb {
 

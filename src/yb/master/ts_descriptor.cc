@@ -44,6 +44,7 @@
 #include "yb/tserver/tserver_admin.proxy.h"
 #include "yb/tserver/tserver_service.proxy.h"
 #include "yb/util/net/net_util.h"
+#include "yb/util/shared_lock.h"
 
 namespace yb {
 namespace master {
@@ -126,7 +127,7 @@ Status TSDescriptor::RegisterUnlocked(
 }
 
 std::string TSDescriptor::placement_uuid() const {
-  std::shared_lock<rw_spinlock> l(lock_);
+  SharedLock<rw_spinlock> l(lock_);
   return placement_uuid_;
 }
 
@@ -136,7 +137,7 @@ std::string TSDescriptor::generate_placement_id(const CloudInfoPB& ci) {
 }
 
 std::string TSDescriptor::placement_id() const {
-  std::shared_lock<rw_spinlock> l(lock_);
+  SharedLock<rw_spinlock> l(lock_);
   return placement_id_;
 }
 
@@ -147,17 +148,17 @@ void TSDescriptor::UpdateHeartbeatTime() {
 
 MonoDelta TSDescriptor::TimeSinceHeartbeat() const {
   MonoTime now(MonoTime::Now());
-  std::shared_lock<rw_spinlock> l(lock_);
+  SharedLock<rw_spinlock> l(lock_);
   return now.GetDeltaSince(last_heartbeat_);
 }
 
 int64_t TSDescriptor::latest_seqno() const {
-  std::shared_lock<rw_spinlock> l(lock_);
+  SharedLock<rw_spinlock> l(lock_);
   return ts_information_->tserver_instance().instance_seqno();
 }
 
 bool TSDescriptor::has_tablet_report() const {
-  std::shared_lock<rw_spinlock> l(lock_);
+  SharedLock<rw_spinlock> l(lock_);
   return has_tablet_report_;
 }
 
@@ -196,18 +197,18 @@ double TSDescriptor::RecentReplicaCreations() {
 }
 
 TSRegistrationPB TSDescriptor::GetRegistration() const {
-  std::shared_lock<rw_spinlock> l(lock_);
+  SharedLock<rw_spinlock> l(lock_);
   return ts_information_->registration();
 }
 
 const std::shared_ptr<TSInformationPB> TSDescriptor::GetTSInformationPB() const {
-  std::shared_lock<rw_spinlock> l(lock_);
+  SharedLock<rw_spinlock> l(lock_);
   CHECK(ts_information_) << "No stored information";
   return ts_information_;
 }
 
 bool TSDescriptor::MatchesCloudInfo(const CloudInfoPB& cloud_info) const {
-  std::shared_lock<rw_spinlock> l(lock_);
+  SharedLock<rw_spinlock> l(lock_);
   const auto& ci = ts_information_->registration().common().cloud_info();
 
   return cloud_info.placement_cloud() == ci.placement_cloud() &&
@@ -259,17 +260,17 @@ void TSDescriptor::UpdateMetrics(const TServerMetricsPB& metrics) {
 }
 
 bool TSDescriptor::HasTabletDeletePending() const {
-  std::shared_lock<rw_spinlock> l(lock_);
+  SharedLock<rw_spinlock> l(lock_);
   return !tablets_pending_delete_.empty();
 }
 
 bool TSDescriptor::IsTabletDeletePending(const std::string& tablet_id) const {
-  std::shared_lock<rw_spinlock> l(lock_);
+  SharedLock<rw_spinlock> l(lock_);
   return tablets_pending_delete_.count(tablet_id);
 }
 
 std::string TSDescriptor::PendingTabletDeleteToString() const {
-  std::shared_lock<rw_spinlock> l(lock_);
+  SharedLock<rw_spinlock> l(lock_);
   return yb::ToString(tablets_pending_delete_);
 }
 
@@ -284,12 +285,12 @@ void TSDescriptor::ClearPendingTabletDelete(const std::string& tablet_id) {
 }
 
 std::size_t TSDescriptor::NumTasks() const {
-  std::shared_lock<rw_spinlock> l(lock_);
+  SharedLock<rw_spinlock> l(lock_);
   return tablets_pending_delete_.size();
 }
 
 std::string TSDescriptor::ToString() const {
-  std::shared_lock<rw_spinlock> l(lock_);
+  SharedLock<rw_spinlock> l(lock_);
   return Format("{ permanent_uuid: $0 registration: $1 placement_id: $2 }",
                 permanent_uuid_, ts_information_->registration(), placement_id_);
 }

@@ -25,6 +25,7 @@
 #include "yb/util/random_util.h"
 #include "yb/util/test_macros.h"
 #include "yb/util/test_util.h"
+#include "yb/util/shared_lock.h"
 
 using namespace std::literals;
 

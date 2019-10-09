@@ -56,6 +56,7 @@
 #include "yb/util/url-coding.h"
 #include "yb/util/version_info.h"
 #include "yb/util/version_info.pb.h"
+#include "yb/util/shared_lock.h"
 
 namespace yb {
 

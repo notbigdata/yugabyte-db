@@ -71,6 +71,7 @@
 #include "yb/master/scoped_leader_shared_lock.h"
 #include "yb/master/permissions_manager.h"
 #include "yb/master/initial_sys_catalog_snapshot.h"
+#include "yb/util/shared_lock.h"
 
 namespace yb {
 

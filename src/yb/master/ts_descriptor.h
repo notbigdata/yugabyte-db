@@ -50,6 +50,7 @@
 #include "yb/util/monotime.h"
 #include "yb/util/status.h"
 #include "yb/util/shared_ptr_tuple.h"
+#include "yb/util/shared_lock.h"
 
 namespace yb {
 
@@ -157,7 +158,7 @@ class TSDescriptor {
 
   // Return the number of live replicas (i.e running or bootstrapping).
   int num_live_replicas() const {
-    std::shared_lock<rw_spinlock> l(lock_);
+    SharedLock<rw_spinlock> l(lock_);
     return num_live_replicas_;
   }
 
@@ -168,7 +169,7 @@ class TSDescriptor {
   }
 
   int leader_count() const {
-    std::shared_lock<rw_spinlock> l(lock_);
+    SharedLock<rw_spinlock> l(lock_);
     return leader_count_;
   }
 
@@ -178,7 +179,7 @@ class TSDescriptor {
   }
 
   uint64_t total_memory_usage() {
-    std::shared_lock<rw_spinlock> l(lock_);
+    SharedLock<rw_spinlock> l(lock_);
     return ts_metrics_.total_memory_usage;
   }
 
@@ -198,17 +199,17 @@ class TSDescriptor {
   }
 
   uint64_t total_sst_file_size() {
-    std::shared_lock<rw_spinlock> l(lock_);
+    SharedLock<rw_spinlock> l(lock_);
     return ts_metrics_.total_sst_file_size;
   }
 
   uint64_t uncompressed_sst_file_size() {
-    std::shared_lock<rw_spinlock> l(lock_);
+    SharedLock<rw_spinlock> l(lock_);
     return ts_metrics_.uncompressed_sst_file_size;
   }
 
   uint64_t num_sst_files() {
-    std::shared_lock<rw_spinlock> l(lock_);
+    SharedLock<rw_spinlock> l(lock_);
     return ts_metrics_.num_sst_files;
   }
 
@@ -218,7 +219,7 @@ class TSDescriptor {
   }
 
   double read_ops_per_sec() {
-    std::shared_lock<rw_spinlock> l(lock_);
+    SharedLock<rw_spinlock> l(lock_);
     return ts_metrics_.read_ops_per_sec;
   }
 
@@ -228,12 +229,12 @@ class TSDescriptor {
   }
 
   double write_ops_per_sec() {
-    std::shared_lock<rw_spinlock> l(lock_);
+    SharedLock<rw_spinlock> l(lock_);
     return ts_metrics_.write_ops_per_sec;
   }
 
   uint64_t uptime_seconds() {
-    std::shared_lock<rw_spinlock> l(lock_);
+    SharedLock<rw_spinlock> l(lock_);
     return ts_metrics_.uptime_seconds;
   }
 

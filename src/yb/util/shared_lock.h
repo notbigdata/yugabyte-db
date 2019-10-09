@@ -14,7 +14,7 @@
 #ifndef YB_UTIL_SHARED_LOCK_H
 #define YB_UTIL_SHARED_LOCK_H
 
-#include <boost/thread/shared_mutex.hpp>
+#include <shared_mutex>
 
 #include "yb/gutil/thread_annotations.h"
 
@@ -28,7 +28,7 @@ class SCOPED_LOCKABLE SharedLock {
   ~SharedLock() RELEASE() = default;
 
  private:
-  boost::shared_lock<Mutex> m_lock;
+  std::shared_lock<Mutex> m_lock;
 };
 
 } // namespace yb

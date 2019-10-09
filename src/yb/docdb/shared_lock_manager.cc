@@ -24,6 +24,7 @@
 #include "yb/util/scope_exit.h"
 #include "yb/util/tostring.h"
 #include "yb/util/trace.h"
+#include "yb/util/shared_lock.h"
 
 using std::string;
 
