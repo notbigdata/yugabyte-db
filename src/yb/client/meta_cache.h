@@ -391,8 +391,9 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
 
   // Lookup the given tablet by key, only consulting local information.
   // Returns true and sets *remote_tablet if successful.
-  RemoteTabletPtr LookupTabletByKeyFastPathUnlocked(const YBTable* table,
-                                                    const std::string& partition_key);
+  RemoteTabletPtr LookupTabletByKeyFastPathUnlocked(
+      const YBTable* table,
+      const std::string& partition_key) REQUIRES_SHARED(mutex_);
 
   RemoteTabletPtr LookupTabletByIdFastPath(const TabletId& tablet_id);
 
@@ -412,7 +413,7 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
       const YBTable* table,
       const std::string& partition_start,
       const LookupTabletCallback& callback,
-      Lock* lock);
+      Lock* lock) REQUIRES_SHARED(mutex_);
 
   YBClient* const client_;
 

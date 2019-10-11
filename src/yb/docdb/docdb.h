@@ -43,7 +43,6 @@
 
 #include "yb/util/status.h"
 #include "yb/util/strongly_typed_bool.h"
-#include "yb/util/shared_lock.h"
 
 // DocDB mapping on top of the key-value map in RocksDB:
 // <document_key> <hybrid_time> -> <doc_type>

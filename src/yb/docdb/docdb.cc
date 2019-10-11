@@ -51,7 +51,6 @@
 #include "yb/util/status.h"
 #include "yb/util/metrics.h"
 #include "yb/util/flag_tags.h"
-#include "yb/util/shared_lock.h"
 
 using std::endl;
 using std::list;

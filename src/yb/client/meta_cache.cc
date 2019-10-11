@@ -970,7 +970,7 @@ bool MetaCache::FastLookupTabletByKeyUnlocked(
     const YBTable* table,
     const std::string& partition_start,
     const LookupTabletCallback& callback,
-    Lock* lock) {
+    Lock* lock) NO_THREAD_SAFETY_ANALYSIS {
   // Fast path: lookup in the cache.
   auto result = LookupTabletByKeyFastPathUnlocked(table, partition_start);
   if (result && result->HasLeader()) {
@@ -986,7 +986,7 @@ bool MetaCache::FastLookupTabletByKeyUnlocked(
 void MetaCache::LookupTabletByKey(const YBTable* table,
                                   const string& partition_key,
                                   CoarseTimePoint deadline,
-                                  LookupTabletCallback callback) {
+                                  LookupTabletCallback callback) NO_THREAD_SAFETY_ANALYSIS {
   const auto& partition_start = table->FindPartitionStart(partition_key);
 
   rpc::Rpcs::Handle rpc;
