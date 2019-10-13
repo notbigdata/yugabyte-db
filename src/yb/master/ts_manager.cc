@@ -63,7 +63,7 @@ TSManager::~TSManager() {
 
 Status TSManager::LookupTS(const NodeInstancePB& instance,
                            TSDescriptorPtr* ts_desc) {
-  SharedLock<rw_spinlock> l(lock_);
+  SharedLock<decltype(lock_)> l(lock_);
 
   const TSDescriptorPtr* found_ptr =
     FindOrNull(servers_by_id_, instance.permanent_uuid());
@@ -82,7 +82,7 @@ Status TSManager::LookupTS(const NodeInstancePB& instance,
 
 bool TSManager::LookupTSByUUID(const string& uuid,
                                TSDescriptorPtr* ts_desc) {
-  SharedLock<rw_spinlock> l(lock_);
+  SharedLock<decltype(lock_)> l(lock_);
   const TSDescriptorPtr* found_ptr = FindOrNull(servers_by_id_, uuid);
   if (!found_ptr || (*found_ptr)->IsRemoved()) {
     return false;
@@ -107,7 +107,7 @@ Status TSManager::RegisterTS(const NodeInstancePB& instance,
                              const TSRegistrationPB& registration,
                              CloudInfoPB local_cloud_info,
                              rpc::ProxyCache* proxy_cache) {
-  std::lock_guard<rw_spinlock> l(lock_);
+  std::lock_guard<decltype(lock_)> l(lock_);
   const string& uuid = instance.permanent_uuid();
 
   auto it = servers_by_id_.find(uuid);
@@ -156,8 +156,8 @@ Status TSManager::RegisterTS(const NodeInstancePB& instance,
 void TSManager::GetDescriptors(std::function<bool(const TSDescriptorPtr&)> condition,
                                TSDescriptorVector* descs) const {
   descs->clear();
-  // SharedLock<rw_spinlock> l(lock_);
-  SharedLock<rw_spinlock> l(lock_);
+  // SharedLock<decltype(lock_)> l(lock_);
+  SharedLock<decltype(lock_)> l(lock_);
 
   descs->reserve(servers_by_id_.size());
   for (const TSDescriptorMap::value_type& entry : servers_by_id_) {
@@ -211,7 +211,7 @@ void TSManager::GetAllLiveDescriptorsInCluster(TSDescriptorVector* descs,
     string placement_uuid,
     const BlacklistSet blacklist) const {
   descs->clear();
-  SharedLock<rw_spinlock> l(lock_);
+  SharedLock<decltype(lock_)> l(lock_);
 
   descs->reserve(servers_by_id_.size());
   for (const TSDescriptorMap::value_type& entry : servers_by_id_) {
@@ -223,7 +223,7 @@ void TSManager::GetAllLiveDescriptorsInCluster(TSDescriptorVector* descs,
 }
 
 const TSDescriptorPtr TSManager::GetTSDescriptor(const HostPortPB& host_port) const {
-  SharedLock<rw_spinlock> l(lock_);
+  SharedLock<decltype(lock_)> l(lock_);
 
   for (const TSDescriptorMap::value_type& entry : servers_by_id_) {
     const TSDescriptorPtr& ts = entry.second;
@@ -236,7 +236,7 @@ const TSDescriptorPtr TSManager::GetTSDescriptor(const HostPortPB& host_port) co
 }
 
 int TSManager::GetCount() const {
-  SharedLock<rw_spinlock> l(lock_);
+  SharedLock<decltype(lock_)> l(lock_);
 
   return GetCountUnlocked();
 }
