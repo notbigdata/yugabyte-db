@@ -352,7 +352,7 @@ class Log : public RefCountedThreadSafe<Log> {
   CHECKED_STATUS GetSegmentsToGCUnlocked(int64_t min_op_idx, SegmentSequence* segments_to_gc) const;
 
   const SegmentAllocationState allocation_state() {
-    SharedLock<boost::shared_mutex> shared_lock(allocation_lock_);
+    SharedLock<decltype(allocation_mutex_)> shared_lock(allocation_mutex_);
     return allocation_state_;
   }
 
@@ -456,8 +456,8 @@ class Log : public RefCountedThreadSafe<Log> {
   Promise<Status> allocation_status_;
 
   // Read-write lock to protect 'allocation_state_'.
-  mutable boost::shared_mutex allocation_lock_;
-  SegmentAllocationState allocation_state_;
+  mutable boost::shared_mutex allocation_mutex_;
+  SegmentAllocationState allocation_state_ GUARDED_BY(allocation_mutex_);
 
   scoped_refptr<MetricEntity> metric_entity_;
   gscoped_ptr<LogMetrics> metrics_;

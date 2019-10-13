@@ -434,7 +434,7 @@ Status Log::Init() {
 }
 
 Status Log::AsyncAllocateSegment() {
-  std::lock_guard<boost::shared_mutex> lock_guard(allocation_lock_);
+  std::lock_guard<boost::shared_mutex> lock_guard(allocation_mutex_);
   CHECK_EQ(allocation_state_, kAllocationNotStarted);
   allocation_status_.Reset();
   allocation_state_ = kAllocationInProgress;
@@ -1050,7 +1050,7 @@ Status Log::PreAllocateNewSegment() {
   }
 
   {
-    std::lock_guard<boost::shared_mutex> lock_guard(allocation_lock_);
+    std::lock_guard<boost::shared_mutex> lock_guard(allocation_mutex_);
     allocation_state_ = kAllocationFinished;
   }
   return Status::OK();
