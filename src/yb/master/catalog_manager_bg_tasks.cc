@@ -40,7 +40,6 @@
 #include "yb/master/ts_descriptor.h"
 #include "yb/master/cluster_balance.h"
 #include "yb/util/flag_tags.h"
-#include "yb/util/shared_lock.h"
 
 using std::shared_ptr;
 

@@ -13,7 +13,6 @@
 #include "yb/master/master_tablet_service.h"
 
 #include "yb/master/catalog_manager-internal.h"
-#include "yb/util/shared_lock.h"
 
 namespace yb {
 namespace master {

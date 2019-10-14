@@ -156,7 +156,6 @@ Status TSManager::RegisterTS(const NodeInstancePB& instance,
 void TSManager::GetDescriptors(std::function<bool(const TSDescriptorPtr&)> condition,
                                TSDescriptorVector* descs) const {
   descs->clear();
-  // SharedLock<decltype(lock_)> l(lock_);
   SharedLock<decltype(lock_)> l(lock_);
 
   descs->reserve(servers_by_id_.size());

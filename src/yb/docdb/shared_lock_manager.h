@@ -24,7 +24,6 @@
 #include "yb/docdb/lock_batch.h"
 #include "yb/gutil/spinlock.h"
 #include "yb/util/cross_thread_mutex.h"
-#include "yb/util/shared_lock.h"
 
 namespace yb {
 namespace docdb {

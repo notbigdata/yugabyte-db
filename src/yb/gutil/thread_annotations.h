@@ -188,6 +188,7 @@
 #define REQUIRES_SHARED(...)
 #define ACQUIRE_SHARED(...)
 #define RELEASE(...)
+#define EXCLUDES(...)
 
 // Clang Attributes
 // The names of attributes in the clang analysis are slightly different

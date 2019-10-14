@@ -51,8 +51,6 @@
 #include "yb/tablet/tablet_options.h"
 #include "yb/tablet/tablet_fwd.h"
 #include "yb/util/threadpool.h"
-#include "yb/util/shared_lock.h"
-
 
 namespace yb {
 
