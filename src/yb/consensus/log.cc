@@ -434,7 +434,7 @@ Status Log::Init() {
 }
 
 Status Log::AsyncAllocateSegment() {
-  std::lock_guard<boost::shared_mutex> lock_guard(allocation_mutex_);
+  std::lock_guard<decltype(allocation_mutex_)> lock_guard(allocation_mutex_);
   CHECK_EQ(allocation_state_, kAllocationNotStarted);
   allocation_status_.Reset();
   allocation_state_ = kAllocationInProgress;
@@ -1057,7 +1057,10 @@ Status Log::PreAllocateNewSegment() {
 }
 
 Status Log::SwitchToAllocatedSegment() {
-  CHECK_EQ(allocation_state(), kAllocationFinished);
+  {
+    SharedLock<decltype(allocation_mutex_)> lock_guard(allocation_mutex_);
+    CHECK_EQ(allocation_state(), kAllocationFinished);
+  }
 
   // Increment "next" log segment seqno.
   active_segment_sequence_number_++;
@@ -1086,7 +1089,7 @@ Status Log::SwitchToAllocatedSegment() {
 
   // Set the new segment's schema.
   {
-    SharedLock<rw_spinlock> l(schema_lock_);
+    SharedLock<decltype(schema_lock_)> l(schema_lock_);
     SchemaToPB(schema_, header.mutable_schema());
     header.set_schema_version(schema_version_);
   }
@@ -1096,7 +1099,7 @@ Status Log::SwitchToAllocatedSegment() {
   // the segments for other peers.
   {
     if (active_segment_.get() != nullptr) {
-      std::lock_guard<percpu_rwlock> l(state_lock_);
+      std::lock_guard<decltype(state_lock_)> l(state_lock_);
       CHECK_OK(ReplaceSegmentInReaderUnlocked());
     }
   }
@@ -1115,7 +1118,10 @@ Status Log::SwitchToAllocatedSegment() {
   active_segment_.reset(new_segment.release());
   cur_max_segment_size_ = NextSegmentDesiredSize();
 
-  allocation_state_ = kAllocationNotStarted;
+  {
+    std::lock_guard<decltype(allocation_mutex_)> lock_guard(allocation_mutex_);
+    allocation_state_ = kAllocationNotStarted;
+  }
 
   return Status::OK();
 }

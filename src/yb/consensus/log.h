@@ -147,7 +147,7 @@ class Log : public RefCountedThreadSafe<Log> {
 
   // Kick off an asynchronous task that pre-allocates a new log-segment, setting
   // 'allocation_status_'. To wait for the result of the task, use allocation_status_.Get().
-  CHECKED_STATUS AsyncAllocateSegment();
+  CHECKED_STATUS AsyncAllocateSegment() EXCLUDES(allocation_mutex_);
 
   // The closure submitted to allocation_pool_ to allocate a new segment.
   void SegmentAllocationTask();
@@ -317,7 +317,7 @@ class Log : public RefCountedThreadSafe<Log> {
 
   // Creates a new WAL segment on disk, writes the next_segment_header_ to disk as the header, and
   // sets active_segment_ to point to this new segment.
-  CHECKED_STATUS SwitchToAllocatedSegment();
+  CHECKED_STATUS SwitchToAllocatedSegment() EXCLUDES(allocation_mutex_);
 
   // Preallocates the space for a new segment.
   CHECKED_STATUS PreAllocateNewSegment();
