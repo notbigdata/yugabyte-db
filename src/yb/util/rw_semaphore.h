@@ -84,6 +84,14 @@ class rw_semaphore {
     }
   }
 
+  bool try_lock_shared() {
+    Atomic32 cur_state = base::subtle::NoBarrier_Load(&state_);
+    Atomic32 expected = cur_state & kNumReadersMask;   // I expect no write lock
+    Atomic32 try_new_state = expected + 1;          // Add me as reader
+    Atomic32 old_state = base::subtle::Acquire_CompareAndSwap(&state_, expected, try_new_state);
+    return old_state == expected;
+  }
+
   void unlock_shared() {
     int loop_count = 0;
     Atomic32 cur_state = base::subtle::NoBarrier_Load(&state_);

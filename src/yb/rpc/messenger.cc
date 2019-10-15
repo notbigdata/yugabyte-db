@@ -339,7 +339,7 @@ void Messenger::RestoreConnectivity(const IpAddress& address, bool incoming, boo
 
 bool Messenger::TEST_ShouldArtificiallyRejectIncomingCallsFrom(const IpAddress &remote) {
   if (has_broken_connectivity_.load(std::memory_order_acquire)) {
-    shared_lock<rw_spinlock> guard(lock_.get_lock());
+    SharedLock<decltype(lock_)> guard(lock_);
     return broken_connectivity_from_.count(remote) != 0;
   }
   return false;
@@ -347,7 +347,7 @@ bool Messenger::TEST_ShouldArtificiallyRejectIncomingCallsFrom(const IpAddress &
 
 bool Messenger::TEST_ShouldArtificiallyRejectOutgoingCallsTo(const IpAddress &remote) {
   if (has_broken_connectivity_.load(std::memory_order_acquire)) {
-    shared_lock<rw_spinlock> guard(lock_.get_lock());
+    SharedLock<decltype(lock_)> guard(lock_);
     return broken_connectivity_to_.count(remote) != 0;
   }
   return false;
@@ -609,7 +609,7 @@ Status Messenger::Init() {
 
 Status Messenger::DumpRunningRpcs(const DumpRunningRpcsRequestPB& req,
                                   DumpRunningRpcsResponsePB* resp) {
-  shared_lock<rw_spinlock> guard(lock_.get_lock());
+  SharedLock<decltype(lock_)> guard(lock_);
   for (const auto& reactor : reactors_) {
     RETURN_NOT_OK(reactor->DumpRunningRpcs(req, resp));
   }
@@ -618,7 +618,7 @@ Status Messenger::DumpRunningRpcs(const DumpRunningRpcsRequestPB& req,
 
 Status Messenger::QueueEventOnAllReactors(
     ServerEventListPtr server_event, const SourceLocation& source_location) {
-  shared_lock<rw_spinlock> guard(lock_.get_lock());
+  SharedLock<decltype(lock_)> guard(lock_);
   for (const auto& reactor : reactors_) {
     reactor->QueueEventOnAllConnections(server_event, source_location);
   }

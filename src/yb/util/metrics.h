@@ -776,17 +776,17 @@ class MetricRegistry {
   }
 
   void tablets_shutdown_insert(std::string id) {
-    std::lock_guard<boost::shared_mutex> l(tablets_shutdown_lock_);
+    std::lock_guard<decltype(tablets_shutdown_mutex_)> l(tablets_shutdown_mutex_);
     tablets_shutdown_.insert(id);
   }
 
   void tablets_shutdown_erase(std::string id) {
-    std::lock_guard<boost::shared_mutex> l(tablets_shutdown_lock_);
-    (void)tablets_shutdown_.erase(id);
+    std::lock_guard<decltype(tablets_shutdown_mutex_)> l(tablets_shutdown_mutex_);
+    tablets_shutdown_.erase(id);
   }
 
   bool tablets_shutdown_find(std::string id) const {
-    SharedLock<boost::shared_mutex> l(tablets_shutdown_lock_);
+    SharedLock<decltype(tablets_shutdown_mutex_)> l(tablets_shutdown_mutex_);
     return tablets_shutdown_.find(id) != tablets_shutdown_.end();
   }
 
@@ -794,10 +794,10 @@ class MetricRegistry {
   typedef std::unordered_map<std::string, scoped_refptr<MetricEntity> > EntityMap;
   EntityMap entities_;
 
-  mutable boost::shared_mutex tablets_shutdown_lock_;
+  mutable boost::shared_mutex tablets_shutdown_mutex_;
 
-  // Set of tablets that have been shutdown. Protected by tablets_shutdown_lock_.
-  std::set<std::string> tablets_shutdown_;
+  // Set of tablets that have been shutdown. Protected by tablets_shutdown_mutex_.
+  std::set<std::string> tablets_shutdown_ GUARDED_BY(tablets_shutdown_mutex_);
 
   // Returns whether a tablet has been shutdown.
   bool TabletHasBeenShutdown(const scoped_refptr<MetricEntity> entity) const;

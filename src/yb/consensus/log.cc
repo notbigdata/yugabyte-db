@@ -476,7 +476,7 @@ Status Log::Reserve(LogEntryTypePB type,
   TRACE_EVENT0("log", "Log::Reserve");
   DCHECK(reserved_entry != nullptr);
   {
-    SharedLock<rw_spinlock> read_lock(state_lock_.get_lock());
+    SharedLock<decltype(state_lock_)> read_lock(state_lock_);
     CHECK_EQ(kLogWriting, log_state_);
   }
 
@@ -502,7 +502,7 @@ Status Log::Reserve(LogEntryTypePB type,
 
 Status Log::AsyncAppend(LogEntryBatch* entry_batch, const StatusCallback& callback) {
   {
-    SharedLock<rw_spinlock> read_lock(state_lock_.get_lock());
+    SharedLock<decltype(state_lock_)> read_lock(state_lock_);
     CHECK_EQ(kLogWriting, log_state_);
   }
 
@@ -898,7 +898,7 @@ Status Log::GetGCableDataSize(int64_t min_op_idx, int64_t* total_size) const {
   SegmentSequence segments_to_delete;
   *total_size = 0;
   {
-    SharedLock<rw_spinlock> read_lock(state_lock_.get_lock());
+    SharedLock<decltype(state_lock)> read_lock(state_lock_);
     if (log_state_ != kLogWriting) {
       return STATUS_FORMAT(IllegalState, "Invalid log state $0, expected $1",
           log_state_, kLogWriting);
@@ -918,7 +918,7 @@ Status Log::GetGCableDataSize(int64_t min_op_idx, int64_t* total_size) const {
 void Log::GetMaxIndexesToSegmentSizeMap(int64_t min_op_idx,
                                         std::map<int64_t, int64_t>* max_idx_to_segment_size)
                                         const {
-  SharedLock<rw_spinlock> read_lock(state_lock_.get_lock());
+  SharedLock<decltype(state_lock_)> read_lock(state_lock_);
   CHECK_EQ(kLogWriting, log_state_);
   // We want to retain segments so we're only asking the extra ones.
   int segments_count = std::max(reader_->num_segments() - FLAGS_log_min_segments_to_retain, 0);
@@ -937,7 +937,7 @@ LogReader* Log::GetLogReader() const {
 }
 
 Status Log::GetSegmentsSnapshot(SegmentSequence* segments) const {
-  SharedLock<rw_spinlock> read_lock(state_lock_.get_lock());
+  SharedLock<decltype(state_lock_)> read_lock(state_lock_);
   if (!reader_) {
     return STATUS(IllegalState, "Log already closed");
   }
@@ -948,7 +948,7 @@ Status Log::GetSegmentsSnapshot(SegmentSequence* segments) const {
 uint64_t Log::OnDiskSize() {
   SegmentSequence segments;
   {
-    shared_lock<rw_spinlock> l(state_lock_.get_lock());
+    SharedLock<decltype(state_lock_)> l(state_lock_);
     // If the log is closed, the tablet is either being deleted or tombstoned,
     // so we don't count the size of its log anymore as it should be deleted.
     if (log_state_ == kLogClosed || !reader_->GetSegmentsSnapshot(&segments).ok()) {
@@ -1006,7 +1006,7 @@ const int Log::num_segments() const {
 }
 
 scoped_refptr<ReadableLogSegment> Log::GetSegmentBySequenceNumber(int64_t seq) const {
-  SharedLock<rw_spinlock> read_lock(state_lock_.get_lock());
+  SharedLock<decltype(state_lock_)> read_lock(state_lock_);
   if (!reader_) {
     return nullptr;
   }
@@ -1057,10 +1057,7 @@ Status Log::PreAllocateNewSegment() {
 }
 
 Status Log::SwitchToAllocatedSegment() {
-  {
-    SharedLock<decltype(allocation_mutex_)> lock_guard(allocation_mutex_);
-    CHECK_EQ(allocation_state(), kAllocationFinished);
-  }
+  CHECK_EQ(allocation_state(), kAllocationFinished);
 
   // Increment "next" log segment seqno.
   active_segment_sequence_number_++;
@@ -1159,7 +1156,7 @@ Status Log::CreatePlaceholderSegment(const WritableFileOptions& opts,
 }
 
 uint64_t Log::active_segment_sequence_number() const {
-  SharedLock<rw_spinlock> read_lock(state_lock_.get_lock());
+  SharedLock<decltype(state_lock_)> read_lock(state_lock_);
   return active_segment_sequence_number_;
 }
 
