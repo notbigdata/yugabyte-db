@@ -32,13 +32,10 @@
 #ifndef YB_MASTER_TS_MANAGER_H
 #define YB_MASTER_TS_MANAGER_H
 
-#include <limits>
 #include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
-
-#include <boost/function.hpp>
 
 #include "yb/gutil/thread_annotations.h"
 #include "yb/gutil/macros.h"
