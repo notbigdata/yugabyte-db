@@ -101,11 +101,12 @@ struct padded_spinlock : public simple_spinlock {
 // annotations also assume that the same thread the takes the lock will unlock it.
 //
 // See rw_semaphore.h for documentation on the individual methods where unclear.
-class LOCKABLE rw_spinlock  {
+class CAPABILITY("mutex") rw_spinlock  {
  public:
   rw_spinlock() {
     ANNOTATE_RWLOCK_CREATE(this);
   }
+
   ~rw_spinlock() {
     ANNOTATE_RWLOCK_DESTROY(this);
   }
@@ -113,6 +114,10 @@ class LOCKABLE rw_spinlock  {
   void lock_shared() {
     sem_.lock_shared();
     ANNOTATE_RWLOCK_ACQUIRED(this, 0);
+  }
+
+  bool try_lock_shared() {
+    return sem_.try_lock_shared();
   }
 
   void unlock_shared() {
@@ -175,7 +180,7 @@ class LOCKABLE rw_spinlock  {
 //     boost::lock_guard<percpu_rwlock> lock(mylock);
 //     ...
 //   }
-class percpu_rwlock {
+class CAPABILITY("mutex") percpu_rwlock {
  public:
   percpu_rwlock() {
     errno = 0;
@@ -200,7 +205,7 @@ class percpu_rwlock {
     return locks_[cpu].lock;
   }
 
-  bool try_lock() {
+  bool try_lock() TRY_ACQUIRE(true) {
     for (int i = 0; i < n_cpus_; i++) {
       if (!locks_[i].lock.try_lock()) {
         while (i--) {
@@ -221,13 +226,13 @@ class percpu_rwlock {
     return false;
   }
 
-  void lock() {
+  void lock() ACQUIRE() {
     for (int i = 0; i < n_cpus_; i++) {
       locks_[i].lock.lock();
     }
   }
 
-  void unlock() {
+  void unlock() RELEASE() {
     for (int i = 0; i < n_cpus_; i++) {
       locks_[i].lock.unlock();
     }
@@ -250,48 +255,6 @@ class percpu_rwlock {
 
   int n_cpus_;
   padded_lock *locks_;
-};
-
-// Simple implementation of the SharedLock API, which is not available in
-// the standard library until C++14. Defers error checking to the underlying
-// mutex.
-
-template <typename Mutex>
-class shared_lock {
- public:
-  shared_lock()
-      : m_(nullptr) {
-  }
-
-  explicit shared_lock(Mutex& m) // NOLINT
-      : m_(&m) {
-    m_->lock_shared();
-  }
-
-  shared_lock(Mutex& m, std::try_to_lock_t t) // NOLINT
-      : m_(nullptr) {
-    if (m.try_lock_shared()) {
-      m_ = &m;
-    }
-  }
-
-  bool owns_lock() const {
-    return m_;
-  }
-
-  void swap(shared_lock& other) {
-    std::swap(m_, other.m_);
-  }
-
-  ~shared_lock() {
-    if (m_ != nullptr) {
-      m_->unlock_shared();
-    }
-  }
-
- private:
-  Mutex* m_;
-  DISALLOW_COPY_AND_ASSIGN(shared_lock<Mutex>);
 };
 
 template <class Container>
@@ -322,6 +285,31 @@ std::unique_lock<Mutex> LockMutex(Mutex* mutex, std::chrono::time_point<Clock, D
 
   return std::unique_lock<Mutex>(*mutex, time);
 }
+
+// A specialization of our SharedLock class for percpu_rwlock that only locks the mutex
+// corresponding to the current CPU.
+template<>
+class SCOPED_LOCKABLE SharedLock<percpu_rwlock> {
+ public:
+  // No default constructor to avoid not locking anything by mistake.
+
+  explicit SharedLock(percpu_rwlock &mutex) ACQUIRE_SHARED(mutex) : m_lock(mutex.get_lock()) {}
+  ~SharedLock() RELEASE() = default;
+
+  SharedLock(percpu_rwlock& m, std::try_to_lock_t t)
+      : m_lock(m.get_lock(), t) {}
+
+  void swap(SharedLock<percpu_rwlock>& other) {
+    std::swap(m_lock, other.m_lock);
+  }
+
+  bool owns_lock() const {
+    return m_lock.owns_lock();
+  }
+
+ private:
+  std::shared_lock<rw_spinlock> m_lock;
+};
 
 template <class Lock>
 class ReverseLock {

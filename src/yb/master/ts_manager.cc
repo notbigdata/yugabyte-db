@@ -142,7 +142,6 @@ Status TSManager::RegisterTS(const NodeInstancePB& instance,
     InsertOrDie(&servers_by_id_, uuid, std::move(new_desc));
     LOG(INFO) << "Registered new tablet server { " << instance.ShortDebugString()
               << " } with Master, full list: " << yb::ToString(servers_by_id_);
-
   } else {
     RETURN_NOT_OK(it->second->Register(
         instance, registration, std::move(local_cloud_info), proxy_cache));

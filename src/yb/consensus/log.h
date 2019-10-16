@@ -57,6 +57,7 @@
 #include "yb/util/status.h"
 #include "yb/util/threadpool.h"
 #include "yb/util/shared_lock.h"
+#include "yb/gutil/thread_annotations.h"
 
 namespace yb {
 
@@ -352,7 +353,7 @@ class Log : public RefCountedThreadSafe<Log> {
   CHECKED_STATUS GetSegmentsToGCUnlocked(int64_t min_op_idx, SegmentSequence* segments_to_gc) const;
 
   const SegmentAllocationState allocation_state() EXCLUDES(allocation_mutex_) {
-    SharedLock<decltype(allocation_mutex_)> shared_lock(allocation_mutex_);
+    SharedLock<decltype(allocation_mutex_)> lock(allocation_mutex_);
     return allocation_state_;
   }
 
@@ -372,10 +373,10 @@ class Log : public RefCountedThreadSafe<Log> {
   mutable rw_spinlock schema_lock_;
 
   // The current schema of the tablet this log is dedicated to.
-  Schema schema_;
+  Schema schema_ GUARDED_BY(schema_lock_);
 
   // The schema version
-  uint32_t schema_version_;
+  uint32_t schema_version_ GUARDED_BY(schema_lock_);
 
   // The currently active segment being written.
   gscoped_ptr<WritableLogSegment> active_segment_;
@@ -392,7 +393,7 @@ class Log : public RefCountedThreadSafe<Log> {
   // Lock to protect mutations to log_state_ and other shared state variables.
   mutable percpu_rwlock state_lock_;
 
-  LogState log_state_;
+  LogState log_state_ GUARDED_BY(state_lock_);
 
   // A reader for the previous segments that were not yet GC'd.
   std::unique_ptr<LogReader> reader_;

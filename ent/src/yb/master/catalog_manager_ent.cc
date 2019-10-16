@@ -350,7 +350,7 @@ Status CatalogManager::ListSnapshots(const ListSnapshotsRequestPB* req,
                                      ListSnapshotsResponsePB* resp) {
   RETURN_NOT_OK(CheckOnline());
 
-  std::shared_lock<LockType> l(lock_);
+  SharedLock<decltype(lock_)> l(lock_);
   TRACE("Acquired catalog manager lock");
 
   if (!current_snapshot_id_.empty()) {
@@ -1374,7 +1374,7 @@ Status CatalogManager::DeleteCDCStreamsForTables(const vector<TableId>& table_id
 std::vector<scoped_refptr<CDCStreamInfo>> CatalogManager::FindCDCStreamsForTable(
     const TableId& table_id) {
   std::vector<scoped_refptr<CDCStreamInfo>> streams;
-  std::shared_lock<LockType> l(lock_);
+  SharedLock<decltype(lock_)> l(lock_);
 
   for (const auto& entry : cdc_stream_map_) {
     auto ltm = entry.second->LockForRead();
@@ -1389,7 +1389,7 @@ std::vector<scoped_refptr<CDCStreamInfo>> CatalogManager::FindCDCStreamsForTable
 void CatalogManager::GetAllCDCStreams(std::vector<scoped_refptr<CDCStreamInfo>>* streams) {
   streams->clear();
   streams->reserve(cdc_stream_map_.size());
-  std::shared_lock<LockType> l(lock_);
+  SharedLock<decltype(lock_)> l(lock_);
   for (const CDCStreamInfoMap::value_type& e : cdc_stream_map_) {
     streams->push_back(e.second);
   }
@@ -1485,7 +1485,7 @@ Status CatalogManager::DeleteCDCStream(const DeleteCDCStreamRequestPB* req,
   std::vector<scoped_refptr<CDCStreamInfo>> streams;
   std::string streams_str;
   {
-    std::shared_lock<LockType> l(lock_);
+    SharedLock<decltype(lock_)> l(lock_);
     for (const auto& stream_id : req->stream_id()) {
       auto stream = FindPtrOrNull(cdc_stream_map_, stream_id);
       if (stream == nullptr) {
@@ -1568,7 +1568,7 @@ Status CatalogManager::GetCDCStream(const GetCDCStreamRequestPB* req,
 
   scoped_refptr<CDCStreamInfo> stream;
   {
-    std::shared_lock<LockType> l(lock_);
+    SharedLock<decltype(lock_)> l(lock_);
 
     stream = FindPtrOrNull(cdc_stream_map_, req->stream_id());
     if (stream == nullptr) {
@@ -1607,7 +1607,7 @@ Status CatalogManager::ListCDCStreams(const ListCDCStreamsRequestPB* req,
     }
   }
 
-  std::shared_lock<LockType> l(lock_);
+  SharedLock<decltype(lock_)> l(lock_);
 
   for (const CDCStreamInfoMap::value_type& entry : cdc_stream_map_) {
     auto ltm = entry.second->LockForRead();
@@ -1662,7 +1662,7 @@ Status CatalogManager::SetupUniverseReplication(const SetupUniverseReplicationRe
   scoped_refptr<UniverseReplicationInfo> ri;
   {
     TRACE("Acquired catalog manager lock");
-    std::shared_lock<LockType> l(lock_);
+    SharedLock<decltype(lock_)> l(lock_);
 
     if (FindPtrOrNull(universe_replication_map_, req->producer_id()) != nullptr) {
       return SetupError(resp->mutable_error(), MasterErrorPB::INVALID_REQUEST,
@@ -1751,7 +1751,7 @@ void CatalogManager::GetTableSchemaCallback(
     const Status& s) {
   scoped_refptr<UniverseReplicationInfo> universe;
   {
-    std::shared_lock<LockType> catalog_lock(lock_);
+    SharedLock<decltype(lock_)> catalog_lock(lock_);
     TRACE("Acquired catalog manager lock");
 
     universe = FindPtrOrNull(universe_replication_map_, universe_id);
@@ -1888,7 +1888,7 @@ void CatalogManager::CreateCDCStreamCallback(
     const std::string& universe_id, const TableId& table_id, const Result<CDCStreamId>& stream_id) {
   scoped_refptr<UniverseReplicationInfo> universe;
   {
-    std::shared_lock<LockType> catalog_lock(lock_);
+    SharedLock<decltype(lock_)> catalog_lock(lock_);
     TRACE("Acquired catalog manager lock");
 
     universe = FindPtrOrNull(universe_replication_map_, universe_id);
@@ -2023,7 +2023,7 @@ Status CatalogManager::DeleteUniverseReplication(const DeleteUniverseReplication
 
   scoped_refptr<UniverseReplicationInfo> ri;
   {
-    std::shared_lock<LockType> catalog_lock(lock_);
+    SharedLock<decltype(lock_)> catalog_lock(lock_);
     TRACE("Acquired catalog manager lock");
 
     ri = FindPtrOrNull(universe_replication_map_, req->producer_id());
@@ -2118,7 +2118,7 @@ Status CatalogManager::SetUniverseReplicationEnabled(
 
   scoped_refptr<UniverseReplicationInfo> universe;
   {
-    std::shared_lock<LockType> l(lock_);
+    SharedLock<decltype(lock_)> l(lock_);
 
     universe = FindPtrOrNull(universe_replication_map_, req->producer_id());
     if (universe == nullptr) {
@@ -2181,7 +2181,7 @@ Status CatalogManager::GetUniverseReplication(const GetUniverseReplicationReques
 
   scoped_refptr<UniverseReplicationInfo> universe;
   {
-    std::shared_lock<LockType> l(lock_);
+    SharedLock<decltype(lock_)> l(lock_);
 
     universe = FindPtrOrNull(universe_replication_map_, req->producer_id());
     if (universe == nullptr) {

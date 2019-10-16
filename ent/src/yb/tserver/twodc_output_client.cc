@@ -194,7 +194,7 @@ void TwoDCOutputClient::TabletLookupCallback(
     // But first, check if there were any errors during tablet lookup for any record.
     bool has_error = false;
     {
-      std::shared_lock<decltype(lock_)> l(lock_);
+      SharedLock<decltype(lock_)> l(lock_);
       if (!error_status_.ok()) {
         has_error = true;
       }
@@ -213,7 +213,7 @@ void TwoDCOutputClient::TabletLookupCallback(
 void TwoDCOutputClient::SendCDCWriteToTablet(const size_t record_idx) {
   client::internal::RemoteTablet* tablet;
   {
-    std::shared_lock<decltype(lock_)> l(lock_);
+    SharedLock<decltype(lock_)> l(lock_);
     tablet = records_[record_idx];
   }
 

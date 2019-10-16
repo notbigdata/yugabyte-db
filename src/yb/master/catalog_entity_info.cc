@@ -38,6 +38,7 @@
 #include "yb/util/locks.h"
 #include "yb/gutil/strings/substitute.h"
 #include "yb/common/wire_protocol.h"
+#include "yb/util/shared_lock.h"
 
 using std::string;
 
@@ -303,7 +304,8 @@ void TableInfo::AddTabletUnlocked(TabletInfo* tablet) {
 }
 
 void TableInfo::GetTabletsInRange(const GetTableLocationsRequestPB* req, TabletInfos* ret) const {
-  shared_lock<decltype(lock_)> l(lock_);
+  SharedLock<decltype(lock_)> l(lock_);
+
   int32_t max_returned_locations = req->max_returned_locations();
 
   TableInfo::TabletInfoMap::const_iterator it, it_end;
@@ -329,7 +331,7 @@ void TableInfo::GetTabletsInRange(const GetTableLocationsRequestPB* req, TabletI
 }
 
 bool TableInfo::IsAlterInProgress(uint32_t version) const {
-  shared_lock<decltype(lock_)> l(lock_);
+  SharedLock<decltype(lock_)> l(lock_);
   for (const TableInfo::TabletInfoMap::value_type& e : tablet_map_) {
     if (e.second->reported_schema_version() < version) {
       VLOG(3) << "Table " << table_id_ << " ALTER in progress due to tablet "
@@ -342,7 +344,7 @@ bool TableInfo::IsAlterInProgress(uint32_t version) const {
 }
 
 bool TableInfo::IsCreateInProgress() const {
-  shared_lock<decltype(lock_)> l(lock_);
+  SharedLock<decltype(lock_)> l(lock_);
   for (const TableInfo::TabletInfoMap::value_type& e : tablet_map_) {
     auto tablet_lock = e.second->LockForRead();
     if (!tablet_lock->data().is_running()) {
@@ -358,22 +360,22 @@ void TableInfo::SetCreateTableErrorStatus(const Status& status) {
 }
 
 Status TableInfo::GetCreateTableErrorStatus() const {
-  shared_lock<decltype(lock_)> l(lock_);
+  SharedLock<decltype(lock_)> l(lock_);
   return create_table_error_;
 }
 
 std::size_t TableInfo::NumTasks() const {
-  shared_lock<decltype(lock_)> l(lock_);
+  SharedLock<decltype(lock_)> l(lock_);
   return pending_tasks_.size();
 }
 
 bool TableInfo::HasTasks() const {
-  shared_lock<decltype(lock_)> l(lock_);
+  SharedLock<decltype(lock_)> l(lock_);
   return !pending_tasks_.empty();
 }
 
 bool TableInfo::HasTasks(MonitoredTask::Type type) const {
-  shared_lock<decltype(lock_)> l(lock_);
+  SharedLock<decltype(lock_)> l(lock_);
   for (auto task : pending_tasks_) {
     if (task->type() == type) {
       return true;
@@ -443,7 +445,7 @@ void TableInfo::WaitTasksCompletion() {
   while (1) {
     std::vector<std::shared_ptr<MonitoredTask>> waiting_on_for_debug;
     {
-      shared_lock<decltype(lock_)> l(lock_);
+      SharedLock<decltype(lock_)> l(lock_);
       if (pending_tasks_.empty()) {
         break;
       } else if (VLOG_IS_ON(1)) {
@@ -460,13 +462,13 @@ void TableInfo::WaitTasksCompletion() {
 }
 
 std::unordered_set<std::shared_ptr<MonitoredTask>> TableInfo::GetTasks() {
-  shared_lock<decltype(lock_)> l(lock_);
+  SharedLock<decltype(lock_)> l(lock_);
   return pending_tasks_;
 }
 
 void TableInfo::GetAllTablets(vector<scoped_refptr<TabletInfo>> *ret) const {
   ret->clear();
-  shared_lock<decltype(lock_)> l(lock_);
+  SharedLock<decltype(lock_)> l(lock_);
   for (const TableInfo::TabletInfoMap::value_type& e : tablet_map_) {
     ret->push_back(make_scoped_refptr(e.second));
   }
