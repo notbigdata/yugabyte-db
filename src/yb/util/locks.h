@@ -296,7 +296,7 @@ class SCOPED_LOCKABLE SharedLock<percpu_rwlock> {
   explicit SharedLock(percpu_rwlock &mutex) ACQUIRE_SHARED(mutex) : m_lock(mutex.get_lock()) {}
   ~SharedLock() RELEASE() = default;
 
-  SharedLock(percpu_rwlock& m, std::try_to_lock_t t)
+  SharedLock(percpu_rwlock& m, std::try_to_lock_t t)  // NOLINT
       : m_lock(m.get_lock(), t) {}
 
   void swap(SharedLock<percpu_rwlock>& other) {

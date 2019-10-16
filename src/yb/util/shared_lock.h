@@ -25,7 +25,7 @@ template<typename Mutex>
 class SCOPED_CAPABILITY SharedLock {
  public:
   explicit SharedLock(Mutex &mutex) ACQUIRE_SHARED(mutex) : m_lock(mutex) {}
-  SharedLock(Mutex&& other) : m_lock(std::move(other.m_lock)) {}
+  SharedLock(Mutex&& other) : m_lock(std::move(other.m_lock)) {}  // NOLINT
 
   // One would think that in the destructor we would use RELEASE_SHARED(mutex), but for some reason
   // that does not work. See http://bit.ly/shared_lock
@@ -34,7 +34,7 @@ class SCOPED_CAPABILITY SharedLock {
   // The first argument to TRY_ACQUIRE_SHARED is technically the value that the function returns
   // in case of successful lock acquisition, but obviously the constructor does not return any
   // value.
-  SharedLock(Mutex& m, std::try_to_lock_t t) TRY_ACQUIRE_SHARED(true, m)
+  SharedLock(Mutex& m, std::try_to_lock_t t) TRY_ACQUIRE_SHARED(true, m)  // NOLINT
       : m_lock(m, t) {}
 
   void swap(SharedLock<Mutex>& other) {

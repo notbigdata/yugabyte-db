@@ -30,10 +30,11 @@
 // under the License.
 //
 
-#include <gtest/gtest.h>
 #include <mutex>
 #include <thread>
 #include <vector>
+
+#include <gtest/gtest.h>
 
 #include "yb/gutil/integral_types.h"
 #include "yb/util/atomic.h"
