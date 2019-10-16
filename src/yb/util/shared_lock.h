@@ -25,7 +25,7 @@ template<typename Mutex>
 class SCOPED_CAPABILITY SharedLock {
  public:
   explicit SharedLock(Mutex &mutex) ACQUIRE_SHARED(mutex) : m_lock(mutex) {}
-  SharedLock(Mutex&& other) = default;
+  SharedLock(Mutex&& other) : m_lock(std::move(other.m_lock)) {}
 
   // One would think that in the destructor we would use RELEASE_SHARED(mutex), but for some reason
   // that does not work. See http://bit.ly/shared_lock
