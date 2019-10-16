@@ -19,6 +19,7 @@
 #include "yb/cdc/cdc_consumer.pb.h"
 
 #include "yb/util/random_util.h"
+#include "yb/util/shared_lock.h"
 
 #include "yb/common/wire_protocol.h"
 
@@ -34,14 +35,14 @@ CDCConsumerProxyManager::CDCConsumerProxyManager(rpc::ProxyCache* proxy_cache) :
 
 cdc::CDCServiceProxy* CDCConsumerProxyManager::GetProxy(
     const cdc::ProducerTabletInfo& producer_tablet_info) {
-  std::shared_lock<rw_spinlock> l(proxies_mutex_);
+  SharedLock<decltype(proxies_mutex_)> l(proxies_mutex_);
   DCHECK(!proxies_.empty());
   // TODO(Rahul): Change this into a meta cache implementation.
   return RandomElement(proxies_).get();
 }
 
 void CDCConsumerProxyManager::UpdateProxies(const cdc::ProducerEntryPB& producer_entry_pb) {
-  std::unique_lock<rw_spinlock> l(proxies_mutex_);
+  std::unique_lock<decltype(proxies_mutex_)> l(proxies_mutex_);
   for (const auto& hp_pb : producer_entry_pb.tserver_addrs()) {
     proxies_.push_back(std::make_unique<cdc::CDCServiceProxy>(proxy_cache_, HostPortFromPB(hp_pb)));
   }

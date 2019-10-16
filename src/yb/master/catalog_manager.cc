@@ -1293,7 +1293,7 @@ void CatalogManager::Shutdown() {
   // tasks for those entries.
   vector<scoped_refptr<TableInfo>> copy;
   {
-    shared_lock<LockType> l(lock_);
+    SharedLock<decltype(lock_)> l(lock_);
     AppendValuesFromMap(table_ids_map_, &copy);
   }
   AbortAndWaitForAllTasks(copy);

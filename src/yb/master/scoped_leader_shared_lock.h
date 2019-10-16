@@ -136,7 +136,7 @@ class ScopedLeaderSharedLock {
                                            bool set_error = true);
 
   CatalogManager* catalog_;
-  shared_lock<RWMutex> leader_shared_lock_;
+  SharedLock<RWMutex> leader_shared_lock_;
   Status catalog_status_;
   Status leader_status_;
   std::chrono::steady_clock::time_point start_;

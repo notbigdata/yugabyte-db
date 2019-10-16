@@ -40,7 +40,7 @@ void TasksTracker::AddTask(std::shared_ptr<MonitoredTask> task) {
 }
 
 std::vector<std::shared_ptr<MonitoredTask>> TasksTracker::GetTasks() {
-  shared_lock<decltype(lock_)> l(lock_);
+  SharedLock<decltype(lock_)> l(lock_);
   std::vector<std::shared_ptr<MonitoredTask>> tasks;
   for (const auto& task : tasks_) {
     tasks.push_back(task);
@@ -65,7 +65,7 @@ void TasksTracker::CleanupOldTasks() {
 }
 
 std::string TasksTracker::ToString() {
-  shared_lock<decltype(lock_)> l(lock_);
+  SharedLock<decltype(lock_)> l(lock_);
   return Substitute("TasksTracker has $0 tasks in buffer.",
                     tasks_.size());
 }

@@ -105,7 +105,7 @@ ScopedLeaderSharedLock::ScopedLeaderSharedLock(CatalogManager* catalog)
 void ScopedLeaderSharedLock::Unlock() {
   if (leader_shared_lock_.owns_lock()) {
     {
-      decltype(leader_shared_lock_) lock;
+      auto lock = decltype(leader_shared_lock_)::CreateUnlocked();
       lock.swap(leader_shared_lock_);
     }
     auto finish = std::chrono::steady_clock::now();

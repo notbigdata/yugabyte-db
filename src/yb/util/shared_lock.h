@@ -24,12 +24,16 @@ namespace yb {
 template<typename Mutex>
 class SCOPED_CAPABILITY SharedLock {
  public:
-  // No default constructor to avoid not locking anything by mistake.
-
   explicit SharedLock(Mutex &mutex) ACQUIRE_SHARED(mutex) : m_lock(mutex) {}
+
+  // One would think that in the destructor we would use RELEASE_SHARED(mutex), but for some reason
+  // that does not work. See http://bit.ly/shared_lock
   ~SharedLock() RELEASE() = default;
 
-  SharedLock(Mutex& m, std::try_to_lock_t t)
+  // The first argument to TRY_ACQUIRE_SHARED is technically the value that the function returns
+  // in case of successful lock acquisition, but obviously the constructor does not return any
+  // value.
+  SharedLock(Mutex& m, std::try_to_lock_t t) TRY_ACQUIRE_SHARED(true, m)
       : m_lock(m, t) {}
 
   void swap(SharedLock<Mutex>& other) {
@@ -40,7 +44,16 @@ class SCOPED_CAPABILITY SharedLock {
     return m_lock.owns_lock();
   }
 
+  void unlock() RELEASE() {
+    m_lock.release();
+  }
+
+  // Making this a factory method instead of default constructor, to avoid forgetting to specify
+  // the mutex to lock.
+  static SharedLock<Mutex> CreateUnlocked() { return SharedLock<Mutex>(); }
+
  private:
+  SharedLock() = default;
   std::shared_lock<Mutex> m_lock;
 };
 

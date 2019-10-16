@@ -898,7 +898,7 @@ Status Log::GetGCableDataSize(int64_t min_op_idx, int64_t* total_size) const {
   SegmentSequence segments_to_delete;
   *total_size = 0;
   {
-    SharedLock<decltype(state_lock)> read_lock(state_lock_);
+    SharedLock<decltype(state_lock_)> read_lock(state_lock_);
     if (log_state_ != kLogWriting) {
       return STATUS_FORMAT(IllegalState, "Invalid log state $0, expected $1",
           log_state_, kLogWriting);
@@ -1001,7 +1001,7 @@ Status Log::Close() {
 }
 
 const int Log::num_segments() const {
-  boost::shared_lock<rw_spinlock> read_lock(state_lock_.get_lock());
+  SharedLock<decltype(state_lock_)> read_lock(state_lock_);
   return (reader_) ? reader_->num_segments() : 0;
 }
 

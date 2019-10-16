@@ -41,6 +41,7 @@
 #include "yb/util/monotime.h"
 #include "yb/util/rw_mutex.h"
 #include "yb/util/test_util.h"
+#include "yb/util/shared_lock.h"
 
 using std::lock_guard;
 using std::thread;
@@ -95,13 +96,13 @@ TEST_P(RWMutexTest, TestDeadlocks) {
   for (int i = 0; i < 2; i++) {
     threads.emplace_back([&](){
       while (!done.Load()) {
-        shared_lock<RWMutex> l(lock_);
+        SharedLock<RWMutex> l(lock_);
         number_of_reads.Increment();
       }
     });
     threads.emplace_back([&](){
       while (!done.Load()) {
-        shared_lock<RWMutex> l(lock_, try_to_lock);
+        SharedLock<RWMutex> l(lock_, try_to_lock);
         if (l.owns_lock()) {
           number_of_reads.Increment();
         }
@@ -115,7 +116,7 @@ TEST_P(RWMutexTest, TestDeadlocks) {
     t.join();
   }
 
-  shared_lock<RWMutex> l(lock_);
+  SharedLock<RWMutex> l(lock_);
   LOG(INFO) << "Number of writes: " << number_of_writes;
   LOG(INFO) << "Number of reads: " << number_of_reads.Load();
 }

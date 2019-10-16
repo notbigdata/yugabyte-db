@@ -991,7 +991,7 @@ void MetaCache::LookupTabletByKey(const YBTable* table,
 
   rpc::Rpcs::Handle rpc;
   {
-    std::shared_lock<boost::shared_mutex> lock(mutex_);
+    SharedLock<decltype(mutex_)> lock(mutex_);
     if (FastLookupTabletByKeyUnlocked(table, partition_start, callback, &lock)) {
       return;
     }
@@ -1000,7 +1000,7 @@ void MetaCache::LookupTabletByKey(const YBTable* table,
   const std::string& partition_group_start =
       table->FindPartitionStart(partition_start, kPartitionGroupSize);
   {
-    std::unique_lock<boost::shared_mutex> lock(mutex_);
+    std::unique_lock<decltype(mutex_)> lock(mutex_);
     if (FastLookupTabletByKeyUnlocked(table, partition_start, callback, &lock)) {
       return;
     }

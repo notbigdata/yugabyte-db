@@ -121,7 +121,7 @@ void CDCConsumer::RefreshWithNewRegistryFromMaster(const cdc::ConsumerRegistryPB
 }
 
 std::vector<std::string> CDCConsumer::TEST_producer_tablets_running() {
-  std::shared_lock<rw_spinlock> pollers_lock(producer_pollers_map_mutex_);
+  SharedLock<decltype(producer_pollers_map_mutex_)> pollers_lock(producer_pollers_map_mutex_);
 
   std::vector<string> tablets;
   for (const auto& producer : producer_pollers_map_) {
@@ -173,12 +173,12 @@ void CDCConsumer::UpdateInMemoryState(const cdc::ConsumerRegistryPB* consumer_re
 }
 
 void CDCConsumer::TriggerPollForNewTablets() {
-  std::shared_lock<rw_spinlock> master_lock(master_data_mutex_);
+  SharedLock<decltype(master_data_mutex_)> master_lock(master_data_mutex_);
 
   for (const auto& entry : producer_consumer_tablet_map_from_master_) {
     bool start_polling;
     {
-      std::shared_lock<rw_spinlock> pollers_lock(producer_pollers_map_mutex_);
+      SharedLock<decltype(producer_pollers_map_mutex_)> pollers_lock(producer_pollers_map_mutex_);
       start_polling = producer_pollers_map_.find(entry.first) == producer_pollers_map_.end() &&
                       is_leader_for_tablet_(entry.second.tablet_id);
     }
@@ -211,7 +211,7 @@ bool CDCConsumer::ShouldContinuePolling(const cdc::ProducerTabletInfo& producer_
   if (!should_run_) {
     return false;
   }
-  std::shared_lock<rw_spinlock> master_lock(master_data_mutex_);
+  SharedLock<decltype(master_data_mutex_)> master_lock(master_data_mutex_);
 
   const auto& it = producer_consumer_tablet_map_from_master_.find(producer_tablet_info);
   if (it == producer_consumer_tablet_map_from_master_.end()) {
