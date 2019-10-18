@@ -55,19 +55,19 @@ using base::subtle::Release_Store;
 
 // Wrapper around the Google SpinLock class to adapt it to the method names
 // expected by Boost.
-class LOCKABLE simple_spinlock {
+class CAPABILITY("mutex") simple_spinlock {
  public:
   simple_spinlock() {}
 
-  void lock() EXCLUSIVE_LOCK_FUNCTION() {
+  void lock() ACQUIRE() {
     l_.Lock();
   }
 
-  void unlock() UNLOCK_FUNCTION() {
+  void unlock() RELEASE() {
     l_.Unlock();
   }
 
-  bool try_lock() EXCLUSIVE_TRYLOCK_FUNCTION(true) {
+  bool try_lock() TRY_ACQUIRE(true) {
     return l_.TryLock();
   }
 
@@ -289,7 +289,7 @@ std::unique_lock<Mutex> LockMutex(Mutex* mutex, std::chrono::time_point<Clock, D
 // A specialization of our SharedLock class for percpu_rwlock that only locks the mutex
 // corresponding to the current CPU.
 template<>
-class SCOPED_LOCKABLE SharedLock<percpu_rwlock> {
+class SCOPED_CAPABILITY SharedLock<percpu_rwlock> {
  public:
   // No default constructor to avoid not locking anything by mistake.
 

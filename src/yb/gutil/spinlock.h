@@ -64,7 +64,7 @@
 // don't namespace it differently, we conflict.
 namespace base {
 
-class LOCKABLE SpinLock {
+class CAPABILITY("mutex") SpinLock {
  public:
   SpinLock() : lockword_(kSpinLockFree) { }
 
@@ -84,7 +84,7 @@ class LOCKABLE SpinLock {
   // Acquire this SpinLock.
   // TODO(csilvers): uncomment the annotation when we figure out how to
   //                 support this macro with 0 args (see thread_annotations.h)
-  inline void Lock() EXCLUSIVE_LOCK_FUNCTION() {
+  inline void Lock() ACQUIRE() {
     if (base::subtle::Acquire_CompareAndSwap(&lockword_, kSpinLockFree,
                                              kSpinLockHeld) != kSpinLockFree) {
       SlowLock();
@@ -96,7 +96,7 @@ class LOCKABLE SpinLock {
   // acquisition was successful.  If the lock was not acquired, false is
   // returned.  If this SpinLock is free at the time of the call, TryLock
   // will return true with high probability.
-  inline bool TryLock() EXCLUSIVE_TRYLOCK_FUNCTION(true) {
+  inline bool TryLock() ACQUIRE(true) {
     bool res =
         (base::subtle::Acquire_CompareAndSwap(&lockword_, kSpinLockFree,
                                               kSpinLockHeld) == kSpinLockFree);
@@ -109,7 +109,7 @@ class LOCKABLE SpinLock {
   // Release this SpinLock, which must be held by the calling thread.
   // TODO(csilvers): uncomment the annotation when we figure out how to
   //                 support this macro with 0 args (see thread_annotations.h)
-  inline void Unlock() UNLOCK_FUNCTION() {
+  inline void Unlock() RELEASE() {
     ANNOTATE_RWLOCK_RELEASED(this, 1);
     uint64 wait_cycles = static_cast<uint64>(
         base::subtle::Release_AtomicExchange(&lockword_, kSpinLockFree));
@@ -146,16 +146,16 @@ class LOCKABLE SpinLock {
 
 // Corresponding locker object that arranges to acquire a spinlock for
 // the duration of a C++ scope.
-class SCOPED_LOCKABLE SpinLockHolder {
+class SCOPED_CAPABILITY SpinLockHolder {
  private:
   SpinLock* lock_;
  public:
-  inline explicit SpinLockHolder(SpinLock* l) EXCLUSIVE_LOCK_FUNCTION(l)
+  inline explicit SpinLockHolder(SpinLock* l) ACQUIRE(l)
       : lock_(l) {
     l->Lock();
   }
 
-  inline ~SpinLockHolder() UNLOCK_FUNCTION() { lock_->Unlock(); }
+  inline ~SpinLockHolder() RELEASE() { lock_->Unlock(); }
 };
 // Catch bug where variable name is omitted, e.g. SpinLockHolder (&lock);
 #define SpinLockHolder(x) COMPILE_ASSERT(0, spin_lock_decl_missing_var_name)

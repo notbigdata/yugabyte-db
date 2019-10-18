@@ -49,10 +49,6 @@ class SCOPED_CAPABILITY SharedLock {
     m_lock.release();
   }
 
-  // Making this a factory method instead of default constructor, to avoid forgetting to specify
-  // the mutex to lock.
-  static SharedLock<Mutex> CreateUnlocked() { return SharedLock<Mutex>(); }
-
  private:
   SharedLock() = default;
   std::shared_lock<Mutex> m_lock;

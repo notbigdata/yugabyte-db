@@ -102,12 +102,10 @@ ScopedLeaderSharedLock::ScopedLeaderSharedLock(CatalogManager* catalog)
   }
 }
 
-void ScopedLeaderSharedLock::Unlock() {
+// No thread safety analysis here because we release locks conditionally.
+void ScopedLeaderSharedLock::Unlock() NO_THREAD_SAFETY_ANALYSIS {
   if (leader_shared_lock_.owns_lock()) {
-    {
-      auto lock = decltype(leader_shared_lock_)::CreateUnlocked();
-      lock.swap(leader_shared_lock_);
-    }
+    leader_shared_lock_.unlock();
     auto finish = std::chrono::steady_clock::now();
     static const auto kLongLockLimit = RegularBuildVsSanitizers(100ms, 750ms);
     if (finish > start_ + kLongLockLimit) {

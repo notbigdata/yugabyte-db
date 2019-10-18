@@ -147,7 +147,8 @@ class ContentionStacks {
 Atomic32 g_profiling_enabled = 0;
 ContentionStacks* g_contention_stacks = nullptr;
 
-void ContentionStacks::AddStack(const StackTrace& s, int64_t cycles) {
+// Disabling thread safety analysis because of manual conditional locking/unlocking.
+void ContentionStacks::AddStack(const StackTrace& s, int64_t cycles) NO_THREAD_SAFETY_ANALYSIS {
   uint64_t hash = s.HashCode();
 
   // Linear probe up to 4 attempts before giving up
