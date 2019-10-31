@@ -1031,14 +1031,15 @@ public class TestIndex extends BaseCQLTest {
   @Test
   public void testDropDuringWrite() throws Exception {
     for (int i = 0; i != 5; ++i) {
-      String table_name = "index_test_" + i;
-      String index_name = "index_" + i;
+      LOG.info("Starting iteration i=" + i);
+      String tableName = "index_test_" + i;
+      String indexName = "index_" + i;
       session.execute(String.format(
           "create table %s (h int, c int, primary key ((h))) " +
-          "with transactions = { 'enabled' : true };", table_name));
-      session.execute(String.format("create index %s on %s (c);", index_name, table_name));
+          "with transactions = { 'enabled' : true };", tableName));
+      session.execute(String.format("create index %s on %s (c);", indexName, tableName));
       final PreparedStatement statement = session.prepare(String.format(
-          "insert into %s (h, c) values (?, ?);", table_name));
+          "insert into %s (h, c) values (?, ?);", tableName));
 
       List<Thread> threads = new ArrayList<Thread>();
       while (threads.size() != 10) {
@@ -1053,8 +1054,10 @@ public class TestIndex extends BaseCQLTest {
         threads.add(thread);
       }
       try {
+        LOG.info("Waiting while the writes are running");
         Thread.sleep(5000);
-        session.execute(String.format("drop table %s;", table_name));
+        LOG.info("Finished waiting, will now drop table while the writes are still running");
+        session.execute(String.format("drop table %s;", tableName));
       } finally {
         for (Thread thread : threads) {
           thread.interrupt();

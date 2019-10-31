@@ -88,6 +88,12 @@ class MonitoredTask : public std::enable_shared_from_this<MonitoredTask> {
 
   // Task completion time, may be !Initialized().
   virtual MonoTime completion_timestamp() const = 0;
+
+  std::string ToString() {
+    return Format(
+        "type_name: $0 description: $1 start_timestamp: $2 completion_timestamp: $3",
+        type_name(), description(), start_timestamp(), completion_timestamp());
+  }
 };
 
 } // namespace yb

@@ -363,6 +363,7 @@ class TableInfo : public RefCountedThreadSafe<TableInfo>,
   CHECKED_STATUS GetCreateTableErrorStatus() const;
 
   std::size_t NumTasks() const;
+  std::string DebugDumpTasks() const;
   bool HasTasks() const;
   bool HasTasks(MonitoredTask::Type type) const;
   void AddTask(std::shared_ptr<MonitoredTask> task);

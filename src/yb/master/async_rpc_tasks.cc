@@ -123,7 +123,7 @@ Status RetryingTSRpcTask::Run() {
     UnregisterAsyncTask();  // May delete this.
     return STATUS(IllegalState, "Unable to run task because it has been aborted");
   }
-  DCHECK(task_state == MonitoredTaskState::kWaiting) << "State: " << ToString(task_state);
+  DCHECK(task_state == MonitoredTaskState::kWaiting) << "State: " << ::yb::ToString(task_state);
 
   const Status s = ResetTSProxy();
   if (!s.ok()) {

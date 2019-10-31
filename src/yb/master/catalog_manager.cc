@@ -2957,10 +2957,17 @@ Status CatalogManager::IsDeleteTableDone(const IsDeleteTableDoneRequestPB* req,
   }
 
   if (l->data().is_deleted()) {
-    DCHECK(!table->HasTasks()) << "IsDeleteTableDone found pending tasks " << table->NumTasks();
+    bool still_has_tasks = table->HasTasks();
+#ifndef NDEBUG
+    if (still_has_tasks) {
+      LOG(INFO) << "Pending tasks for " << req->table_id() << ":\n"
+                << table->DebugDumpTasks();
+    }
+#endif
+    DCHECK(!still_has_tasks) << "IsDeleteTableDone found pending tasks " << table->NumTasks();
     LOG(INFO) << "Servicing IsDeleteTableDone request for table id "
               << req->table_id() << ": totally deleted";
-      resp->set_done(true);
+    resp->set_done(true);
   } else {
     LOG(INFO) << "Servicing IsDeleteTableDone request for table id "
               << req->table_id() << ": deleting tablets";
@@ -4965,7 +4972,10 @@ void CatalogManager::DeleteTabletsAndSendRequests(const scoped_refptr<TableInfo>
     DeleteTabletReplicas(tablet.get(), deletion_msg);
 
     auto tablet_lock = tablet->LockForWrite();
+    LOG(INFO) << "DEBUG mbautin: Setting table state to DELETED for "
+              << table->id();
     tablet_lock->mutable_data()->set_state(SysTabletsEntryPB::DELETED, deletion_msg);
+    // TODO: don't crash the server if this fails.
     CHECK_OK(sys_catalog_->UpdateItem(tablet.get(), leader_ready_term_));
     tablet_lock->Commit();
   }

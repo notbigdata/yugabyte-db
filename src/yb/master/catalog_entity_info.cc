@@ -367,6 +367,17 @@ std::size_t TableInfo::NumTasks() const {
   return pending_tasks_.size();
 }
 
+std::string TableInfo::DebugDumpTasks() const {
+  std::ostringstream ss;
+  shared_lock<decltype(lock_)> l(lock_);
+  int i = 1;
+  for (const auto& pending_task : pending_tasks_) {
+    ss << i << ". " << pending_task->ToString();
+    i++;
+  }
+  return ss.str();
+}
+
 bool TableInfo::HasTasks() const {
   shared_lock<decltype(lock_)> l(lock_);
   return !pending_tasks_.empty();

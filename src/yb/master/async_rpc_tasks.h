@@ -144,7 +144,10 @@ class RetryingTSRpcTask : public MonitoredTask {
 
   // Overridable log prefix with reasonable default.
   std::string LogPrefix() const {
-    return strings::Substitute("$0 (task=$1, state=$2): ", description(), this, ToString(state()));
+    return strings::Substitute(
+        "$0 (task=$1, state=$2): ", description(), 
+        static_cast<const void*>(this),
+        ::yb::ToString(state()));
   }
 
   bool PerformStateTransition(MonitoredTaskState expected, MonitoredTaskState new_state)
