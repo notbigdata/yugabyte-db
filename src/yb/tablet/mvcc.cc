@@ -53,16 +53,17 @@ std::string SafeTimeWithSource::ToString() const {
 
 MvccManager::MvccManager(std::string prefix, server::ClockPtr clock)
     : prefix_(std::move(prefix)),
-      clock_(std::move(clock)) {}
+      clock_(std::move(clock)),
+      q_(prefix_) {}
 
 void MvccManager::Replicated(HybridTime ht) {
   VLOG_WITH_PREFIX(1) << __func__ << "(" << ht << ")";
 
   {
     std::lock_guard<std::mutex> lock(mutex_);
-    CHECK(!queue_.empty()) << LogPrefix();
-    CHECK_EQ(queue_.front(), ht) << LogPrefix();
-    PopFront(&lock);
+    CHECK(!q_.empty()) << LogPrefix();
+    CHECK_EQ(q_.front(), ht) << LogPrefix();
+    q_.PopFront();
     last_replicated_ = ht;
   }
   cond_.notify_all();
@@ -73,28 +74,10 @@ void MvccManager::Aborted(HybridTime ht) {
 
   {
     std::lock_guard<std::mutex> lock(mutex_);
-    CHECK(!queue_.empty()) << LogPrefix();
-    if (queue_.front() == ht) {
-      PopFront(&lock);
-    } else {
-      aborted_.push(ht);
+    if (!q_.Aborted(ht))
       return;
-    }
   }
   cond_.notify_all();
-}
-
-void MvccManager::PopFront(std::lock_guard<std::mutex>* lock) {
-  queue_.pop_front();
-  CHECK_GE(queue_.size(), aborted_.size()) << LogPrefix();
-  while (!aborted_.empty()) {
-    if (queue_.front() != aborted_.top()) {
-      CHECK_LT(queue_.front(), aborted_.top()) << LogPrefix();
-      break;
-    }
-    queue_.pop_front();
-    aborted_.pop();
-  }
 }
 
 void MvccManager::AddPending(HybridTime* ht) {
@@ -110,25 +93,15 @@ void MvccManager::AddPending(HybridTime* ht) {
     VLOG_WITH_PREFIX(1) << "AddPending(<invalid>), time from clock: " << *ht;
   }
 
-  if (!queue_.empty() && *ht <= queue_.back() && !aborted_.empty()) {
+  if (!q_.empty() && *ht <= q_.back() && !q_.empty()) {
     // To avoid crashing with an invariant violation on leader changes, we detect the case when
     // an entire tail of the operation queue has been aborted. Theoretically it is still possible
     // that the subset of aborted operations is not contiguous and/or does not end with the last
     // element of the queue. In practice, though, Raft should only abort and overwrite all
     // operations starting with a particular index and until the end of the log.
-    auto iter = std::lower_bound(queue_.begin(), queue_.end(), aborted_.top());
-
-    // Every hybrid time in aborted_ must also exist in queue_.
-    CHECK(iter != queue_.end()) << LogPrefix();
-
-    auto start_iter = iter;
-    while (iter != queue_.end() && *iter == aborted_.top()) {
-      aborted_.pop();
-      iter++;
-    }
-    queue_.erase(start_iter, iter);
+    q_.CleanAbortedTail();
   }
-  HybridTime last_ht_in_queue = queue_.empty() ? HybridTime::kMin : queue_.back();
+  HybridTime last_ht_in_queue = q_.empty() ? HybridTime::kMin : q_.back();
 
   HybridTime sanity_check_lower_bound =
       std::max({
@@ -138,7 +111,7 @@ void MvccManager::AddPending(HybridTime* ht) {
           last_replicated_,
           last_ht_in_queue});
 
-  if (!queue_.empty() && *ht <= sanity_check_lower_bound) {
+  if (!q_.empty() && *ht <= sanity_check_lower_bound) {
     auto get_details_msg = [&](bool drain_aborted) {
       std::ostringstream ss;
 #define LOG_INFO_FOR_HT_LOWER_BOUND(t) \
@@ -158,15 +131,10 @@ void MvccManager::AddPending(HybridTime* ht) {
          << LOG_INFO_FOR_HT_LOWER_BOUND(
                 (SafeTimeWithSource{last_ht_in_queue, SafeTimeSource::kUnknown}))
          << "\n  " << EXPR_VALUE_FOR_LOG(is_follower_side)
-         << "\n  " << EXPR_VALUE_FOR_LOG(queue_.size())
-         << "\n  " << EXPR_VALUE_FOR_LOG(queue_);
+         << "\n  " << EXPR_VALUE_FOR_LOG(q_.size())
+         << "\n  " << EXPR_VALUE_FOR_LOG(q_.TEST_queue());
       if (drain_aborted) {
-        std::vector<HybridTime> aborted;
-        while (!aborted_.empty()) {
-          aborted.push_back(aborted_.top());
-          aborted_.pop();
-        }
-        ss << "\n  " << EXPR_VALUE_FOR_LOG(aborted);
+        ss << "\n  " << EXPR_VALUE_FOR_LOG(q_.DrainAborted());
       }
       return ss.str();
 #undef LOG_INFO_FOR_HT_LOWER_BOUND
@@ -190,7 +158,7 @@ void MvccManager::AddPending(HybridTime* ht) {
       LOG_WITH_PREFIX(FATAL) << get_details_msg(/* drain_aborted */ true);
     }
   }
-  queue_.push_back(*ht);
+  q_.push_back(*ht);
 }
 
 void MvccManager::SetLastReplicated(HybridTime ht) {
@@ -314,12 +282,12 @@ HybridTime MvccManager::DoGetSafeTime(const HybridTime min_allowed,
   HybridTime result;
   SafeTimeSource source = SafeTimeSource::kUnknown;
   auto predicate = [this, &result, &source, min_allowed, has_lease] {
-    if (queue_.empty()) {
+    if (q_.empty()) {
       result = clock_->Now();
       source = SafeTimeSource::kNow;
       VLOG_WITH_PREFIX(2) << "DoGetSafeTime, Now: " << result;
     } else {
-      result = queue_.front().Decremented();
+      result = q_.front().Decremented();
       source = SafeTimeSource::kNextInQueue;
       VLOG_WITH_PREFIX(2) << "DoGetSafeTime, Queue front (decremented): " << result;
     }
@@ -356,8 +324,8 @@ HybridTime MvccManager::DoGetSafeTime(const HybridTime min_allowed,
       << ", " << EXPR_VALUE_FOR_LOG(last_replicated_)
       << ", " << EXPR_VALUE_FOR_LOG(clock_->Now())
       << ", " << EXPR_VALUE_FOR_LOG(ToString(deadline))
-      << ", " << EXPR_VALUE_FOR_LOG(queue_.size())
-      << ", " << EXPR_VALUE_FOR_LOG(queue_);
+      << ", " << EXPR_VALUE_FOR_LOG(q_.size())
+      << ", " << EXPR_VALUE_FOR_LOG(q_.TEST_queue());
 
   if (has_lease) {
     max_safe_time_returned_with_lease_ = { result, source };

@@ -46,6 +46,95 @@
 namespace yb {
 namespace tablet {
 
+template <class T>
+class AbortableDeque {
+ public:
+  AbortableDeque(std::string log_prefix) : log_prefix_(log_prefix) {}
+
+  void PopFront() {
+    queue_.pop_front();
+    CHECK_GE(queue_.size(), aborted_.size()) << log_prefix_;
+    while (!aborted_.empty()) {
+      if (queue_.front() != aborted_.top()) {
+        CHECK_LT(queue_.front(), aborted_.top()) << log_prefix_;
+        break;
+      }
+      queue_.pop_front();
+      aborted_.pop();
+    }
+  }
+
+  // Returns true if the aborted timestamp was at the front of the queue.
+  bool Aborted(T t) {
+    CHECK(!queue_.empty()) << log_prefix_;
+    if (queue_.front() == t) {
+      PopFront();
+      return true;
+    } else {
+      aborted_.push(t);
+      return false;
+    }    
+  }
+
+  T back() const {
+    return queue_.back();
+  }
+
+  T front() const {
+    return queue_.front();
+  }
+
+  bool empty() const {
+    return queue_.empty();
+  }
+
+  void CleanAbortedTail() {
+    // TODO: use binary search here.
+    auto iter = std::lower_bound(queue_.begin(), queue_.end(), aborted_.top());
+
+    // Every hybrid time in aborted_ must also exist in queue_.
+    CHECK(iter != queue_.end()) << log_prefix_;
+
+    auto start_iter = iter;
+    while (iter != queue_.end() && *iter == aborted_.top()) {
+      aborted_.pop();
+      iter++;
+    }
+    queue_.erase(start_iter, iter);
+  }
+
+  std::vector<T> DrainAborted() {
+    std::vector<HybridTime> aborted;
+    while (!aborted_.empty()) {
+      aborted.push_back(aborted_.top());
+      aborted_.pop();
+    }
+    return aborted;
+  }
+
+  size_t size() const {
+    return queue_.size();
+  }
+
+  const std::deque<T>& TEST_queue() const {
+    return queue_;
+  }
+
+  void push_back(T t) {
+    queue_.push_back(t);
+  }
+
+ private:
+  std::string log_prefix_;
+
+  // An ordered queue of times of tracked operations.
+  std::deque<T> queue_;
+
+  // Priority queue (min-heap, hence std::greater<> as the "less" comparator) of aborted operations.
+  // Required because we could abort operations from the middle of the queue.
+  std::priority_queue<T, std::vector<T>, std::greater<>> aborted_;
+};
+
 // Allows us to keep track of how a particular value of safe time was obtained, for sanity
 // checking purposes.
 YB_DEFINE_ENUM(SafeTimeSource,
@@ -137,7 +226,6 @@ class MvccManager {
                            std::unique_lock<std::mutex>* lock) const;
 
   const std::string& LogPrefix() const { return prefix_; }
-  void PopFront(std::lock_guard<std::mutex>* lock);
 
   std::string prefix_;
   server::ClockPtr clock_;
@@ -145,11 +233,14 @@ class MvccManager {
   mutable std::condition_variable cond_;
 
   // An ordered queue of times of tracked operations.
-  std::deque<HybridTime> queue_;
+  // std::deque<HybridTime> queue_;
+
+  AbortableDeque<HybridTime> q_;
 
   // Priority queue (min-heap, hence std::greater<> as the "less" comparator) of aborted operations.
   // Required because we could abort operations from the middle of the queue.
-  std::priority_queue<HybridTime, std::vector<HybridTime>, std::greater<>> aborted_;
+  // std::priority_queue<HybridTime, std::vector<HybridTime>, std::greater<>> aborted_;
+
 
   HybridTime last_replicated_ = HybridTime::kMin;
 
