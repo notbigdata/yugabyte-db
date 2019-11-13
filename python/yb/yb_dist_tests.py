@@ -12,7 +12,6 @@
 #
 
 import collections
-import command_util
 import copy
 import logging
 import os
@@ -25,7 +24,7 @@ import sys
 import tempfile
 import atexit
 
-
+from yb import command_util
 from yb.common_util import get_build_type_from_build_root, \
                            get_compiler_type_from_build_root, \
                            is_macos  # nopep8

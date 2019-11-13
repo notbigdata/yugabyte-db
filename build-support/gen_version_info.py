@@ -1,4 +1,4 @@
-#!/usr/bin/env python2.7
+#!/usr/bin/env python3
 
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -39,7 +39,6 @@ import logging
 import argparse
 import os
 import re
-import sha
 import subprocess
 import sys
 import time
@@ -71,7 +70,7 @@ def get_git_sha1(git_repo_dir):
             return sha1
         logging.warning("Invalid git SHA1 in directory '%s': %s", git_repo_dir, sha1)
 
-    except Exception, e:
+    except Exception as e:
         logging.warning("Failed to get git SHA1 in directory: %s", git_repo_dir)
 
 
@@ -107,7 +106,8 @@ def main():
 
     path_to_version_file = os.path.join(
         os.path.dirname(os.path.realpath(__file__)), "..", "version.txt")
-    version_string = file(path_to_version_file).read().strip()
+    with open(path_to_version_file) as version_file:
+        version_string = version_file.read().strip()
     match = re.match("(\d+\.\d+\.\d+\.\d+)", version_string)
     if not match:
         parser.error("Invalid version specified: {}".format(version_string))
@@ -150,7 +150,7 @@ def main():
             with file(output_path, "w") as f:
                 print >>f, content
             break
-        except IOError, ex:
+        except IOError as ex:
             if attempts_left == 0:
                 raise ex
             if 'Resource temporarily unavailable' in ex.message:

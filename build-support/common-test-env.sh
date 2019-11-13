@@ -1767,7 +1767,10 @@ run_python_doctest() {
 
 run_python_tests() {
   activate_virtualenv
-  run_python_doctest
+  (
+    export PYTHONPATH=$YB_SRC_ROOT/python
+    run_python_doctest
+  )
   check_python_script_syntax
 }
 

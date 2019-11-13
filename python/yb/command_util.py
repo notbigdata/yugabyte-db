@@ -87,7 +87,7 @@ def mkdir_p(d):
         return
     try:
         os.makedirs(d)
-    except OSError, e:
+    except OSError as e:
         if os.path.isdir(d):
             return
         raise e

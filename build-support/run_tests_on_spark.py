@@ -1,4 +1,4 @@
-#!/usr/bin/env python2.7
+#!/usr/bin/env python3
 
 # Copyright (c) YugaByte, Inc.
 #
@@ -189,7 +189,7 @@ def delete_if_exists_log_errors(file_path):
     if os.path.exists(file_path):
         try:
             os.remove(file_path)
-        except OSError, os_error:
+        except OSError as os_error:
             logging.error("Error deleting file %s: %s", file_path, os_error)
 
 
@@ -338,7 +338,7 @@ def parallel_run_test(test_descriptor_str):
                 logging.info(error_msg)
                 try:
                     os.kill(process.pid, signal.SIGKILL)
-                except OSError, os_error:
+                except OSError as os_error:
                     if os_error.errno == errno.ESRCH:
                         logging.info(
                             "Process with pid %d disappeared suddenly, that's OK",
@@ -545,7 +545,7 @@ def parallel_list_test_descriptors(rel_test_path):
 
     try:
         prog_result = command_util.run_program(list_tests_cmd_line)
-    except OSError, ex:
+    except OSError as ex:
         logging.error("Failed running the command: %s", list_tests_cmd_line)
         raise
 
@@ -590,13 +590,13 @@ def parallel_list_test_descriptors(rel_test_path):
 def get_username():
     try:
         return os.getlogin()
-    except OSError, ex:
+    except OSError as ex:
         logging.warning(("Got an OSError trying to get the current user name, " +
                          "trying a workaround: {}").format(ex))
         # https://github.com/gitpython-developers/gitpython/issues/39
         try:
             return pwd.getpwuid(os.getuid()).pw_name
-        except KeyError, ex:
+        except KeyError as ex:
             user_from_env = os.getenv('USER')
             if user_from_env:
                 return user_from_env

@@ -1,11 +1,10 @@
-#!/usr/bin/env python2.7
+#!/usr/bin/env python3
 
 """
 Build a dependency graph of sources, object files, libraries, and binaries.  Compute the set of
 tests that might be affected by changes to the given set of source files.
 """
 
-from __future__ import print_function
 from six import iteritems
 
 import argparse

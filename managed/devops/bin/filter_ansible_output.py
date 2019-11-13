@@ -23,7 +23,7 @@ def main():
         line = line.rstrip()
         match = FATAL_JSON_RE.search(line)
         if not match:
-            print line
+            print(line)
             continue
         pre = match.group(1)
         json_str = match.group(2)
@@ -35,7 +35,7 @@ def main():
             if key + '_lines' in failure_json:
                 del failure_json[key]
         json_replacement = json.dumps(failure_json,  indent=2, sort_keys=True)
-        print pre + json_replacement + post
+        print(pre + json_replacement + post)
 
 
 if __name__ == '__main__':

@@ -38,13 +38,13 @@ g_signal_caught = None
 def get_cmdline(process):
     try:
         return process.cmdline()
-    except psutil.NoSuchProcess, e:
+    except psutil.NoSuchProcess as e:
         logging.warning("Newly added child process disappeared right away")
-    except psutil.AccessDenied, e:
+    except psutil.AccessDenied as e:
         logging.warning(
             "Access denied trying to get the command line for pid %d (%s), "
             "ignoring this process", process.pid, str(e))
-    except OSError, e:
+    except OSError as e:
         logging.warning(
             "OSError trying to get the command line for pid %d (%s), ignoring this process",
             process.pid, str(e))
@@ -63,7 +63,7 @@ def get_process_by_pid(pid):
         if process.status() == psutil.STATUS_ZOMBIE:
             return None
         return process
-    except psutil.NoSuchProcess, e:
+    except psutil.NoSuchProcess as e:
         return None
 
 
@@ -103,7 +103,7 @@ class ProcessTreeSupervisor():
 
                     try:
                         children = process.children(recursive=True)
-                    except psutil.NoSuchProcess, e:
+                    except psutil.NoSuchProcess as e:
                         logging.warning(
                             "Process %d disappeared when trying to list its children",
                             existing_pid)

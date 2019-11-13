@@ -73,7 +73,7 @@ def get_option_parser():
     return parser
 
 def display_file_coverage(per_file_coverage, total_coverage):
-    # To print out auto-adjustable column, we need to know the longest
+    # To print z     auto-adjustable column, we need to know the longest
     # length of file names.
     max_file_name_length = max(
         len(fname) for fname in per_file_coverage.keys()
@@ -85,8 +85,8 @@ def display_file_coverage(per_file_coverage, total_coverage):
     header_template = \
         "%" + str(max_file_name_length) + "s\t%s\t%s"
     separator = "-" * (max_file_name_length + 10 + 20)
-    print header_template % ("Filename", "Coverage", "Lines")
-    print separator
+    print(header_template % ("Filename", "Coverage", "Lines"))
+    print(separator)
 
     # -- Print body
     # template for printing coverage report for each file.
@@ -94,12 +94,12 @@ def display_file_coverage(per_file_coverage, total_coverage):
 
     for fname, coverage_info in per_file_coverage.items():
         coverage, lines = coverage_info
-        print record_template % (fname, coverage, lines)
+        print(record_template % (fname, coverage, lines))
 
     # -- Print footer
     if total_coverage:
-        print separator
-        print record_template % ("Total", total_coverage[0], total_coverage[1])
+        print(separator)
+        print(record_template % ("Total", total_coverage[0], total_coverage[1]))
 
 def report_coverage():
     parser = get_option_parser()
@@ -123,7 +123,7 @@ def report_coverage():
         total_coverage = None
 
     if not len(per_file_coverage):
-        print >> sys.stderr, "Cannot find coverage info for the given files."
+        sys.stderr.write("Cannot find coverage info for the given files.\n")
         return
     display_file_coverage(per_file_coverage, total_coverage)
 

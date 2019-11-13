@@ -8,6 +8,8 @@
 #
 # https://github.com/YugaByte/yugabyte-db/blob/master/licenses/POLYFORM-FREE-TRIAL-LICENSE-1.0.0.txt
 
+from __future__ import print_function
+
 import argparse
 import atexit
 import copy
@@ -1246,7 +1248,7 @@ class YBBackup:
         logging.info(
             'Backed up tables %s to %s successfully!' %
             (self.table_names_str(), snapshot_filepath))
-        print json.dumps({"snapshot_url": snapshot_filepath})
+        print(json.dumps({"snapshot_url": snapshot_filepath}))
 
     def download_metadata_file(self):
         """
@@ -1465,7 +1467,7 @@ class YBBackup:
         self.wait_for_snapshot(snapshot_id, 'restoring', RESTORE_SNAPSHOT_TIMEOUT_SEC)
 
         logging.info('Restored backup successfully!')
-        print json.dumps({"success": True})
+        print(json.dumps({"success": True}))
 
     # At exit callbacks
 
@@ -1506,11 +1508,11 @@ class YBBackup:
                 self.backup_table()
             else:
                 logging.error('Command was not specified')
-                print json.dumps({"error": "Command was not specified"})
+                print(json.dumps({"error": "Command was not specified"}))
         except BackupException as ex:
-            print json.dumps({"error": "Backup exception: {}".format(str(ex))})
+            print(json.dumps({"error": "Backup exception: {}".format(str(ex))}))
         except Exception as ex:
-            print json.dumps({"error": "Exception: {}".format(str(ex))})
+            print(json.dumps({"error": "Exception: {}".format(str(ex))}))
 
 
 if __name__ == "__main__":

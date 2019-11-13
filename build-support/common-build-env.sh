@@ -101,9 +101,6 @@ readonly MVN_OUTPUT_FILTER_REGEX
 # outside of main (non-thirdparty) YB codebase's build pipeline.
 readonly NFS_PARENT_DIR_FOR_SHARED_THIRDPARTY="$YB_JENKINS_NFS_HOME_DIR/thirdparty"
 
-# We create a Python Virtual Environment inside this directory in the build directory.
-readonly YB_VIRTUALENV_BASENAME=python_virtual_env
-
 readonly YB_LINUXBREW_LOCAL_ROOT=$HOME/.linuxbrew-yb-build
 
 readonly YB_SHARED_MVN_LOCAL_REPO="$YB_JENKINS_NFS_HOME_DIR/m2_repository"
@@ -2004,17 +2001,19 @@ check_python_script_syntax() {
   fi
   pushd "$YB_SRC_ROOT"
   local IFS=$'\n'
-  git ls-files '*.py' | xargs -P 8 -n 1 "$YB_BUILD_SUPPORT_DIR/check_python_syntax.py"
+  git ls-files '*.py' | grep -v 'src/postgres/contrib/unaccent/generate_unaccent_rules.py' | \
+    xargs -P 8 -n 1 "$YB_BUILD_SUPPORT_DIR/check_python_syntax.py"
   popd
 }
 
 activate_virtualenv() {
   local virtualenv_parent_dir=$YB_BUILD_PARENT_DIR
-  local virtualenv_dir=$virtualenv_parent_dir/$YB_VIRTUALENV_BASENAME
-  if [[ ! $virtualenv_dir = */$YB_VIRTUALENV_BASENAME ]]; then
-    fatal "Internal error: virtualenv_dir ('$virtualenv_dir') must end" \
-          "with YB_VIRTUALENV_BASENAME ('$YB_VIRTUALENV_BASENAME')"
+  if [[ ${YB_USE_PYTHON3:-} == "1" ]]; then
+    local virtualenv_dir=$virtualenv_parent_dir/python3_venv
+  else
+    local virtualenv_dir=$virtualenv_parent_dir/python2_venv
   fi
+
   if [[ ${YB_RECREATE_VIRTUALENV:-} == "1" && -d $virtualenv_dir ]] && \
      ! "$yb_readonly_virtualenv"; then
     log "YB_RECREATE_VIRTUALENV is set, deleting virtualenv at '$virtualenv_dir'"
@@ -2038,13 +2037,13 @@ activate_virtualenv() {
       # Not clear why deactivate does not do this.
       remove_path_entry "$old_virtual_env/bin"
     fi
+    mkdir -p "$virtualenv_parent_dir"
     # We need to be using system python to install the virtualenv module or create a new virtualenv.
     (
       set -x
-      pip2 install "virtualenv<20" --user
       mkdir -p "$virtualenv_parent_dir"
       cd "$virtualenv_parent_dir"
-      python2.7 -m virtualenv "$YB_VIRTUALENV_BASENAME"
+      python3 -m virtualenv "$YB_VIRTUALENV_BASENAME"
     )
   fi
 
@@ -2056,11 +2055,15 @@ activate_virtualenv() {
     pip_no_cache="--no-cache-dir"
   fi
 
+  local pip_executable=pip2
+  if [[ ${YB_USE_PYTHON3:-0} == "1" ]]; then
+    pip_executable=pip3
+  fi
   if ! "$yb_readonly_virtualenv"; then
     local requirements_file_path="$YB_SRC_ROOT/python_requirements_frozen.txt"
     local installed_requirements_file_path=$virtualenv_dir/${requirements_file_path##*/}
     if ! cmp --silent "$requirements_file_path" "$installed_requirements_file_path"; then
-      run_with_retries 10 0.5 pip2 install -r "$requirements_file_path" \
+      run_with_retries 10 0.5 "$pip_executable" install -r "$requirements_file_path" \
         $pip_no_cache
     fi
     # To avoid re-running pip install, save the requirements that we've installed in the virtualenv.
