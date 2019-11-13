@@ -41,7 +41,7 @@ class SkewedClock : public PhysicalClock {
   MicrosTime MaxGlobalTime(PhysicalTime time) override;
 
   PhysicalClockPtr impl_;
-  std::atomic<DeltaTime> delta_{DeltaTime()};
+  std::atomic<DeltaTime> delta_;
 };
 
 typedef std::shared_ptr<SkewedClock> SkewedClockPtr;

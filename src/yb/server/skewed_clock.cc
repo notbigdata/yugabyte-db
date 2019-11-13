@@ -14,13 +14,22 @@
 #include "yb/server/skewed_clock.h"
 
 #include "yb/server/hybrid_clock.h"
+#include "yb/util/flag_tags.h"
+
+using namespace std::literals;
+
+DEFINE_test_flag(int64, skewed_clock_default_delta_micros, 0,
+                 "Default delta for skewed clock");
 
 namespace yb {
 namespace server {
 
 const std::string SkewedClock::kName = "skewed";
 
-SkewedClock::SkewedClock(PhysicalClockPtr clock) : impl_(std::move(clock)) {}
+SkewedClock::SkewedClock(PhysicalClockPtr clock) 
+    : impl_(std::move(clock)),
+      delta_{FLAGS_skewed_clock_default_delta_micros * 1us} {
+}
 
 SkewedClock::DeltaTime SkewedClock::SetDelta(DeltaTime new_delta) {
   return delta_.exchange(new_delta);

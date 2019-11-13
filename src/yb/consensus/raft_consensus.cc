@@ -136,6 +136,9 @@ DECLARE_int32(memory_limit_warn_threshold_percentage);
 DEFINE_test_flag(int32, inject_delay_leader_change_role_append_secs, 0,
                  "Amount of time to delay leader from sending replicate of change role.");
 
+DEFINE_test_flag(int32, inject_delay_update_replica_ms, 0,
+                 "Inject delay on UnpdateReplica. For testing purposes only.");
+
 DEFINE_test_flag(double, return_error_on_change_config, 0.0,
                  "Fraction of the time when ChangeConfig will return an error.");
 
@@ -1495,7 +1498,11 @@ Result<RaftConsensus::UpdateReplicaResult> RaftConsensus::UpdateReplica(
     ConsensusRequestPB* request, ConsensusResponsePB* response) {
   TRACE_EVENT2("consensus", "RaftConsensus::UpdateReplica",
                "peer", peer_uuid(),
+
                "tablet", tablet_id());
+  if (PREDICT_FALSE(FLAGS_inject_delay_update_replica_ms > 0)) {
+    SleepFor(MonoDelta::FromMilliseconds(FLAGS_inject_delay_update_replica_ms));
+  }
 
   if (request->has_propagated_hybrid_time()) {
     clock_->Update(HybridTime(request->propagated_hybrid_time()));

@@ -77,6 +77,7 @@ void MvccManager::Aborted(HybridTime ht) {
     if (!q_.Aborted(ht))
       return;
   }
+  SafeTimeForFollower(HybridTime::kMin, CoarseTimePoint::max());  // TODO mbautin: remove
   cond_.notify_all();
 }
 

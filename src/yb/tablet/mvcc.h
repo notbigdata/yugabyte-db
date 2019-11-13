@@ -133,11 +133,12 @@ class AbortableDeque {
  private:
 
   void Compact() const {
+    if (aborted_.empty()) {
+      return;
+    }
+
     auto dest_iter = queue_.begin();
     for (auto it = queue_.begin(); it != queue_.end(); ++it) {
-      if (aborted_.empty()) {
-        return;
-      }
       if (*it == aborted_.top()) {
         aborted_.pop();
       } else {

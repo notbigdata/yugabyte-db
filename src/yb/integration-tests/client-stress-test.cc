@@ -56,6 +56,8 @@
 #include "yb/util/size_literals.h"
 #include "yb/util/test_util.h"
 
+#include "yb/server/skewed_clock.h"
+
 METRIC_DECLARE_entity(tablet);
 METRIC_DECLARE_counter(leader_memory_pressure_rejections);
 METRIC_DECLARE_counter(follower_memory_pressure_rejections);
@@ -388,9 +390,14 @@ class ClientStressTestFastLeaderFailure : public ClientStressTest {
   ExternalMiniClusterOptions default_opts() override {
     ExternalMiniClusterOptions result;
     result.num_tablet_servers = 3;
+
     result.extra_tserver_flags = {
+      "--inject_delay_update_replica_ms=50"s,
       "--leader_failure_max_missed_heartbeat_periods=1"s,
-      "--raft_heartbeat_interval_ms=100"s 
+      "--raft_heartbeat_interval_ms=100"s,
+      "--skewed_clock_default_delta_micros=${index}000000"s,
+      "--max_clock_skew_usec=10000000"s,
+      "--time_source="s + server::SkewedClock::kName
     };
     return result;
   }
@@ -400,9 +407,11 @@ class ClientStressTestFastLeaderFailure : public ClientStressTest {
 
 TEST_F_EX(ClientStressTest, PauseTServers, ClientStressTestFastLeaderFailure) {
   TestWorkload workload(cluster_.get());
+  workload.set_num_write_threads(16);
+  workload.set_write_batch_size(1);
   workload.Setup();
   workload.Start();
-  for (int rep = 0; rep < 5; ++rep) {
+  for (int rep = 0; rep < 20; ++rep) {
     for (int i = 0; i < cluster_->num_tablet_servers(); ++i) {
       auto* ts = cluster_->tablet_server(i);
       const string ts_desc = Format("ts-$0", i + 1);
@@ -411,12 +420,15 @@ TEST_F_EX(ClientStressTest, PauseTServers, ClientStressTestFastLeaderFailure) {
       ASSERT_OK(ts->Pause());
       LOG(INFO) << "Paused tablet server " << ts_desc;
       LOG(INFO) << "Waiting";
-      SleepFor(MonoDelta::FromSeconds(2));
+      SleepFor(MonoDelta::FromSeconds(5));
       LOG(INFO) << "Resuming tablet server " << ts_desc;
       ASSERT_OK(ts->Resume());
       LOG(INFO) << "Resumed tablet server " << ts_desc;
     }
   }
+  workload.StopAndJoin();
+  LOG(INFO) << "Batches completed: " << workload.batches_completed();
+  LOG(INFO) << "Rows inserted: " << workload.rows_inserted();
 }
 
 }  // namespace yb

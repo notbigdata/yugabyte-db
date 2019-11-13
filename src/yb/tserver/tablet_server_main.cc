@@ -55,6 +55,7 @@
 #include "yb/util/main_util.h"
 #include "yb/util/size_literals.h"
 #include "yb/yql/pgwrapper/pg_wrapper.h"
+#include "yb/server/skewed_clock.h"
 
 using namespace std::placeholders;
 
@@ -164,6 +165,8 @@ int TabletServerMain(int argc, char** argv) {
 #endif
 
   CHECK_OK(GetPrivateIpMode());
+
+  server::SkewedClock::Register();
 
   SetProxyAddresses();
 
