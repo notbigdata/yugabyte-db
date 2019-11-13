@@ -380,4 +380,43 @@ TEST_F_EX(ClientStressTest, MasterQueueFull, ClientStressTestSmallQueueMultiMast
   }
 }
 
+
+namespace {
+
+class ClientStressTestFastLeaderFailure : public ClientStressTest {
+ protected:
+  ExternalMiniClusterOptions default_opts() override {
+    ExternalMiniClusterOptions result;
+    result.num_tablet_servers = 3;
+    result.extra_tserver_flags = {
+      "--leader_failure_max_missed_heartbeat_periods=1"s,
+      "--raft_heartbeat_interval_ms=100"s 
+    };
+    return result;
+  }
+};
+
+} // namespace
+
+TEST_F_EX(ClientStressTest, PauseTServers, ClientStressTestFastLeaderFailure) {
+  TestWorkload workload(cluster_.get());
+  workload.Setup();
+  workload.Start();
+  for (int rep = 0; rep < 5; ++rep) {
+    for (int i = 0; i < cluster_->num_tablet_servers(); ++i) {
+      auto* ts = cluster_->tablet_server(i);
+      const string ts_desc = Format("ts-$0", i + 1);
+      
+      LOG(INFO) << "Pausing tablet server " << ts_desc;
+      ASSERT_OK(ts->Pause());
+      LOG(INFO) << "Paused tablet server " << ts_desc;
+      LOG(INFO) << "Waiting";
+      SleepFor(MonoDelta::FromSeconds(2));
+      LOG(INFO) << "Resuming tablet server " << ts_desc;
+      ASSERT_OK(ts->Resume());
+      LOG(INFO) << "Resumed tablet server " << ts_desc;
+    }
+  }
+}
+
 }  // namespace yb

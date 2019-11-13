@@ -52,6 +52,7 @@ class AbortableDeque {
   AbortableDeque(std::string log_prefix) : log_prefix_(log_prefix) {}
 
   void PopFront() {
+    Compact();
     queue_.pop_front();
     CHECK_GE(queue_.size(), aborted_.size()) << log_prefix_;
     while (!aborted_.empty()) {
@@ -66,6 +67,7 @@ class AbortableDeque {
 
   // Returns true if the aborted timestamp was at the front of the queue.
   bool Aborted(T t) {
+    Compact();
     CHECK(!queue_.empty()) << log_prefix_;
     if (queue_.front() == t) {
       PopFront();
@@ -77,14 +79,17 @@ class AbortableDeque {
   }
 
   T back() const {
+    Compact();
     return queue_.back();
   }
 
   T front() const {
+    Compact();
     return queue_.front();
   }
 
   bool empty() const {
+    Compact();
     return queue_.empty();
   }
 
@@ -113,6 +118,7 @@ class AbortableDeque {
   }
 
   size_t size() const {
+    Compact();
     return queue_.size();
   }
 
@@ -125,14 +131,30 @@ class AbortableDeque {
   }
 
  private:
-  std::string log_prefix_;
+
+  void Compact() const {
+    auto dest_iter = queue_.begin();
+    for (auto it = queue_.begin(); it != queue_.end(); ++it) {
+      if (aborted_.empty()) {
+        return;
+      }
+      if (*it == aborted_.top()) {
+        aborted_.pop();
+      } else {
+        *dest_iter++ = *it;
+      }
+    }
+    queue_.erase(dest_iter, queue_.end());
+  }
+
+  const std::string log_prefix_;
 
   // An ordered queue of times of tracked operations.
-  std::deque<T> queue_;
+  mutable std::deque<T> queue_;
 
   // Priority queue (min-heap, hence std::greater<> as the "less" comparator) of aborted operations.
   // Required because we could abort operations from the middle of the queue.
-  std::priority_queue<T, std::vector<T>, std::greater<>> aborted_;
+  mutable std::priority_queue<T, std::vector<T>, std::greater<>> aborted_;
 };
 
 // Allows us to keep track of how a particular value of safe time was obtained, for sanity

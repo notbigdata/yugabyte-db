@@ -1323,7 +1323,7 @@ TEST_F(RaftConsensusITest, TestChurnyElections) {
 // from the queue back to consensus. This can reproduce bugs like KUDU-1078 which
 // normally only appear under high load. TODO: Re-enable once we get to the
 // bottom of KUDU-1078.
-TEST_F(RaftConsensusITest, DISABLED_TestChurnyElections_WithNotificationLatency) {
+TEST_F(RaftConsensusITest, TestChurnyElectionsWithNotificationLatency) {
   DoTestChurnyElections(WITH_NOTIFICATION_LATENCY);
 }
 
@@ -1353,7 +1353,7 @@ void RaftConsensusITest::DoTestChurnyElections(bool with_latency) {
   // build machines, TSAN builds, etc.
   Stopwatch sw;
   sw.start();
-  const int kNumWrites = AllowSlowTests() ? 10000 : 1000;
+  const int kNumWrites = 10000;
   while (workload.rows_inserted() < kNumWrites &&
          (sw.elapsed().wall_seconds() < 30 ||
           // If no rows are inserted, run a little longer.
