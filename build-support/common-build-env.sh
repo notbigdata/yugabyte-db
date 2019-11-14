@@ -2008,11 +2008,8 @@ check_python_script_syntax() {
 
 activate_virtualenv() {
   local virtualenv_parent_dir=$YB_BUILD_PARENT_DIR
-  if [[ ${YB_USE_PYTHON3:-} == "1" ]]; then
-    local virtualenv_dir=$virtualenv_parent_dir/python3_venv
-  else
-    local virtualenv_dir=$virtualenv_parent_dir/python2_venv
-  fi
+  detect_python_version
+  local virtualenv_dir=$virtualenv_parent_dir/python${YB_PYTHON_VERSION}_venv
 
   if [[ ${YB_RECREATE_VIRTUALENV:-} == "1" && -d $virtualenv_dir ]] && \
      ! "$yb_readonly_virtualenv"; then
@@ -2055,10 +2052,7 @@ activate_virtualenv() {
     pip_no_cache="--no-cache-dir"
   fi
 
-  local pip_executable=pip2
-  if [[ ${YB_USE_PYTHON3:-0} == "1" ]]; then
-    pip_executable=pip3
-  fi
+  local pip_executable=pip${YB_PYTHON_VERSION}
   if ! "$yb_readonly_virtualenv"; then
     local requirements_file_path="$YB_SRC_ROOT/python_requirements_frozen.txt"
     local installed_requirements_file_path=$virtualenv_dir/${requirements_file_path##*/}
