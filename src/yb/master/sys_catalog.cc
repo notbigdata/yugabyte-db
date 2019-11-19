@@ -486,7 +486,7 @@ Status SysCatalogTable::OpenTablet(const scoped_refptr<tablet::RaftGroupMetadata
   tablet::TabletOptions tablet_options;
   tablet::BootstrapTabletData data = {
       metadata,
-      std::shared_future<client::YBClient*>(),
+      master_->async_client_initializer()->get_client_future(),
       scoped_refptr<server::Clock>(master_->clock()),
       master_->mem_tracker(),
       MemTracker::FindOrCreateTracker("BlockBasedTable", master_->mem_tracker()),
@@ -495,26 +495,30 @@ Status SysCatalogTable::OpenTablet(const scoped_refptr<tablet::RaftGroupMetadata
       tablet_peer()->log_anchor_registry(),
       tablet_options,
       " P " + tablet_peer()->permanent_uuid(),
-      nullptr, // transaction_participant_context
+      tablet_peer().get(), // transaction_participant_context
       client::LocalTabletFilter(),
-      nullptr, // transaction_coordinator_context
-      append_pool()};
+      tablet_peer().get(), // transaction_coordinator_context
+      append_pool(),
+      nullptr,  // retryable_requests
+      // Disable transactions if we are creating the initial sys catalog snapshot.
+      !FLAGS_create_initial_sys_catalog_snapshot};
   RETURN_NOT_OK(BootstrapTablet(data, &tablet, &log, &consensus_info));
 
   // TODO: Do we have a setSplittable(false) or something from the outside is
   // handling split in the TS?
 
-  RETURN_NOT_OK_PREPEND(tablet_peer()->InitTabletPeer(tablet,
-                                                     std::shared_future<client::YBClient*>(),
-                                                     master_->mem_tracker(),
-                                                     master_->messenger(),
-                                                     &master_->proxy_cache(),
-                                                     log,
-                                                     tablet->GetMetricEntity(),
-                                                     raft_pool(),
-                                                     tablet_prepare_pool(),
-                                                     nullptr /* retryable_requests */),
-                        "Failed to Init() TabletPeer");
+  RETURN_NOT_OK_PREPEND(tablet_peer()->InitTabletPeer(
+          tablet,
+          master_->async_client_initializer()->get_client_future(),
+          master_->mem_tracker(),
+          master_->messenger(),
+          &master_->proxy_cache(),
+          log,
+          tablet->GetMetricEntity(),
+          raft_pool(),
+          tablet_prepare_pool(),
+          nullptr /* retryable_requests */),
+      "Failed to Init() TabletPeer");
 
   RETURN_NOT_OK_PREPEND(tablet_peer()->Start(consensus_info),
                         "Failed to Start() TabletPeer");

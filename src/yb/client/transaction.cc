@@ -257,6 +257,15 @@ class YBTransaction::Impl final {
 
     if (status.ok()) {
       if (used_read_time && metadata_.isolation == IsolationLevel::SNAPSHOT_ISOLATION) {
+#ifndef NDEBUG
+        if (read_point_.GetReadTime()) {
+          int op_idx = 1;
+          for (const auto& op : ops) {
+            LOG(WARNING) << "Operation " << op_idx << ": " << op->ToString();
+            op_idx++;
+          }
+        }
+#endif
         LOG_IF_WITH_PREFIX(DFATAL, read_point_.GetReadTime())
             << "Read time already picked (" << read_point_.GetReadTime()
             << ", but server replied with used read time: " << used_read_time;
@@ -291,6 +300,13 @@ class YBTransaction::Impl final {
       state_.store(TransactionState::kCommitted, std::memory_order_release);
       commit_callback_ = std::move(callback);
       if (!ready_) {
+        // If we have not written any intents and do not even have a transaction status tablet,
+        // just report the transaction as committed.
+        if (tablets_with_metadata_.empty()) {
+          commit_callback_(Status::OK());
+          return;
+        }
+
         waiters_.emplace_back(std::bind(&Impl::DoCommit, this, deadline, _1, transaction));
         lock.unlock();
         RequestStatusTablet(deadline);
@@ -496,7 +512,6 @@ class YBTransaction::Impl final {
       commit_callback_(status);
       return;
     }
-
     // If we don't have any tablets that have intents written to them, just abort it.
     // But notify caller that commit was successful, so it is transparent for him.
     if (tablets_with_metadata_.empty()) {

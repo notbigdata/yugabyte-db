@@ -174,7 +174,7 @@ Options:
     Clean and rebuild PostgeSQL code
   --sanitizers-enable-coredump
     When running tests with LLVM sanitizers (ASAN/TSAN/etc.), enable core dump.
-  --extra-daemon-flags <extra_daemon_flags>
+  --extra-daemon-flags, --extra-daemon-args <extra_daemon_flags>
     Extra flags to pass to mini-cluster daemons (master/tserver). Note that bash-style quoting won't
     work here -- they are naively split on spaces.
   --no-latest-symlink
@@ -928,8 +928,9 @@ while [[ $# -gt 0 ]]; do
     --sanitizers-enable-coredump)
       export YB_SANITIZERS_ENABLE_COREDUMP=1
     ;;
-    --extra-daemon-flags)
+    --extra-daemon-flags|--extra-daemon-args)
       ensure_option_has_arg "$@"
+      log "Setting YB_EXTRA_DAEMON_FLAGS to: $2"
       export YB_EXTRA_DAEMON_FLAGS=$2
       shift
     ;;

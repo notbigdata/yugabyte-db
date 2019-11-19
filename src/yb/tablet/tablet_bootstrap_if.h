@@ -119,15 +119,16 @@ struct BootstrapTabletData {
   std::shared_ptr<MemTracker> mem_tracker;
   std::shared_ptr<MemTracker> block_based_table_mem_tracker;
   MetricRegistry* metric_registry;
-  TabletStatusListener* listener;
+  TabletStatusListener* listener = nullptr;
   scoped_refptr<log::LogAnchorRegistry> log_anchor_registry;
   TabletOptions tablet_options;
   std::string log_prefix_suffix;
-  TransactionParticipantContext* transaction_participant_context;
+  TransactionParticipantContext* transaction_participant_context = nullptr;
   client::LocalTabletFilter local_tablet_filter;
-  TransactionCoordinatorContext* transaction_coordinator_context;
-  ThreadPool* append_pool;
-  consensus::RetryableRequests* retryable_requests;
+  TransactionCoordinatorContext* transaction_coordinator_context = nullptr;
+  ThreadPool* append_pool = nullptr;
+  consensus::RetryableRequests* retryable_requests = nullptr;
+  bool txns_enabled = true;
 };
 
 // Bootstraps a tablet, initializing it with the provided metadata. If the tablet

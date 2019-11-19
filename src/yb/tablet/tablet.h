@@ -189,7 +189,8 @@ class Tablet : public AbstractTablet, public TransactionIntentApplier {
       std::string log_prefix_suffix,
       TransactionParticipantContext* transaction_participant_context,
       client::LocalTabletFilter local_tablet_filter,
-      TransactionCoordinatorContext* transaction_coordinator_context);
+      TransactionCoordinatorContext* transaction_coordinator_context,
+      bool txns_enabled = true);
 
   ~Tablet();
 
@@ -545,6 +546,9 @@ class Tablet : public AbstractTablet, public TransactionIntentApplier {
   // Flushed intents db if necessary.
   void FlushIntentsDbIfNecessary(const yb::OpId& lastest_log_entry_op_id);
 
+  bool is_sys_catalog() const { return is_sys_catalog_; }
+  bool IsTransactionalRequest(bool is_ysql_request) const override;
+
   // ==============================================================================================
  protected:
 
@@ -734,6 +738,9 @@ class Tablet : public AbstractTablet, public TransactionIntentApplier {
   client::LocalTabletFilter local_tablet_filter_;
 
   std::string log_prefix_suffix_;
+
+  bool is_sys_catalog_;
+  bool txns_enabled_;
 
   DISALLOW_COPY_AND_ASSIGN(Tablet);
 };

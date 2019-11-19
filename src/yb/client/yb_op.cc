@@ -86,6 +86,10 @@ bool YBOperation::IsTransactional() const {
   return table_->schema().table_properties().is_transactional();
 }
 
+bool YBOperation::IsYsqlCatalogOp() const {
+  return table_->schema().table_properties().is_ysql_catalog_table();
+}
+
 //--------------------------------------------------------------------------------------------------
 // YBRedisOp
 //--------------------------------------------------------------------------------------------------
@@ -531,7 +535,8 @@ void YBPgsqlWriteOp::SetHashCode(const uint16_t hash_code) {
 }
 
 bool YBPgsqlWriteOp::IsTransactional() const {
-  return !is_single_row_txn_ && table_->schema().table_properties().is_transactional();
+  return !is_single_row_txn_ &&
+         table_->schema().table_properties().is_transactional();
 }
 
 //--------------------------------------------------------------------------------------------------

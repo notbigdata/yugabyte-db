@@ -123,6 +123,8 @@
 #include "yb/util/trace.h"
 #include "yb/util/url-coding.h"
 
+#include "yb/master/sys_catalog_constants.h"
+
 DEFINE_bool(tablet_do_dup_key_checks, true,
             "Whether to check primary keys for duplicate on insertion. "
             "Use at your own risk!");
@@ -337,7 +339,8 @@ Tablet::Tablet(
     std::string log_prefix_suffix,
     TransactionParticipantContext* transaction_participant_context,
     client::LocalTabletFilter local_tablet_filter,
-    TransactionCoordinatorContext* transaction_coordinator_context)
+    TransactionCoordinatorContext* transaction_coordinator_context,
+    bool txns_enabled)
     : key_schema_(metadata->schema().CreateKeyProjection()),
       metadata_(metadata),
       table_type_(metadata->table_type()),
@@ -351,7 +354,9 @@ Tablet::Tablet(
       tablet_options_(tablet_options),
       client_future_(client_future),
       local_tablet_filter_(std::move(local_tablet_filter)),
-      log_prefix_suffix_(std::move(log_prefix_suffix)) {
+      log_prefix_suffix_(std::move(log_prefix_suffix)),
+      is_sys_catalog_(tablet_id() == master::kSysCatalogTabletId),
+      txns_enabled_(txns_enabled) {
   CHECK(schema()->has_column_ids());
 
   if (metric_registry) {
@@ -383,7 +388,10 @@ Tablet::Tablet(
     mem_tracker_->SetMetricEntity(metric_entity_);
   }
 
-  if (transaction_participant_context && metadata->schema().table_properties().is_transactional()) {
+  if (txns_enabled_ &&
+      (is_sys_catalog_ || (
+        transaction_participant_context &&
+        metadata->schema().table_properties().is_transactional()))) {
     transaction_participant_ = std::make_unique<TransactionParticipant>(
         transaction_participant_context, this, metric_entity_);
     // Create transaction manager for secondary index update.
@@ -1812,6 +1820,13 @@ void Tablet::FlushIntentsDbIfNecessary(const yb::OpId& lastest_log_entry_op_id) 
   }
 }
 
+bool Tablet::IsTransactionalRequest(bool is_ysql_request) const {
+  return txns_enabled_ && (
+      SchemaRef().table_properties().is_transactional() ||
+      // Consider all YSQL tables within the sys catalog transactional.
+      (is_sys_catalog_ && is_ysql_request));
+}
+
 Result<HybridTime> Tablet::MaxPersistentHybridTime() const {
   ScopedPendingOperation scoped_read_operation(&pending_op_counter_);
   RETURN_NOT_OK(scoped_read_operation);
@@ -1888,7 +1903,14 @@ Status Tablet::StartDocWriteOperation(WriteOperation* operation) {
   const IsolationLevel isolation_level = VERIFY_RESULT(GetIsolationLevelFromPB(*write_batch));
   const RowMarkType row_mark_type = GetRowMarkTypeFromPB(*write_batch);
 
-  const bool transactional_table = metadata_->schema().table_properties().is_transactional();
+  const bool transactional_table = metadata_->schema().table_properties().is_transactional() ||
+                                   operation->force_txn_path();
+
+  if (!transactional_table && isolation_level != IsolationLevel::NON_TRANSACTIONAL) {
+    YB_LOG_WITH_PREFIX_EVERY_N_SECS(DFATAL, 30)
+        << "An attempt to perform a transactional operation on a non-transactional table: "
+        << operation->ToString();
+  }
 
   const auto partial_range_key_intents = UsePartialRangeKeyIntents(metadata_.get());
   auto prepare_result = VERIFY_RESULT(docdb::PrepareDocWriteOperation(
@@ -1904,7 +1926,7 @@ Status Tablet::StartDocWriteOperation(WriteOperation* operation) {
   auto read_time = operation->read_time();
   const bool allow_immediate_read_restart = !read_time;
 
-  if (transactional_table) {
+  if (txns_enabled_ && transactional_table) {
     if (isolation_level == IsolationLevel::NON_TRANSACTIONAL) {
       auto now = clock_->Now();
       auto result = VERIFY_RESULT(docdb::ResolveOperationConflicts(
@@ -2214,7 +2236,9 @@ std::pair<int, int> Tablet::GetNumMemtables() const {
 
 Result<TransactionOperationContextOpt> Tablet::CreateTransactionOperationContext(
     const TransactionMetadataPB& transaction_metadata) const {
-  if (metadata_->schema().table_properties().is_transactional()) {
+  if (txns_enabled_ &&
+      (metadata_->schema().table_properties().is_transactional() ||
+       ((transaction_metadata.has_transaction_id() || is_sys_catalog_) && intents_db_))) {
     if (transaction_metadata.has_transaction_id()) {
       Result<TransactionId> txn_id = FullyDecodeTransactionId(
           transaction_metadata.transaction_id());
@@ -2234,7 +2258,7 @@ Result<TransactionOperationContextOpt> Tablet::CreateTransactionOperationContext
 
 TransactionOperationContextOpt Tablet::CreateTransactionOperationContext(
     const boost::optional<TransactionId>& transaction_id) const {
-  if (metadata_->schema().table_properties().is_transactional()) {
+  if (txns_enabled_ && metadata_->schema().table_properties().is_transactional()) {
     if (transaction_id.is_initialized()) {
       return TransactionOperationContext(transaction_id.get(), transaction_participant());
     } else {
