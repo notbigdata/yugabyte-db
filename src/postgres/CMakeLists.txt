@@ -23,13 +23,8 @@ endforeach(include_dir)
 
 get_filename_component(OPENSSL_LIB_DIR "${OPENSSL_CRYPTO_LIBRARY}" DIRECTORY)
 
-# Invoke our PostgreSQL build script.
-#
-# We add spaces before every "flags" parameter so that Python's argparse does not interpret them as
-# its own flags.
-add_custom_target(
-        postgres
-        COMMAND "${BUILD_SUPPORT_DIR}/build_postgres"
+set(build_postgres_args
+    "${BUILD_SUPPORT_DIR}/build_postgres"
         --build_root          "${YB_BUILD_ROOT}"
         --cflags              " ${POSTGRES_EXTRA_C_CXX_FLAGS} ${CMAKE_C_FLAGS}"
         --cxxflags            " ${POSTGRES_EXTRA_C_CXX_FLAGS} ${CMAKE_CXX_FLAGS}"
@@ -39,13 +34,10 @@ add_custom_target(
         --openssl_lib_dir     " ${OPENSSL_LIB_DIR}"
         --compiler_type       "$ENV{YB_COMPILER_TYPE}")
 
-# Make sure we rebuild postgres before the master/tserver libraries.
-add_dependencies(master postgres)
-add_dependencies(tserver postgres)
-
-if(${YB_BUILD_TYPE} STREQUAL "compilecmds")
-  message("Not making postgres depend on other libraries in the compilecmds build type.")
-else()
-  # Libraries that we link into the postgres binary.
-  add_dependencies(postgres yb_pggate server_process)
-endif()
+# Invoke our PostgreSQL build script.
+#
+# We add spaces before every "flags" parameter so that Python's argparse does not interpret them as
+# its own flags.
+add_custom_target(configure_postgres COMMAND ${build_postgres_args} --step configure)
+add_custom_target(postgres COMMAND ${build_postgres_args} --step make)
+add_dependencies(postgres configure_postgres)
