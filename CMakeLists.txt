@@ -1765,6 +1765,9 @@ endif()
 
 message("Linker flags: ${CMAKE_EXE_LINKER_FLAGS}")
 
+# PostgreSQL source code is not in src/yb so that we can grep non-PostgreSQL YB code easily.
+add_subdirectory(src/postgres)
+
 add_subdirectory(src/yb/rocksdb)
 add_subdirectory(src/yb/gutil)
 add_subdirectory(src/yb/util)
@@ -1786,11 +1789,26 @@ add_subdirectory(src/yb/rocksutil)
 add_subdirectory(src/yb/docdb)
 add_subdirectory(src/yb/yql)
 add_subdirectory(src/yb/cdc)
-
-# PostgreSQL source code is not in src/yb so that we can grep non-PostgreSQL YB code easily.
-add_subdirectory(src/postgres)
-
 include("${YB_SRC_ROOT}/ent/CMakeLists.txt")
+
+# ------------------------------------------------------------------------------------------------
+# Dependencies between postgres and other targets
+# ------------------------------------------------------------------------------------------------
+
+# Make sure we rebuild postgres before the master/tserver libraries.
+add_dependencies(master postgres)
+add_dependencies(tserver postgres)
+
+if(${YB_BUILD_TYPE} STREQUAL "compilecmds")
+  message("Not making postgres depend on other libraries in the compilecmds build type.")
+else()
+  # Libraries that we link into the postgres binary.
+  add_dependencies(postgres yb_pggate server_process)
+endif()
+
+# ------------------------------------------------------------------------------------------------
+# Utilities for collecting the dependency graph
+# ------------------------------------------------------------------------------------------------
 
 # We could not accumulate multiple lines in YB_ALL_DEPS due to a CMake bug with cache variables,
 # but we can write multiple lines in the output file.
