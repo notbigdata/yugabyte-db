@@ -111,21 +111,21 @@ class CAPABILITY("mutex") rw_spinlock  {
     ANNOTATE_RWLOCK_DESTROY(this);
   }
 
-  void lock_shared() {
+  void lock_shared() ACQUIRE_SHARED() {
     sem_.lock_shared();
     ANNOTATE_RWLOCK_ACQUIRED(this, 0);
   }
 
-  bool try_lock_shared() {
+  bool try_lock_shared() TRY_ACQUIRE_SHARED(true) {
     return sem_.try_lock_shared();
   }
 
-  void unlock_shared() {
+  void unlock_shared() RELEASE_SHARED() {
     ANNOTATE_RWLOCK_RELEASED(this, 0);
     sem_.unlock_shared();
   }
 
-  bool try_lock() {
+  bool try_lock() TRY_ACQUIRE(true) {
     bool ret = sem_.try_lock();
     if (ret) {
       ANNOTATE_RWLOCK_ACQUIRED(this, 1);
@@ -133,12 +133,12 @@ class CAPABILITY("mutex") rw_spinlock  {
     return ret;
   }
 
-  void lock() {
+  void lock() ACQUIRE() {
     sem_.lock();
     ANNOTATE_RWLOCK_ACQUIRED(this, 1);
   }
 
-  void unlock() {
+  void unlock() RELEASE() {
     ANNOTATE_RWLOCK_RELEASED(this, 1);
     sem_.unlock();
   }
@@ -170,7 +170,7 @@ class CAPABILITY("mutex") rw_spinlock  {
 //
 //   // Lock shared:
 //   {
-//     SharedLock<rw_spinlock> lock(mylock.get_lock());
+//     SharedLock<rw_spinlock> lock(mylock);
 //     ...
 //   }
 //
@@ -285,31 +285,6 @@ std::unique_lock<Mutex> LockMutex(Mutex* mutex, std::chrono::time_point<Clock, D
 
   return std::unique_lock<Mutex>(*mutex, time);
 }
-
-// A specialization of our SharedLock class for percpu_rwlock that only locks the mutex
-// corresponding to the current CPU.
-template<>
-class SCOPED_CAPABILITY SharedLock<percpu_rwlock> {
- public:
-  // No default constructor to avoid not locking anything by mistake.
-
-  explicit SharedLock(percpu_rwlock &mutex) ACQUIRE_SHARED(mutex) : m_lock(mutex.get_lock()) {}
-  ~SharedLock() RELEASE() = default;
-
-  SharedLock(percpu_rwlock& m, std::try_to_lock_t t)  // NOLINT
-      : m_lock(m.get_lock(), t) {}
-
-  void swap(SharedLock<percpu_rwlock>& other) {
-    std::swap(m_lock, other.m_lock);
-  }
-
-  bool owns_lock() const {
-    return m_lock.owns_lock();
-  }
-
- private:
-  std::shared_lock<rw_spinlock> m_lock;
-};
 
 template <class Lock>
 class ReverseLock {
