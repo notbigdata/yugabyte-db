@@ -1057,9 +1057,8 @@ do_not_use_local_thirdparty_flag_path=$YB_SRC_ROOT/thirdparty/.yb_thirdparty_do_
 
 if [[ ${YB_DOWNLOAD_THIRDPARTY:-} == "1" ]]; then
   set_prebuilt_thirdparty_url
-fi
-
-if [[ -f $do_not_use_local_thirdparty_flag_path ]] ||
+  download_thirdparty
+elif [[ -f $do_not_use_local_thirdparty_flag_path ]] ||
    "$use_nfs_shared_thirdparty" ||
    using_remote_compilation && ! "$no_shared_thirdparty"; then
   find_thirdparty_dir

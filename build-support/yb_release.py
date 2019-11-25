@@ -181,7 +181,7 @@ def main():
     if (thirdparty_dir != thirdparty_dir_from_env and
             thirdparty_dir_from_env != os.path.join(YB_SRC_ROOT, 'thirdparty')):
         raise RuntimeError(
-            "Mismatch between non-default valueo of env YB_THIRDPARTY_DIR: '{}' and build desc "
+            "Mismatch between non-default value of env YB_THIRDPARTY_DIR: '{}' and build desc "
             "thirdparty_dir: '{}'".format(thirdparty_dir_from_env, thirdparty_dir))
     # Set the var for in-memory access to it across the other python files.
     set_thirdparty_dir(thirdparty_dir)

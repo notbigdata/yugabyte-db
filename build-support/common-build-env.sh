@@ -70,9 +70,11 @@ declare -r -i YB_EXIT_CODE_NO_SUCH_FILE_OR_DIRECTORY=2
 
 # What matches these expressions will be filtered out of Maven output.
 MVN_OUTPUT_FILTER_REGEX='\[INFO\] (Download(ing|ed): '
+MVN_OUTPUT_FILTER_REGEX+='|\[INFO\] (Download(ing|ed) from .*: '
 MVN_OUTPUT_FILTER_REGEX+='|[^ ]+ already added, skipping$)'
 MVN_OUTPUT_FILTER_REGEX+='|^Generating .*[.]html[.][.][.]$'
 MVN_OUTPUT_FILTER_REGEX+='|^\[INFO\] Copying .*[.]jar to .*[.]jar$'
+readonly MVN_OUTPUT_FILTER_REGEX
 
 readonly YB_JENKINS_NFS_HOME_DIR=/n/jenkins
 
@@ -1026,6 +1028,7 @@ download_thirdparty() {
   else
     fatal "Cannot download Linuxbrew: file $linuxbrew_url_path does not exist"
   fi
+  export NO_REBUILD_THIRDPARTY=1
 }
 
 install_linuxbrew() {
