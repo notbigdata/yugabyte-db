@@ -121,7 +121,8 @@ class Dependency:
         if self.category:
             return self.category
 
-        if self.target.startswith(LINUXBREW_HOME + '/'):
+        if (self.target.startswith(LINUXBREW_HOME + '/') or
+                self.target.startswith(LINUXBREW_HOME + '-')):
             self.category = 'linuxbrew'
         elif self.target.startswith(get_thirdparty_dir() + '/'):
             self.category = 'yb-thirdparty'
