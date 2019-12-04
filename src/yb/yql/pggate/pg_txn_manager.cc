@@ -230,6 +230,7 @@ void PgTxnManager::ResetTxnAndSession() {
   can_restart_.store(true, std::memory_order_release);
 }
 
+Status PgTxnManager::EnterSeparateDdlTxnMode() {
   DSCHECK(!ddl_txn_,
           IllegalState, "EnterSeparateDdlTxnMode called when already in a DDL transaction");
   VLOG(2) << __PRETTY_FUNCTION__;
