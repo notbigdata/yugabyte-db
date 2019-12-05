@@ -550,6 +550,10 @@ cleanup() {
   exit "$YB_BUILD_EXIT_CODE"
 }
 
+print_saved_log_path() {
+  heading "To view log:"$'\n\n'"less '$log_path'"$'\n\n'\
+"Or using symlink:"$'\n\n'"less '$latest_log_symlink_path'"$'\n'
+}
 # -------------------------------------------------------------------------------------------------
 # Command line parsing
 # -------------------------------------------------------------------------------------------------
@@ -1084,7 +1088,7 @@ if "$save_log"; then
   rm -f "$latest_log_symlink_path"
   ln -s "$log_path" "$latest_log_symlink_path"
 
-  heading "Logging to $log_path (also symlinked to $latest_log_symlink_path)"
+  print_saved_log_path
 
   filtered_args=()
   for arg in "${original_args[@]}"; do
@@ -1097,7 +1101,7 @@ if "$save_log"; then
   ( set -x; "$0" "${filtered_args[@]}" ) 2>&1 | tee "$log_path"
   exit_code=$?
 
-  heading "Log saved to $log_path (also symlinked to $latest_log_symlink_path)"
+  print_saved_log_path
 
   # No need to print a report here, because the recursive script invocation should have done so.
   exit "$exit_code"
