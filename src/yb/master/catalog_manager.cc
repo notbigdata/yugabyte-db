@@ -6298,6 +6298,7 @@ Status CatalogManager::IsLoadBalanced(const IsLoadBalancedRequestPB* req,
   }
 
   Status s = load_balance_policy_->IsIdle();
+  LOG(INFO) << "DEBUG mbautin: IsLoadBalanced returning status: " << s;
   if (!s.ok()) {
     return SetupError(resp->mutable_error(), MasterErrorPB::CAN_RETRY_LOAD_BALANCE_CHECK, s);
   }

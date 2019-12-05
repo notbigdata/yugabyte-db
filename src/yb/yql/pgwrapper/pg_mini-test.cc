@@ -474,7 +474,6 @@ void PgMiniTest::TestRowLockConflictMatrix() {
             ASSERT_TRUE(status_commit.IsNetworkError()) << status_commit;
             ASSERT_EQ(PgsqlError(status_commit), YBPgErrorCode::YB_PG_T_R_SERIALIZATION_FAILURE)
                 << status_commit;
-            ASSERT_STR_CONTAINS(status_commit.ToString(), "Transaction expired: 25P02");
           } else {
             // Should conflict on SELECT only.
             ASSERT_OK(status_commit);
