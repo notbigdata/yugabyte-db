@@ -92,6 +92,7 @@
 #include "yb/master/master.pb.h"
 #include "yb/master/master.proxy.h"
 #include "yb/master/master_util.h"
+#include "yb/master/sys_catalog_constants.h"
 #include "yb/master/system_tablet.h"
 #include "yb/master/sys_catalog.h"
 #include "yb/master/ts_descriptor.h"
@@ -116,7 +117,7 @@
 #include "yb/master/yql_size_estimates_vtable.h"
 #include "yb/master/catalog_manager_bg_tasks.h"
 #include "yb/master/catalog_loaders.h"
-#include "yb/master/initial_sys_catalog_snapshot.h"
+#include "yb/master/sys_catalog_initialization.h"
 #include "yb/master/tasks_tracker.h"
 #include "yb/master/encryption_manager.h"
 
@@ -244,12 +245,6 @@ TAG_FLAG(hide_pg_catalog_table_creation_logs, hidden);
 
 DEFINE_test_flag(int32, simulate_slow_table_create_secs, 0,
     "Simulates a slow table creation by sleeping after the table has been added to memory.");
-
-DEFINE_bool(
-    // TODO: switch the default to true after updating all external callers (yb-ctl, YugaWare)
-    // and unit tests.
-    master_auto_run_initdb, false,
-    "Automatically run initdb on master leader initialization");
 
 DEFINE_test_flag(int32, simulate_slow_system_tablet_bootstrap_secs, 0,
     "Simulates a slow tablet bootstrap by adding a sleep before system tablet init.");
@@ -731,9 +726,14 @@ Status CatalogManager::VisitSysCatalog(int64_t term) {
     });
   }
 
-  // The error handling here is not for the initdb result -- that handling is done asynchronously.
-  // This just starts initdb in the background and returns.
-  return StartRunningInitDbIfNeeded(term);
+  if (!StartRunningInitDbIfNeeded(term)) {
+    // If we are not running initdb, this is an existing cluster, and we need to check whether we
+    // need to do a one-time migration to make YSQL system catalog tables transactional.
+    RETURN_NOT_OK(MakeYsqlSysCatalogTablesTransactional(
+        table_ids_map_.CheckOut().get_ptr(), sys_catalog_.get(), ysql_catalog_config_.get(), term));
+  }
+
+  return Status::OK();
 }
 
 template <class Loader>
@@ -803,7 +803,7 @@ Status CatalogManager::PrepareDefaultClusterConfig(int64_t term) {
   }
 
   if (cluster_config_) {
-    LOG(INFO) << "Cluster configuration already setup, skipping re-initialization.";
+    LOG(INFO) << "Cluster configuration has already been set up, skipping re-initialization.";
     return Status::OK();
   }
 
@@ -864,26 +864,12 @@ Status CatalogManager::PrepareDefaultSysConfig(int64_t term) {
   return Status::OK();
 }
 
-Status CatalogManager::StartRunningInitDbIfNeeded(int64_t term) {
+bool CatalogManager::StartRunningInitDbIfNeeded(int64_t term) {
   CHECK(lock_.is_locked());
-  if (!FLAGS_master_auto_run_initdb) {
-    return Status::OK();
+  if (!ShouldAutoRunInitDb(ysql_catalog_config_.get(), pg_proc_exists_)) {
+    return false;
   }
 
-  {
-    auto l = ysql_catalog_config_->LockForRead();
-    if (l->data().pb.ysql_catalog_config().initdb_done()) {
-      LOG(INFO) << "Cluster configuration indicates that initdb has already completed";
-      return Status::OK();
-    }
-  }
-
-  if (pg_proc_exists_) {
-    LOG(INFO) << "Table pg_proc exists, assuming initdb has already been run";
-    return Status::OK();
-  }
-
-  LOG(INFO) << "initdb has never been run on this cluster, running it";
   string master_addresses_str = MasterAddressesToString(
       *master_->opts().GetMasterAddresses());
 
@@ -911,7 +897,7 @@ Status CatalogManager::StartRunningInitDbIfNeeded(int64_t term) {
     }
     return status;
   });
-  return Status::OK();
+  return true;
 }
 
 Status CatalogManager::PrepareDefaultNamespaces(int64_t term) {

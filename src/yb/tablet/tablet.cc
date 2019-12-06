@@ -1510,8 +1510,11 @@ Status Tablet::CreatePreparedChangeMetadata(ChangeMetadataOperationState *operat
                                             const Schema* schema) {
   if (schema) {
     if (!key_schema_.KeyEquals(*schema)) {
-      return STATUS(InvalidArgument, "Schema keys cannot be altered",
-          schema->CreateKeyProjection().ToString());
+      return STATUS_FORMAT(
+          InvalidArgument,
+          "Schema keys cannot be altered. New schema key: $0. Existing schema key: $1",
+          schema->CreateKeyProjection(),
+          key_schema_.CreateKeyProjection());
     }
 
     if (!schema->has_column_ids()) {

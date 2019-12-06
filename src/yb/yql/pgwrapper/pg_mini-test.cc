@@ -14,7 +14,7 @@
 #include "yb/integration-tests/mini_cluster.h"
 #include "yb/integration-tests/yb_mini_cluster_test_base.h"
 
-#include "yb/master/initial_sys_catalog_snapshot.h"
+#include "yb/master/sys_catalog_initialization.h"
 
 #include "yb/tserver/mini_tablet_server.h"
 #include "yb/tserver/tablet_server.h"
@@ -662,7 +662,7 @@ TEST_F_EX(PgMiniTest, YB_DISABLE_TEST_IN_TSAN(BulkCopyWithRestart), PgMiniSmallW
 
 class PgMiniTestManualSysTableTxn : public PgMiniTest {
   virtual void BeforePgProcessStart() {
-    // Enable manual transcation control for operations on system tables. Otherwise, they would
+    // Enable manual transaction control for operations on system tables. Otherwise, they would
     // execute non-transactionally.
     FLAGS_ysql_enable_manual_sys_table_txn_ctl = true;
   }
