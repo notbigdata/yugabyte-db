@@ -11,8 +11,8 @@
 // under the License.
 //
 
-#ifndef YB_MASTER_INITIAL_SYS_CATALOG_SNAPSHOT_H
-#define YB_MASTER_INITIAL_SYS_CATALOG_SNAPSHOT_H
+#ifndef YB_MASTER_SYS_CATALOG_INITIALIZATION_H
+#define YB_MASTER_SYS_CATALOG_INITIALIZATION_H
 
 #include <vector>
 #include <string>
@@ -73,4 +73,4 @@ bool ShouldAutoRunInitDb(SysConfigInfo* ysql_catalog_config, bool pg_proc_exists
 }  // namespace master
 }  // namespace yb
 
-#endif  // YB_MASTER_INITIAL_SYS_CATALOG_SNAPSHOT_H
+#endif  // YB_MASTER_SYS_CATALOG_INITIALIZATION_H

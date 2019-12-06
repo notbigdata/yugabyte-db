@@ -302,8 +302,8 @@ Status MakeYsqlSysCatalogTablesTransactional(
     RETURN_NOT_OK(tablet::SyncReplicateChangeMetadataOperation(
         &change_req, sys_catalog->tablet_peer().get(), term));
 
-    // Change table properties in the sys catalog. We do this after updating tablet metadata, so that if a restart
-    // happens before this step succeeds, we'll retry updating both.
+    // Change table properties in the sys catalog. We do this after updating tablet metadata, so
+    // that if a restart happens before this step succeeds, we'll retry updating both next time.
     RETURN_NOT_OK(sys_catalog->UpdateItem(&table_info, term));
     table_lock->Commit();
   }
