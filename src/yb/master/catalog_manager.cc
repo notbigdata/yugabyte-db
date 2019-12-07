@@ -3124,7 +3124,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
   TRACE("Looking up table");
   RETURN_NOT_OK(FindTable(req->table(), &table));
   if (table == nullptr) {
-    Status s = STATUS(NotFound, "The object does not exist", req->table().DebugString());
+    Status s = STATUS(NotFound, "The object does not exist", req->table().ShortDebugString());
     return SetupError(resp->mutable_error(), MasterErrorPB::OBJECT_NOT_FOUND, s);
   }
 
@@ -3286,7 +3286,7 @@ Status CatalogManager::IsAlterTableDone(const IsAlterTableDoneRequestPB* req,
   TRACE("Looking up table");
   RETURN_NOT_OK(FindTable(req->table(), &table));
   if (table == nullptr) {
-    Status s = STATUS(NotFound, "The object does not exist", req->table().DebugString());
+    Status s = STATUS(NotFound, "The object does not exist", req->table().ShortDebugString());
     return SetupError(resp->mutable_error(), MasterErrorPB::OBJECT_NOT_FOUND, s);
   }
 
@@ -3314,7 +3314,7 @@ Status CatalogManager::GetTableSchema(const GetTableSchemaRequestPB* req,
   TRACE("Looking up table");
   RETURN_NOT_OK(FindTable(req->table(), &table));
   if (table == nullptr) {
-    Status s = STATUS(NotFound, "The object does not exist", req->table().DebugString());
+    Status s = STATUS(NotFound, "The object does not exist", req->table().ShortDebugString());
     return SetupError(resp->mutable_error(), MasterErrorPB::OBJECT_NOT_FOUND, s);
   }
 
@@ -5894,7 +5894,7 @@ Status CatalogManager::GetTableLocations(const GetTableLocationsRequestPB* req,
   RETURN_NOT_OK(FindTable(req->table(), &table));
 
   if (table == nullptr) {
-    Status s = STATUS(NotFound, "The object does not exist", req->table().DebugString());
+    Status s = STATUS(NotFound, "The object does not exist", req->table().ShortDebugString());
     return SetupError(resp->mutable_error(), MasterErrorPB::OBJECT_NOT_FOUND, s);
   }
 
@@ -6284,7 +6284,6 @@ Status CatalogManager::IsLoadBalanced(const IsLoadBalancedRequestPB* req,
   }
 
   Status s = load_balance_policy_->IsIdle();
-  LOG(INFO) << "DEBUG mbautin: IsLoadBalanced returning status: " << s;
   if (!s.ok()) {
     return SetupError(resp->mutable_error(), MasterErrorPB::CAN_RETRY_LOAD_BALANCE_CHECK, s);
   }

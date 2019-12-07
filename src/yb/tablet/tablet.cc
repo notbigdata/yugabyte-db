@@ -123,8 +123,6 @@
 #include "yb/util/trace.h"
 #include "yb/util/url-coding.h"
 
-#include "yb/master/sys_catalog_constants.h"
-
 DEFINE_bool(tablet_do_dup_key_checks, true,
             "Whether to check primary keys for duplicate on insertion. "
             "Use at your own risk!");
@@ -340,7 +338,8 @@ Tablet::Tablet(
     TransactionParticipantContext* transaction_participant_context,
     client::LocalTabletFilter local_tablet_filter,
     TransactionCoordinatorContext* transaction_coordinator_context,
-    bool txns_enabled)
+    IsSysCatalogTablet is_sys_catalog,
+    TransactionsEnabled txns_enabled)
     : key_schema_(metadata->schema().CreateKeyProjection()),
       metadata_(metadata),
       table_type_(metadata->table_type()),
@@ -355,7 +354,7 @@ Tablet::Tablet(
       client_future_(client_future),
       local_tablet_filter_(std::move(local_tablet_filter)),
       log_prefix_suffix_(std::move(log_prefix_suffix)),
-      is_sys_catalog_(tablet_id() == master::kSysCatalogTabletId),
+      is_sys_catalog_(is_sys_catalog),
       txns_enabled_(txns_enabled) {
   CHECK(schema()->has_column_ids());
 
@@ -1824,10 +1823,10 @@ void Tablet::FlushIntentsDbIfNecessary(const yb::OpId& lastest_log_entry_op_id) 
 }
 
 bool Tablet::IsTransactionalRequest(bool is_ysql_request) const {
+  // We consider all YSQL tables within the sys catalog transactional.
   return txns_enabled_ && (
       SchemaRef().table_properties().is_transactional() ||
-      // Consider all YSQL tables within the sys catalog transactional.
-      (is_sys_catalog_ && is_ysql_request));
+          (is_sys_catalog_ && is_ysql_request));
 }
 
 Result<HybridTime> Tablet::MaxPersistentHybridTime() const {
@@ -2239,9 +2238,7 @@ std::pair<int, int> Tablet::GetNumMemtables() const {
 
 Result<TransactionOperationContextOpt> Tablet::CreateTransactionOperationContext(
     const TransactionMetadataPB& transaction_metadata) const {
-  if (txns_enabled_ &&
-      (metadata_->schema().table_properties().is_transactional() ||
-       ((transaction_metadata.has_transaction_id() || is_sys_catalog_) && intents_db_))) {
+  if (txns_enabled_ && metadata_->schema().table_properties().is_transactional()) {
     if (transaction_metadata.has_transaction_id()) {
       Result<TransactionId> txn_id = FullyDecodeTransactionId(
           transaction_metadata.transaction_id());

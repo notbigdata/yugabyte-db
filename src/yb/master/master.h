@@ -146,8 +146,8 @@ class Master : public server::RpcAndWebServerBase {
   // Called currently by cluster master leader which is removing this master from the quorum.
   CHECKED_STATUS GoIntoShellMode();
 
-  yb::client::AsyncClientInitialiser* async_client_initializer() {
-    return &*async_client_init_;
+  yb::client::AsyncClientInitialiser& async_client_initializer() {
+    return *async_client_init_;
   }
 
  protected:

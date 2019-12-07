@@ -83,6 +83,7 @@
 #include "yb/gutil/thread_annotations.h"
 
 #include "yb/tablet/operations/snapshot_operation.h"
+#include "yb/util/strongly_typed_bool.h"
 
 namespace rocksdb {
 class DB;
@@ -190,7 +191,8 @@ class Tablet : public AbstractTablet, public TransactionIntentApplier {
       TransactionParticipantContext* transaction_participant_context,
       client::LocalTabletFilter local_tablet_filter,
       TransactionCoordinatorContext* transaction_coordinator_context,
-      bool txns_enabled = true);
+      IsSysCatalogTablet is_sys_catalog,
+      TransactionsEnabled txns_enabled = TransactionsEnabled::kTrue);
 
   ~Tablet();
 
@@ -739,8 +741,8 @@ class Tablet : public AbstractTablet, public TransactionIntentApplier {
 
   std::string log_prefix_suffix_;
 
-  bool is_sys_catalog_;
-  bool txns_enabled_;
+  IsSysCatalogTablet is_sys_catalog_;
+  TransactionsEnabled txns_enabled_;
 
   DISALLOW_COPY_AND_ASSIGN(Tablet);
 };

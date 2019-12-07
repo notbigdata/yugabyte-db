@@ -72,7 +72,6 @@ DECLARE_int32(tablet_inject_latency_on_apply_write_txn_ms);
 DECLARE_bool(TEST_log_cache_skip_eviction);
 DECLARE_uint64(sst_files_hard_limit);
 DECLARE_uint64(sst_files_soft_limit);
-DECLARE_bool(FLAGS_enable_ysql);
 
 namespace yb {
 namespace client {
@@ -102,7 +101,6 @@ class QLTabletTest : public QLDmlTestBase {
   void SetUp() override {
     server::SkewedClock::Register();
     FLAGS_time_source = server::SkewedClock::kName;
-    SetAtomicFlag(false, &FLAGS_enable_ysql);
     QLDmlTestBase::SetUp();
   }
 

@@ -177,7 +177,7 @@ void YBSession::SetInTxnLimit(HybridTime value) {
       << __FUNCTION__ << "(" << value << ") called on YBSession " << this
       << " but read point is null";
   if (rp) {
-    read_point()->SetInTxnLimit(value);
+    rp->SetInTxnLimit(value);
   }
 }
 

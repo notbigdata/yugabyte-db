@@ -535,8 +535,7 @@ void YBPgsqlWriteOp::SetHashCode(const uint16_t hash_code) {
 }
 
 bool YBPgsqlWriteOp::IsTransactional() const {
-  return !is_single_row_txn_ &&
-         table_->schema().table_properties().is_transactional();
+  return !is_single_row_txn_ && table_->schema().table_properties().is_transactional();
 }
 
 //--------------------------------------------------------------------------------------------------

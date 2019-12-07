@@ -61,6 +61,7 @@
 #include "yb/rpc/rpc_context.h"
 #include "yb/tablet/tablet_bootstrap_if.h"
 #include "yb/tablet/tablet.h"
+#include "yb/tablet/tablet_fwd.h"
 #include "yb/tablet/tablet_options.h"
 #include "yb/tablet/operations/write_operation.h"
 
@@ -485,23 +486,31 @@ Status SysCatalogTable::OpenTablet(const scoped_refptr<tablet::RaftGroupMetadata
   RETURN_NOT_OK(tablet_peer()->SetBootstrapping());
   tablet::TabletOptions tablet_options;
   tablet::BootstrapTabletData data = {
-      metadata,
-      master_->async_client_initializer()->get_client_future(),
-      scoped_refptr<server::Clock>(master_->clock()),
-      master_->mem_tracker(),
-      MemTracker::FindOrCreateTracker("BlockBasedTable", master_->mem_tracker()),
-      metric_registry_,
-      tablet_peer()->status_listener(),
-      tablet_peer()->log_anchor_registry(),
-      tablet_options,
-      " P " + tablet_peer()->permanent_uuid(),
-      tablet_peer().get(), // transaction_participant_context
-      client::LocalTabletFilter(),
-      tablet_peer().get(), // transaction_coordinator_context
-      append_pool(),
-      nullptr,  // retryable_requests
+      .meta = metadata,
+      .client_future = master_->async_client_initializer().get_client_future(),
+      .clock = scoped_refptr<server::Clock>(master_->clock()),
+      .mem_tracker = master_->mem_tracker(),
+      .block_based_table_mem_tracker =
+          MemTracker::FindOrCreateTracker("BlockBasedTable", master_->mem_tracker()),
+      .metric_registry = metric_registry_,
+      .listener = tablet_peer()->status_listener(),
+      .log_anchor_registry = tablet_peer()->log_anchor_registry(),
+      .tablet_options = tablet_options,
+      .log_prefix_suffix = " P " + tablet_peer()->permanent_uuid(),
+      .transaction_participant_context = tablet_peer().get(),
+      .local_tablet_filter = client::LocalTabletFilter(),
+      // This is only required if the sys catalog tablet is also acting as a transaction status
+      // tablet, which it does not as of 12/06/2019. This could have been a nullptr, but putting
+      // the TabletPeer here in case we need this for rolling master upgrades when we do enable
+      // storing transaction status records in the sys catalog tablet.
+      .transaction_coordinator_context = tablet_peer().get(),
+      .append_pool = append_pool(),
+      .retryable_requests = nullptr,
       // Disable transactions if we are creating the initial sys catalog snapshot.
-      !FLAGS_create_initial_sys_catalog_snapshot};
+      // initdb is much faster with transactions disabled.
+      .txns_enabled = tablet::TransactionsEnabled(!FLAGS_create_initial_sys_catalog_snapshot),
+      .is_sys_catalog = tablet::IsSysCatalogTablet::kTrue
+  };
   RETURN_NOT_OK(BootstrapTablet(data, &tablet, &log, &consensus_info));
 
   // TODO: Do we have a setSplittable(false) or something from the outside is
@@ -509,7 +518,7 @@ Status SysCatalogTable::OpenTablet(const scoped_refptr<tablet::RaftGroupMetadata
 
   RETURN_NOT_OK_PREPEND(tablet_peer()->InitTabletPeer(
           tablet,
-          master_->async_client_initializer()->get_client_future(),
+          master_->async_client_initializer().get_client_future(),
           master_->mem_tracker(),
           master_->messenger(),
           &master_->proxy_cache(),

@@ -308,7 +308,11 @@ Status MakeYsqlSysCatalogTablesTransactional(
     table_lock->Commit();
   }
 
-  LOG(INFO) << "Made " << num_updated_tables << " YSQL sys catalog tables transactional";
+  if (num_updated_tables > 0) {
+    LOG(INFO) << "Made " << num_updated_tables << " YSQL sys catalog tables transactional";
+  }
+
+  LOG(INFO) << "Marking YSQL system catalog as transactional in YSQL catalog config";
   {
     auto ysql_catalog_lock = ysql_catalog_config->LockForWrite();
     auto* ysql_catalog_config_pb =
