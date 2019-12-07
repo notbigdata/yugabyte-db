@@ -576,6 +576,8 @@ class Tablet : public AbstractTablet, public TransactionIntentApplier {
       HybridTime hybrid_time,
       rocksdb::WriteBatch* rocksdb_write_batch);
 
+  bool ShouldCreateTransactionContext() const;
+
   Result<TransactionOperationContextOpt> CreateTransactionOperationContext(
       const TransactionMetadataPB& transaction_metadata) const;
 

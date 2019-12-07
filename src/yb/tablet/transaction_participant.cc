@@ -23,7 +23,6 @@
 #include <boost/multi_index/mem_fun.hpp>
 
 #include <boost/optional/optional.hpp>
-#include <boost/optional/optional_io.hpp>  // TODO mbautin: remove this
 
 #include <boost/uuid/uuid_io.hpp>
 

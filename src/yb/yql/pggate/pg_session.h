@@ -262,9 +262,6 @@ class PgSession : public RefCountedThreadSafe<PgSession> {
   // True if the read request has a row mark.
   bool has_row_mark_ = false;
 
-  // True if the read request has a FOR SHARE or FOR KEY SHARE lock.
-  bool has_for_share_lock_ = false;
-
   const tserver::TServerSharedObject* const tserver_shared_object_;
 };
 

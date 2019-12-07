@@ -269,6 +269,16 @@ bool RejectWrite(tablet::TabletPeer* tablet_peer, const std::string& message, do
   return false;
 }
 
+void AdjustYsqlOperationTransactionality(
+    size_t ysql_batch_size,
+    const TabletPeer* tablet_peer,
+    tablet::WriteOperationState* operation_state) {
+  // Operations on YSQL system catalog tables are always considered transactional.
+  if (ysql_batch_size > 0 && tablet_peer->tablet()->is_sys_catalog()) {
+    operation_state->set_force_txn_path();
+  }
+}
+
 } // namespace
 
 template<class Resp>
@@ -926,10 +936,8 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
             req->include_trace()));
   }
 
-  // Operations on YSQL system catalog tables are always considered transactional.
-  if (req->pgsql_write_batch_size() && tablet.peer->tablet()->is_sys_catalog()) {
-    operation_state->set_force_txn_path();
-  }
+  AdjustYsqlOperationTransactionality(
+      req->pgsql_write_batch_size(), tablet.peer.get(), operation_state.get());
 
   tablet.peer->WriteAsync(
       std::move(operation_state), tablet.leader_term, context_ptr->GetClientDeadline());
@@ -1355,11 +1363,10 @@ void TabletServiceImpl::Read(const ReadRequestPB* req,
     auto operation_state = std::make_unique<WriteOperationState>(
         leader_peer.peer->tablet(), &write_req, nullptr /* response */,
         docdb::OperationKind::kRead);
-    // Operations on YSQL system catalog tables are transactional.
-    if (req->pgsql_batch_size() > 0 && leader_peer.peer->tablet()->is_sys_catalog()) {
-      operation_state->set_force_txn_path();
-    }
 
+    AdjustYsqlOperationTransactionality(
+        req->pgsql_batch_size(), leader_peer.peer.get(), operation_state.get());
+    
     auto context_ptr = std::make_shared<RpcContext>(std::move(context));
     read_context.context = context_ptr.get();
     operation_state->set_completion_callback(std::make_unique<ReadOperationCompletionCallback>(

@@ -11,6 +11,8 @@
 // under the License.
 //
 
+#include <boost/preprocessor/seq/for_each.hpp>
+
 #include "yb/yql/pgwrapper/libpq_utils.h"
 
 #include "yb/common/pgsql_error.h"
@@ -27,19 +29,25 @@ namespace pgwrapper {
 
 namespace {
 
-const std::string ExecStatusTypeToStr(ExecStatusType exec_status_type) {
+// Converts the given element of the ExecStatusType enum to a string.
+std::string ExecStatusTypeToStr(ExecStatusType exec_status_type) {
+#define EXEC_STATUS_SWITCH_CASE(r, data, item) case item: return #item;
+#define EXEC_STATUS_TYPE_ENUM_ELEMENTS \
+    (PGRES_EMPTY_QUERY) \
+    (PGRES_COMMAND_OK) \
+    (PGRES_TUPLES_OK) \
+    (PGRES_COPY_OUT) \
+    (PGRES_COPY_IN) \
+    (PGRES_BAD_RESPONSE) \
+    (PGRES_NONFATAL_ERROR) \
+    (PGRES_FATAL_ERROR) \
+    (PGRES_COPY_BOTH) \
+    (PGRES_SINGLE_TUPLE)
   switch (exec_status_type) {
-    case PGRES_EMPTY_QUERY: return "PGRES_EMPTY_QUERY";
-    case PGRES_COMMAND_OK: return "PGRES_COMMAND_OK";
-    case PGRES_TUPLES_OK: return "PGRES_TUPLES_OK";
-    case PGRES_COPY_OUT: return "PGRES_COPY_OUT";
-    case PGRES_COPY_IN: return "PGRES_COPY_IN";
-    case PGRES_BAD_RESPONSE: return "PGRES_BAD_RESPONSE";
-    case PGRES_NONFATAL_ERROR: return "PGRES_NONFATAL_ERROR";
-    case PGRES_FATAL_ERROR: return "PGRES_FATAL_ERROR";
-    case PGRES_COPY_BOTH: return "PGRES_COPY_BOTH";
-    case PGRES_SINGLE_TUPLE: return "PGRES_SINGLE_TUPLE";
+    BOOST_PP_SEQ_FOR_EACH(EXEC_STATUS_SWITCH_CASE, ~, EXEC_STATUS_TYPE_ENUM_ELEMENTS)
   }
+#undef EXEC_STATUS_SWITCH_CASE
+#undef EXEC_STATUS_TYPE_ENUM_ELEMENTS
   return Format("Unknown ExecStatusType ($0)", exec_status_type);
 }
 

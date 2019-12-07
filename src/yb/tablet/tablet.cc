@@ -2236,9 +2236,14 @@ std::pair<int, int> Tablet::GetNumMemtables() const {
 
 // ------------------------------------------------------------------------------------------------
 
+bool Tablet::ShouldCreateTransactionContext() const {
+  return txns_enabled_ && (
+      metadata_->schema().table_properties().is_transactional() || is_sys_catalog_);
+}
+
 Result<TransactionOperationContextOpt> Tablet::CreateTransactionOperationContext(
     const TransactionMetadataPB& transaction_metadata) const {
-  if (txns_enabled_ && metadata_->schema().table_properties().is_transactional()) {
+  if (ShouldCreateTransactionContext()) {
     if (transaction_metadata.has_transaction_id()) {
       Result<TransactionId> txn_id = FullyDecodeTransactionId(
           transaction_metadata.transaction_id());
@@ -2258,7 +2263,7 @@ Result<TransactionOperationContextOpt> Tablet::CreateTransactionOperationContext
 
 TransactionOperationContextOpt Tablet::CreateTransactionOperationContext(
     const boost::optional<TransactionId>& transaction_id) const {
-  if (txns_enabled_ && metadata_->schema().table_properties().is_transactional()) {
+  if (ShouldCreateTransactionContext()) {
     if (transaction_id.is_initialized()) {
       return TransactionOperationContext(transaction_id.get(), transaction_participant());
     } else {
