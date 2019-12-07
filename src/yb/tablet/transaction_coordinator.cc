@@ -798,7 +798,7 @@ class TransactionCoordinator::Impl : public TransactionStateContext {
               << state.ShortDebugString();
           request->CompleteWithStatus(
               STATUS(Expired, "Transaction expired or aborted by a conflict",
-                  PgsqlError(YBPgErrorCode::YB_PG_T_R_SERIALIZATION_FAILURE)));
+                     PgsqlError(YBPgErrorCode::YB_PG_T_R_SERIALIZATION_FAILURE)));
           return;
         }
       }

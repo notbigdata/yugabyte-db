@@ -102,7 +102,7 @@ std::pair<std::string, std::string> AssertMetadataEqualsHelper(C* ti_a, C* ti_b)
 // Similar to ASSERT_EQ but compares string representations of protobufs stored in two system
 // catalog metadata objects.
 //
-// This uses a gtest internal macro for user-friendly output, as it shows the expressions passed to 
+// This uses a gtest internal macro for user-friendly output, as it shows the expressions passed to
 // ASSERT_METADATA_EQ the same way ASSERT_EQ would show them. If the internal macro stops working
 // the way it does now with a future version of gtest, it could be replaced with:
 //

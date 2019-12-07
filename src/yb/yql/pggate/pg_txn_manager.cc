@@ -12,6 +12,7 @@
 //
 
 #include "yb/yql/pggate/pggate.h"
+#include "yb/yql/pggate/pggate_flags.h"
 #include "yb/util/status.h"
 
 #include "yb/client/session.h"
@@ -24,6 +25,7 @@
 
 using namespace std::literals;
 using namespace std::placeholders;
+
 
 namespace yb {
 namespace pggate {
@@ -239,7 +241,9 @@ Status PgTxnManager::EnterSeparateDdlTxnMode() {
   ddl_session_->SetForceConsistentRead(client::ForceConsistentRead::kTrue);
   ddl_txn_ = std::make_shared<YBTransaction>(GetOrCreateTransactionManager());
   ddl_session_->SetTransaction(ddl_txn_);
-  RETURN_NOT_OK(ddl_txn_->Init(IsolationLevel::SERIALIZABLE_ISOLATION));
+  RETURN_NOT_OK(ddl_txn_->Init(
+      FLAGS_ysql_serializable_isolation_for_ddl_txn ? IsolationLevel::SERIALIZABLE_ISOLATION
+                                                    : IsolationLevel::SNAPSHOT_ISOLATION));
   VLOG(2) << __PRETTY_FUNCTION__ << ": ddl_txn_=" << ddl_txn_.get();
   return Status::OK();
 }

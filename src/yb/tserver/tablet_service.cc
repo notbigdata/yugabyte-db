@@ -1366,7 +1366,7 @@ void TabletServiceImpl::Read(const ReadRequestPB* req,
 
     AdjustYsqlOperationTransactionality(
         req->pgsql_batch_size(), leader_peer.peer.get(), operation_state.get());
-    
+
     auto context_ptr = std::make_shared<RpcContext>(std::move(context));
     read_context.context = context_ptr.get();
     operation_state->set_completion_callback(std::make_unique<ReadOperationCompletionCallback>(
