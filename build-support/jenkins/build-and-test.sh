@@ -200,6 +200,10 @@ remove_latest_symlink
 if is_jenkins; then
   log "Running on Jenkins, will re-create the Python virtualenv"
   YB_RECREATE_VIRTUALENV=1
+  if is_centos; then
+    log "Setting YB_DOWNLOAD_THIRDPARTY=1 on CentOS"
+    export YB_DOWNLOAD_THIRDPARTY=1
+  fi
 fi
 
 log "Running with PATH: $PATH"
@@ -314,14 +318,19 @@ configure_remote_compilation
 log "YB_THIRDPARTY_DIR=$YB_THIRDPARTY_DIR"
 if using_default_thirdparty_dir; then
   log "Found that YB_THIRDPARTY_DIR is the default location"
-  find_thirdparty_dir
-  if ! "$found_shared_thirdparty_dir"; then
-    if [[ ${NO_REBUILD_THIRDPARTY:-} == "1" ]]; then
-      log "Skiping third-party build because NO_REBUILD_THIRDPARTY is set."
-    else
-      log "Starting third-party dependency build"
-      time thirdparty/build_thirdparty.sh
-      log "Third-party dependency build finished (see timing information above)"
+  if [[ ${YB_DOWNLOAD_THIRDPARTY:-} == "1" ]]; then
+    set_prebuilt_thirdparty_url
+    download_thirdparty
+  else
+    find_thirdparty_dir
+    if ! "$found_shared_thirdparty_dir"; then
+      if [[ ${NO_REBUILD_THIRDPARTY:-} == "1" ]]; then
+        log "Skipping third-party build because NO_REBUILD_THIRDPARTY is set."
+      else
+        log "Starting third-party dependency build"
+        time thirdparty/build_thirdparty.sh
+        log "Third-party dependency build finished (see timing information above)"
+      fi
     fi
   fi
 else

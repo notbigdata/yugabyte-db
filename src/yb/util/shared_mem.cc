@@ -1,5 +1,3 @@
-// Copyright (c) YugaByte, Inc.
-//
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
 // in compliance with the License.  You may obtain a copy of the License at
 //
@@ -17,6 +15,9 @@
 #include <mntent.h>
 #include <sys/utsname.h>
 #include <sys/syscall.h>
+
+#define __NR_memfd_create 319
+
 #endif
 #include <fcntl.h>
 #include <sys/stat.h>

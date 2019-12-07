@@ -34,6 +34,8 @@
 
 #include <string>
 
+#include <csignal>
+
 #include "yb/gutil/cpu.h"
 #include "yb/gutil/strings/split.h"
 #include "yb/gutil/strings/substitute.h"

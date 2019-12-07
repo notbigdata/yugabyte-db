@@ -69,10 +69,12 @@ declare -i MAX_JAVA_BUILD_ATTEMPTS=5
 declare -r -i YB_EXIT_CODE_NO_SUCH_FILE_OR_DIRECTORY=2
 
 # What matches these expressions will be filtered out of Maven output.
-MVN_OUTPUT_FILTER_REGEX='\[INFO\] (Download(ing|ed): '
-MVN_OUTPUT_FILTER_REGEX+='|[^ ]+ already added, skipping$)'
+MVN_OUTPUT_FILTER_REGEX='\[INFO\] Download(ing|ed): '
+MVN_OUTPUT_FILTER_REGEX+='|\[INFO\] Download(ing|ed) from .*: '
+MVN_OUTPUT_FILTER_REGEX+='|\[INFO\] .*[^ ]+ already added, skipping$'
 MVN_OUTPUT_FILTER_REGEX+='|^Generating .*[.]html[.][.][.]$'
 MVN_OUTPUT_FILTER_REGEX+='|^\[INFO\] Copying .*[.]jar to .*[.]jar$'
+readonly MVN_OUTPUT_FILTER_REGEX
 
 readonly YB_JENKINS_NFS_HOME_DIR=/n/jenkins
 
@@ -535,15 +537,18 @@ set_cmake_build_type_and_compiler_type() {
     cmake_opts+=( -G Ninja )
     make_program=ninja
     if ! which ninja &>/dev/null; then
-      if using_linuxbrew; then
-        export YB_NINJA_PATH=$YB_LINUXBREW_DIR/bin/ninja
-        make_program=$YB_NINJA_PATH
-      elif using_custom_homebrew; then
-        export YB_NINJA_PATH=$YB_CUSTOM_HOMEBREW_DIR/bin/ninja
-        make_program=$YB_NINJA_PATH
-      elif is_mac; then
-        log "Did not find the 'ninja' executable, auto-installing ninja using Homebrew"
-        brew install ninja
+      export YB_NINJA_PATH=/n/jenkins/linuxbrew/linuxbrew-20191015T202549/bin/ninja
+      if false; then
+        if using_linuxbrew; then
+          export YB_NINJA_PATH=$YB_LINUXBREW_DIR/bin/ninja
+          make_program=$YB_NINJA_PATH
+        elif using_custom_homebrew; then
+          export YB_NINJA_PATH=$YB_CUSTOM_HOMEBREW_DIR/bin/ninja
+          make_program=$YB_NINJA_PATH
+        elif is_mac; then
+          log "Did not find the 'ninja' executable, auto-installing ninja using Homebrew"
+          brew install ninja
+        fi
       fi
     fi
     make_file=build.ninja
@@ -971,6 +976,7 @@ popd() {
 }
 
 detect_brew() {
+  return
   if is_linux; then
     detect_linuxbrew
   elif is_mac; then
@@ -1026,6 +1032,7 @@ download_thirdparty() {
   else
     fatal "Cannot download Linuxbrew: file $linuxbrew_url_path does not exist"
   fi
+  export NO_REBUILD_THIRDPARTY=1
 }
 
 install_linuxbrew() {
@@ -1554,6 +1561,7 @@ find_thirdparty_by_url() {
 # In our internal environment we build third-party dependencies in separate directories on NFS
 # so that we can use them across many builds.
 find_thirdparty_dir() {
+  return
   if [[ -n ${YB_THIRDPARTY_URL:-} ]]; then
     find_thirdparty_by_url
     log "YB_THIRDPARTY_DIR=$YB_THIRDPARTY_DIR"

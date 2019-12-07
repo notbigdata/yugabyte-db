@@ -205,9 +205,9 @@ function(VALIDATE_COMPILER_TYPE)
               "(expected to be clang)")
     endif()
   elseif (NOT "$ENV{YB_COMPILER_TYPE}" STREQUAL "${COMPILER_FAMILY}")
-    message(FATAL_ERROR
-            "YB_COMPILER_TYPE environment variable ($ENV{YB_COMPILER_TYPE}) does not match the "
-            "compiler family detected by CMake (${COMPILER_FAMILY}")
+    #message(FATAL_ERROR
+    #        "YB_COMPILER_TYPE environment variable ($ENV{YB_COMPILER_TYPE}) does not match the "
+    #        "compiler family detected by CMake (${COMPILER_FAMILY}")
   endif()
 
   if (NOT "${COMPILER_FAMILY}" STREQUAL "gcc" AND
@@ -246,6 +246,7 @@ function(ADD_GLOBAL_RPATH_ENTRY RPATH_ENTRY)
   set(FLAGS "-Wl,-rpath,${RPATH_ENTRY}")
   set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${FLAGS}" PARENT_SCOPE)
   set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${FLAGS}" PARENT_SCOPE)
+  #set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${FLAGS}" PARENT_SCOPE)
 endfunction()
 
 # CXX_YB_COMMON_FLAGS are flags that are common across the 'src/yb' portion of the codebase (but do
@@ -533,6 +534,13 @@ endif()
 
 INIT_COMPILER_TYPE()
 
+ADD_LINKER_FLAGS("-L${LINUXBREW_DIR}/x86_64-unknown-linux-gnu/lib64")
+#ADD_LINKER_FLAGS("-L${LINUXBREW_DIR}/x86_64-unknown-linux-gnu/sysroot/lib64")
+#ADD_LINKER_FLAGS("-L${LINUXBREW_DIR}/x86_64-unknown-linux-gnu/sysroot/usr/lib")
+ADD_GLOBAL_RPATH_ENTRY("${LINUXBREW_DIR}/x86_64-unknown-linux-gnu/lib64")
+#ADD_GLOBAL_RPATH_ENTRY("${LINUXBREW_DIR}/x86_64-unknown-linux-gnu/sysroot/lib64")
+#ADD_GLOBAL_RPATH_ENTRY("${LINUXBREW_DIR}/x86_64-unknown-linux-gnu/sysroot/usr/lib")
+
 # This helps find the right third-party build directory.
 if (YB_USE_TSAN)
   set(THIRDPARTY_INSTRUMENTATION_TYPE "tsan")
@@ -548,6 +556,7 @@ elseif ("$ENV{YB_COMPILER_TYPE}" STREQUAL "gcc")
 else()
   message(FATAL_ERROR "Not handled compiler family: ${COMPILER_FAMILY}.")
 endif()
+
 
 # Make sure thirdparty stuff is up-to-date.
 if ("$ENV{NO_REBUILD_THIRDPARTY}" STREQUAL "")
@@ -1563,7 +1572,8 @@ ADD_THIRDPARTY_LIB(crypt_blowfish
   STATIC_LIB "${CRYPT_BLOWFISH_STATIC_LIB}")
 
 ## librt
-if (NOT APPLE)
+## Not needed for ct-ng?
+if (FALSE AND NOT APPLE)
   find_library(RT_LIB_PATH rt)
   if(NOT RT_LIB_PATH)
     message(FATAL_ERROR "Could not find librt on the system path")
@@ -1626,6 +1636,7 @@ foreach(IDX RANGE ${LAST_IDX})
 endforeach()
 include_directories(SYSTEM ${Boost_INCLUDE_DIR})
 
+if(FALSE)
 if(APPLE)
   set(ICU_ROOT "${HOMEBREW_OPT_DIR}/icu4c")
 endif()
@@ -1639,7 +1650,7 @@ ADD_THIRDPARTY_LIB(icuuc
   SHARED_LIB "${ICU_UC_LIBRARIES}")
 message("ICU_I18N_LIBRARIES=${ICU_I18N_LIBRARIES}")
 message("ICU_UC_LIBRARIES=${ICU_UC_LIBRARIES}")
-
+endif()
 ## Libuv
 find_package(LibUv REQUIRED)
 include_directories(SYSTEM ${LIBUV_INCLUDE_DIR})
@@ -1756,8 +1767,9 @@ if (USING_LINUXBREW)
   # Add the Linuxbrew library directory last.
   ADD_LINKER_FLAGS("-L${LINUXBREW_LIB_DIR}")
   ADD_GLOBAL_RPATH_ENTRY("${LINUXBREW_LIB_DIR}")
-  ADD_LINKER_FLAGS("-L/usr/lib64")
-  ADD_GLOBAL_RPATH_ENTRY("/usr/lib64")
+  # Not needed for ct-ng
+  #ADD_LINKER_FLAGS("-L/usr/lib64")
+  #ADD_GLOBAL_RPATH_ENTRY("/usr/lib64")
 elseif(APPLE)
   ADD_LINKER_FLAGS("-L${ICU_ROOT}/lib")
   ADD_GLOBAL_RPATH_ENTRY("${ICU_ROOT}/lib")
