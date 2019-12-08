@@ -73,14 +73,25 @@
 
 set -euo pipefail
 
-echo "Build script $BASH_SOURCE is running"
-
-. "${BASH_SOURCE%/*}/../common-test-env.sh"
+# -------------------------------------------------------------------------------------------------
+# Constants
 
 readonly COMMON_YB_BUILD_ARGS_FOR_CPP_BUILD=(
   --no-rebuild-thirdparty
   --skip-java
 )
+
+# -------------------------------------------------------------------------------------------------
+# Pre-initialization
+
+echo "Build script $BASH_SOURCE is running"
+
+if is_centos; then
+  log "Setting YB_DOWNLOAD_THIRDPARTY=1 on CentOS"
+  export YB_DOWNLOAD_THIRDPARTY=1
+fi
+
+. "${BASH_SOURCE%/*}/../common-test-env.sh"
 
 # -------------------------------------------------------------------------------------------------
 # Functions
@@ -200,10 +211,6 @@ remove_latest_symlink
 if is_jenkins; then
   log "Running on Jenkins, will re-create the Python virtualenv"
   YB_RECREATE_VIRTUALENV=1
-  if is_centos; then
-    log "Setting YB_DOWNLOAD_THIRDPARTY=1 on CentOS"
-    export YB_DOWNLOAD_THIRDPARTY=1
-  fi
 fi
 
 log "Running with PATH: $PATH"
