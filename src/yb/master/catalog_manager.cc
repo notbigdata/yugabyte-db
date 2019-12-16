@@ -302,40 +302,9 @@ using yb::client::YBTable;
 using yb::client::YBTableCreator;
 using yb::client::YBTableName;
 
-namespace {
-
-size_t GetNameMapperIndex(YQLDatabase db_type) {
-  switch (db_type) {
-    case YQL_DATABASE_UNKNOWN: break;
-    case YQL_DATABASE_CQL: return 1;
-    case YQL_DATABASE_PGSQL: return 2;
-    case YQL_DATABASE_REDIS: return 3;
-  }
-  CHECK(false) << "Unexpected db type " << db_type;
-  return 0;
-}
-
-}  // anonymous namespace
-
 ////////////////////////////////////////////////////////////
 // CatalogManager
 ////////////////////////////////////////////////////////////
-
-CatalogManager::NamespaceInfoMap& CatalogManager::NamespaceNameMapper::operator[](
-    YQLDatabase db_type) {
-  return typed_maps_[GetNameMapperIndex(db_type)];
-}
-
-const CatalogManager::NamespaceInfoMap& CatalogManager::NamespaceNameMapper::operator[](
-    YQLDatabase db_type) const {
-  return typed_maps_[GetNameMapperIndex(db_type)];
-}
-
-void CatalogManager::NamespaceNameMapper::clear() {
-  for (auto& m : typed_maps_) {
-    m.clear();
-  }
-}
 
 CatalogManager::CatalogManager(Master* master)
     : master_(master),

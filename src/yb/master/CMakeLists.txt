@@ -65,6 +65,7 @@ set(MASTER_SRCS
   catalog_entity_info.cc
   catalog_manager_bg_tasks.cc
   catalog_loaders.cc
+  name_maps.cc
   table_creation_manager.cc
   scoped_leader_shared_lock.cc
   cluster_balance.cc

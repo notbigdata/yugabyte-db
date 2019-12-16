@@ -24,6 +24,7 @@
 #include "yb/tserver/tserver_admin.pb.h"
 
 #include "yb/master/catalog_entity_info.h"
+#include "yb/master/name_maps.h"
 
 DECLARE_string(initial_sys_catalog_snapshot_path);
 DECLARE_bool(use_initial_sys_catalog_snapshot);

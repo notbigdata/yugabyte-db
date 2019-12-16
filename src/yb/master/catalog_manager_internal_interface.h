@@ -23,7 +23,8 @@ namespace master {
 
 class SysCatalogTable;
 
-// An internal interface of the catalog manager that is exposed to its components.
+// An internal interface of the catalog manager that it exposes to its subcomponents, such as
+// PermissionsManager and TableCreationManager.
 class CatalogManagerInternalIf {
  public:
   CatalogManagerInternalIf() {}

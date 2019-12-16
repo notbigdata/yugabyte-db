@@ -75,6 +75,7 @@
 #include "yb/master/catalog_manager_locking.h"
 #include "yb/master/catalog_manager_internal_interface.h"
 #include "yb/master/name_maps.h"
+#include "yb/master/table_creation_manager.h"
 
 namespace yb {
 
@@ -947,7 +948,7 @@ class CatalogManager : public tserver::TabletPeerLookupIf,
     return leader_ready_term_;
   }
 
-  int64_t GetLeaderReadyTermUnlocked() override {
+  int64_t GetLeaderReadyTermUnlocked() const override {
     return leader_ready_term_;
   }
 
@@ -971,6 +972,8 @@ class CatalogManager : public tserver::TabletPeerLookupIf,
   // TODO: the maps are a little wasteful of RAM, since the TableInfo/TabletInfo
   // objects have a copy of the string key. But STL doesn't make it
   // easy to make a "gettable set".
+
+  using LockType = CatalogManagerMutexType;
 
   mutable CatalogManagerMutexType lock_;
 
@@ -1099,6 +1102,7 @@ class CatalogManager : public tserver::TabletPeerLookupIf,
   boost::optional<InitialSysCatalogSnapshotWriter> initial_snapshot_writer_;
 
   std::unique_ptr<PermissionsManager> permissions_manager_;
+  std::unique_ptr<TableCreationManager> table_creation_manager_;
 
   // This is used for tracking that initdb has started running previously.
   std::atomic<bool> pg_proc_exists_{false};

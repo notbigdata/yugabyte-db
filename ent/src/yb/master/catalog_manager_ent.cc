@@ -775,7 +775,8 @@ Status CatalogManager::ImportTableEntry(const SysRowEntry& entry,
       schema->mutable_columns(i)->clear_id();
     }
 
-    RETURN_NOT_OK(CreateTable(&req, &resp, /* RpcContext */nullptr));
+    RETURN_NOT_OK(
+        table_creation_manager_->CreateTable(&req, &resp, /* RpcContext */ nullptr));
     table_data->new_table_id = resp.table_id();
 
     TRACE("Looking up new table");
