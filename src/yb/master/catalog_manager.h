@@ -72,6 +72,9 @@
 #include "yb/master/scoped_leader_shared_lock.h"
 #include "yb/master/permissions_manager.h"
 #include "yb/master/sys_catalog_initialization.h"
+#include "yb/master/catalog_manager_locking.h"
+#include "yb/master/catalog_manager_internal_interface.h"
+#include "yb/master/name_maps.h"
 
 namespace yb {
 
@@ -132,19 +135,8 @@ class BlacklistState {
 // the state of each tablet on a given tablet-server.
 //
 // Thread-safe.
-class CatalogManager : public tserver::TabletPeerLookupIf {
-  typedef std::unordered_map<NamespaceName, scoped_refptr<NamespaceInfo> > NamespaceInfoMap;
-
-  class NamespaceNameMapper {
-   public:
-    NamespaceInfoMap& operator[](YQLDatabase db_type);
-    const NamespaceInfoMap& operator[](YQLDatabase db_type) const;
-    void clear();
-
-   private:
-    std::array<NamespaceInfoMap, 4> typed_maps_;
-  };
-
+class CatalogManager : public tserver::TabletPeerLookupIf,
+                       public CatalogManagerInternalIf {
  public:
   // Some code refers to ScopedLeaderSharedLock as CatalogManager::ScopedLeaderSharedLock.
   using ScopedLeaderSharedLock = ::yb::master::ScopedLeaderSharedLock;
@@ -155,7 +147,7 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   CHECKED_STATUS Init(bool is_first_run);
 
   void Shutdown();
-  CHECKED_STATUS CheckOnline() const;
+  CHECKED_STATUS CheckOnline() const override;
 
   // Create Postgres sys catalog table.
   CHECKED_STATUS CreatePgsqlSysTable(const CreateTableRequestPB* req,
@@ -179,14 +171,6 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
                                     const std::vector<scoped_refptr<TableInfo>>& tables,
                                     CreateNamespaceResponsePB* resp,
                                     rpc::RpcContext* rpc);
-
-  // Create a new Table with the specified attributes.
-  //
-  // The RPC context is provided for logging/tracing purposes,
-  // but this function does not itself respond to the RPC.
-  CHECKED_STATUS CreateTable(const CreateTableRequestPB* req,
-                             CreateTableResponsePB* resp,
-                             rpc::RpcContext* rpc);
 
   // Create the transaction status table if needed (i.e. if it does not exist already).
   //
@@ -370,7 +354,8 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   virtual CHECKED_STATUS FillHeartbeatResponse(const TSHeartbeatRequestPB* req,
                                                TSHeartbeatResponsePB* resp);
 
-  SysCatalogTable* sys_catalog() { return sys_catalog_.get(); }
+  SysCatalogTable* sys_catalog() const override { return sys_catalog_.get(); }
+  CatalogManagerMutexType* internal_data_mutex() const override { return &lock_; }
 
   // Dump all of the current state about tables and tablets to the
   // given output stream. This is verbose, meant for debugging.
@@ -600,6 +585,9 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
     return *encryption_manager_;
   }
 
+  TableInfoByNameMap& table_info_by_name_map() const override;
+  NamespaceNameMapper& namespace_name_mapper() const override;
+
  protected:
   // TODO Get rid of these friend classes and introduce formal interface.
   friend class TableLoader;
@@ -723,15 +711,6 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   //
   // This method is thread-safe.
   CHECKED_STATUS InitSysCatalogAsync(bool is_first_run);
-
-  // Helper for creating the initial TableInfo state
-  // Leaves the table "write locked" with the new info in the
-  // "dirty" state field.
-  scoped_refptr<TableInfo> CreateTableInfo(const CreateTableRequestPB& req,
-                                           const Schema& schema,
-                                           const PartitionSchema& partition_schema,
-                                           const NamespaceId& namespace_id,
-                                           IndexInfoPB* index_info);
 
   // Helper for creating the initial TabletInfo state.
   // Leaves the tablet "write locked" with the new info in the
@@ -968,6 +947,10 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
     return leader_ready_term_;
   }
 
+  int64_t GetLeaderReadyTermUnlocked() override {
+    return leader_ready_term_;
+  }
+
   // Delete tables from internal map by id, if it has no more active tasks and tablets.
   // This function should only be called from the bg_tasks thread, in a single threaded fashion!
   void CleanUpDeletedTables();
@@ -989,9 +972,7 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   // objects have a copy of the string key. But STL doesn't make it
   // easy to make a "gettable set".
 
-  // Lock protecting the various in memory storage structures.
-  typedef rw_spinlock LockType;
-  mutable LockType lock_;
+  mutable CatalogManagerMutexType lock_;
 
   // Note: Namespaces and tables for YSQL databases are identified by their ids only and therefore
   // are not saved in the name maps below.

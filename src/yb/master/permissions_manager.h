@@ -16,6 +16,7 @@
 
 #include "yb/master/master.pb.h"
 #include "yb/master/catalog_entity_info.h"
+#include "yb/master/catalog_manager_locking.h"
 #include "yb/util/status.h"
 #include "yb/rpc/rpc.h"
 #include "yb/common/entity_ids.h"
@@ -24,11 +25,13 @@
 namespace yb {
 namespace master {
 
-class CatalogManager;
+class CatalogManagerInternalIf;
+
+class SysCatalogTable;
 
 class PermissionsManager final {
  public:
-  explicit PermissionsManager(CatalogManager* catalog_manager);
+  explicit PermissionsManager(CatalogManagerInternalIf* catalog_manager_internal);
 
   // Create a new role for authentication/authorization.
   //
@@ -174,7 +177,9 @@ class PermissionsManager final {
       PermissionType::SELECT_PERMISSION
   };
 
-  CatalogManager* catalog_manager_;
+  CatalogManagerInternalIf* catalog_manager_internal_;
+  CatalogManagerMutexType& catalog_manager_mtx_;
+  SysCatalogTable* sys_catalog_;
 
   DISALLOW_COPY_AND_ASSIGN(PermissionsManager);
 };

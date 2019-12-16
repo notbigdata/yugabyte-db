@@ -35,6 +35,7 @@
 #include "yb/common/wire_protocol.h"
 #include "yb/gutil/basictypes.h"
 #include "yb/master/catalog_manager.h"
+#include "yb/master/sys_catalog.h"
 #include "yb/rpc/rpc_context.h"
 
 namespace yb {
@@ -161,6 +162,23 @@ inline std::string RequestorString(yb::rpc::RpcContext* rpc) {
   }
 }
 
+template<class RespClass>
+Status CheckIfTableDeletedOrNotRunning(TableInfo::lock_type* lock, RespClass* resp) {
+  // This covers both in progress and fully deleted objects.
+  if (lock->data().started_deleting()) {
+    Status s = STATUS_SUBSTITUTE(NotFound,
+        "The object '$0.$1' does not exist", lock->data().namespace_id(), lock->data().name());
+    return SetupError(resp->mutable_error(), MasterErrorPB::OBJECT_NOT_FOUND, s);
+  }
+  if (!lock->data().is_running()) {
+    Status s = STATUS_SUBSTITUTE(ServiceUnavailable,
+        "The object '$0.$1' is not running", lock->data().namespace_id(), lock->data().name());
+    return SetupError(resp->mutable_error(), MasterErrorPB::OBJECT_NOT_FOUND, s);
+  }
+  return Status::OK();
+}
+
 }  // namespace master
 }  // namespace yb
+
 #endif // YB_MASTER_CATALOG_MANAGER_INTERNAL_H
