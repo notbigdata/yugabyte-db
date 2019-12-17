@@ -827,7 +827,7 @@ Status PermissionsManager::GrantRevokePermission(
       }
     } else {
       if (ns) {
-        table = FindPtrOrNull(&catalog_manager_internal_->table_info_by_names_map(),
+        table = FindPtrOrNull(catalog_manager_internal_->table_info_by_name_map(),
                               {ns->id(), req->resource_name()});
       }
       if (table == nullptr) {

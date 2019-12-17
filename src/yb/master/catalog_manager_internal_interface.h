@@ -14,9 +14,16 @@
 #ifndef YB_MASTER_CATALOG_MANAGER_INTERNAL_INTERFACE_H
 #define YB_MASTER_CATALOG_MANAGER_INTERNAL_INTERFACE_H
 
+#include <boost/optional.hpp>
+
+#include <string>
+
 #include "yb/util/status.h"
+#include "yb/util/version_tracker.h"
+
 #include "yb/master/name_maps.h"
 #include "yb/master/catalog_manager_locking.h"
+#include "yb/master/master.pb.h"
 
 namespace yb {
 namespace master {
@@ -36,6 +43,14 @@ class CatalogManagerInternalIf {
   virtual CatalogManagerMutexType* internal_data_mutex() const = 0;
   virtual TableInfoByNameMap& table_info_by_name_map() const =  0;
   virtual NamespaceNameMapper& namespace_name_mapper() const = 0;
+  virtual VersionTracker<TableInfoMap>& table_ids_map() = 0;
+  virtual void HandleNewTableId(const TableId& table_id) = 0;
+  virtual std::string GenerateId(boost::optional<const SysRowEntry::Type> entity_type) = 0;
+  virtual scoped_refptr<TableInfo> NewTableInfo(TableId id) = 0;
+  virtual CHECKED_STATUS FindNamespace(
+      const NamespaceIdentifierPB& ns_identifier,
+      scoped_refptr<NamespaceInfo>* ns_info) const = 0;
+  virtual scoped_refptr<TableInfo> GetTableInfo(const TableId& table_id) = 0;
 };
 
 }  // namespace master

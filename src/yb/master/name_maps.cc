@@ -12,6 +12,7 @@
 //
 
 #include "yb/master/name_maps.h"
+#include "yb/master/catalog_entity_info.h"
 
 namespace yb {
 namespace master {

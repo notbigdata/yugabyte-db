@@ -120,6 +120,8 @@
 #include "yb/yql/pgwrapper/pg_wrapper.h"
 #include "yb/util/shared_lock.h"
 
+#include "yb/gutil/strings/substitute.h"
+
 using namespace std::literals;
 
 DEFINE_bool(master_enable_metrics_snapshotter, false, "Should metrics snapshotter be enabled");
@@ -129,6 +131,9 @@ DEFINE_bool(
     "Whether to hide detailed log messages for PostgreSQL catalog table creation. "
     "This cuts down test logs significantly.");
 TAG_FLAG(hide_pg_catalog_table_creation_logs, hidden);
+
+DEFINE_test_flag(int32, simulate_slow_table_create_secs, 0,
+    "Simulates a slow table creation by sleeping after the table has been added to memory.");
 
 namespace yb {
 namespace master {
@@ -175,13 +180,30 @@ class IndexInfoBuilder {
   IndexInfoPB& index_info_;
 };
 
-}  // namespace
-
-TableCreationManager::TableCreationManager(CatalogManagerInternalIf* catalog_manager_if)
-    : catalog_manager_if_(catalog_manager_if),
-      catalog_mutex_(catalog_manager_if->mutex()) {
+CHECKED_STATUS ValidateCreateTableSchema(const Schema& schema, CreateTableResponsePB* resp) {
+  if (schema.has_column_ids()) {
+    return SetupError(resp->mutable_error(), MasterErrorPB::INVALID_SCHEMA,
+                      STATUS(InvalidArgument, "User requests should not have Column IDs"));
+  }
+  if (schema.num_key_columns() <= 0) {
+    return SetupError(resp->mutable_error(), MasterErrorPB::INVALID_SCHEMA,
+                      STATUS(InvalidArgument, "Must specify at least one key column"));
+  }
+  for (int i = 0; i < schema.num_key_columns(); i++) {
+    if (!IsTypeAllowableInKey(schema.column(i).type_info())) {
+      return SetupError(resp->mutable_error(), MasterErrorPB::INVALID_SCHEMA,
+                        STATUS(InvalidArgument, "Invalid datatype for primary key column"));
+    }
+  }
+  return Status::OK();
 }
 
+}  // namespace
+
+TableCreationManager::TableCreationManager(CatalogManagerInternalIf* catalog_manager_internal)
+    : catalog_manager_internal_(catalog_manager_internal),
+      catalog_manager_mtx_(*catalog_manager_internal->internal_data_mutex()) {
+}
 
 Status TableCreationManager::CreateTableInMemory(
     const CreateTableRequestPB& req,
@@ -195,18 +217,18 @@ Status TableCreationManager::CreateTableInMemory(
     CreateTableResponsePB* resp,
     scoped_refptr<TableInfo>* table) {
   // Verify we have catalog manager lock.
-  if (!lock_.is_locked()) {
+  if (!catalog_manager_mtx_.is_locked()) {
     return STATUS(IllegalState, "We don't have the catalog manager lock!");
   }
 
   // Add the new table in "preparing" state.
   *table = CreateTableInfo(req, schema, partition_schema, namespace_id, index_info);
   const TableId& table_id = (*table)->id();
-  auto table_ids_map_checkout = table_ids_map_.CheckOut();
+  auto table_ids_map_checkout = catalog_manager_internal_->table_ids_map().CheckOut();
   (*table_ids_map_checkout)[table_id] = *table;
   // Do not add Postgres tables to the name map as the table name is not unique in a namespace.
   if (req.table_type() != PGSQL_TABLE_TYPE) {
-    table_names_map_[{namespace_id, req.name()}] = *table;
+    catalog_manager_internal_->table_info_by_name_map()[{namespace_id, req.name()}] = *table;
   }
 
   if (create_tablets) {
@@ -217,14 +239,15 @@ Status TableCreationManager::CreateTableInMemory(
     resp->set_table_id(table_id);
   }
 
-  HandleNewTableId(table_id);
+  catalog_manager_internal_->HandleNewTableId(table_id);
 
   return Status::OK();
 }
 
-Status CatalogManager::IsCreateTableDone(const IsCreateTableDoneRequestPB* req,
-                                         IsCreateTableDoneResponsePB* resp) {
-  RETURN_NOT_OK(CheckOnline());
+Status TableCreationManager::IsCreateTableDone(
+    const IsCreateTableDoneRequestPB* req,
+    IsCreateTableDoneResponsePB* resp) {
+  RETURN_NOT_OK(catalog_manager_internal_->CheckOnline());
 
   scoped_refptr<TableInfo> table;
 
@@ -281,14 +304,17 @@ Status CatalogManager::IsCreateTableDone(const IsCreateTableDoneRequestPB* req,
   return Status::OK();
 }
 
-scoped_refptr<TableInfo> CatalogManager::CreateTableInfo(const CreateTableRequestPB& req,
-                                                         const Schema& schema,
-                                                         const PartitionSchema& partition_schema,
-                                                         const NamespaceId& namespace_id,
-                                                         IndexInfoPB* index_info) {
+scoped_refptr<TableInfo> TableCreationManager::CreateTableInfo(
+    const CreateTableRequestPB& req,
+    const Schema& schema,
+    const PartitionSchema& partition_schema,
+    const NamespaceId& namespace_id,
+    IndexInfoPB* index_info) {
   DCHECK(schema.has_column_ids());
-  TableId table_id = !req.table_id().empty() ? req.table_id() : GenerateId(SysRowEntry::TABLE);
-  scoped_refptr<TableInfo> table = NewTableInfo(table_id);
+  TableId table_id =
+      !req.table_id().empty() ? req.table_id() 
+                              : catalog_manager_internal_->GenerateId(SysRowEntry::TABLE);
+  scoped_refptr<TableInfo> table = catalog_manager_internal_->NewTableInfo(table_id);
   table->mutable_metadata()->StartMutation();
   SysTablesEntryPB *metadata = &table->mutable_metadata()->mutable_dirty()->pb;
   metadata->set_state(SysTablesEntryPB::PREPARING);
@@ -343,10 +369,11 @@ scoped_refptr<TableInfo> CatalogManager::CreateTableInfo(const CreateTableReques
 
 // Create a new table.
 // See README file in this directory for a description of the design.
-Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
-                                   CreateTableResponsePB* resp,
-                                   rpc::RpcContext* rpc) {
-  RETURN_NOT_OK(CheckOnline());
+Status TableCreationManager::CreateTable(
+    const CreateTableRequestPB* orig_req,
+    CreateTableResponsePB* resp,
+    rpc::RpcContext* rpc) {
+  RETURN_NOT_OK(catalog_manager_internal_->CheckOnline());
 
   const bool is_pg_table = orig_req->table_type() == PGSQL_TABLE_TYPE;
   const bool is_pg_catalog_table = is_pg_table && orig_req->is_pg_catalog_table();
@@ -386,7 +413,8 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   // Lookup the namespace and verify if it exists.
   TRACE("Looking up namespace");
   scoped_refptr<NamespaceInfo> ns;
-  RETURN_NAMESPACE_NOT_FOUND(FindNamespace(req.namespace_(), &ns), resp);
+  RETURN_NAMESPACE_NOT_FOUND(catalog_manager_internal_->FindNamespace(
+      req.namespace_(), &ns), resp);
   if (ns->database_type() != GetDatabaseTypeForTable(req.table_type())) {
     Status s = STATUS(NotFound, "Namespace not found");
     return SetupError(resp->mutable_error(), MasterErrorPB::NAMESPACE_NOT_FOUND, s);
@@ -512,7 +540,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   } else if (req.has_indexed_table_id()) {
     // Old client message format when rolling upgrade (Not having "index_info").
     TRACE("Looking up indexed table");
-    indexed_table = GetTableInfo(req.indexed_table_id());
+    indexed_table = catalog_manager_internal_->GetTableInfo(req.indexed_table_id());
     if (indexed_table == nullptr) {
       return STATUS(NotFound, "The indexed table does not exist");
     }
@@ -645,5 +673,385 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   return Status::OK();
 }
 
+Status TableCreationManager::CreateTabletsFromTable(
+    const vector<Partition>& partitions,
+    const scoped_refptr<TableInfo>& table,
+    std::vector<TabletInfo*>* tablets) {
+  // Create the TabletInfo objects in state PREPARING.
+  for (const Partition& partition : partitions) {
+    PartitionPB partition_pb;
+    partition.ToPB(&partition_pb);
+    tablets->push_back(CreateTabletInfo(table.get(), partition_pb));
+  }
+
+  // Add the table/tablets to the in-memory map for the assignment.
+  table->AddTablets(*tablets);
+  auto tablet_map_checkout = tablet_map_.CheckOut();
+  for (TabletInfo* tablet : *tablets) {
+    InsertOrDie(tablet_map_checkout.get_ptr(), tablet->tablet_id(), tablet);
+  }
+
+  return Status::OK();
+}
+
+Status TableCreationManager::ValidateTableReplicationInfo(
+    const ReplicationInfoPB& replication_info) {
+  // TODO(bogdan): add the actual subset rules, instead of just erroring out as not supported.
+  const auto& live_placement_info = replication_info.live_replicas();
+  if (!(live_placement_info.placement_blocks().empty() &&
+        live_placement_info.num_replicas() <= 0 &&
+        live_placement_info.placement_uuid().empty()) ||
+      !replication_info.read_replicas().empty() ||
+      !replication_info.affinitized_leaders().empty()) {
+    return STATUS(
+        InvalidArgument,
+        "Unsupported: cannot set table level replication info yet.");
+  }
+  return Status::OK();
+}
+
+TabletInfo* TableCreationManager::CreateTabletInfo(
+    TableInfo* table,
+    const PartitionPB& partition) {
+  TabletInfo* tablet = new TabletInfo(
+      table, catalog_manager_internal_->GenerateId(SysRowEntry::TABLET));
+  tablet->mutable_metadata()->StartMutation();
+  SysTabletsEntryPB *metadata = &tablet->mutable_metadata()->mutable_dirty()->pb;
+  metadata->set_state(SysTabletsEntryPB::PREPARING);
+  metadata->mutable_partition()->CopyFrom(partition);
+  metadata->set_table_id(table->id());
+  // This is important: we are setting the first table id in the table_ids list
+  // to be the id of the original table that creates the tablet.
+  metadata->add_table_ids(table->id());
+  return tablet;
+}
+
+Status TableCreationManager::CreatePgsqlSysTable(
+    const CreateTableRequestPB* req,
+    CreateTableResponsePB* resp,
+    rpc::RpcContext* rpc) {
+  // Lookup the namespace and verify if it exists.
+  TRACE("Looking up namespace");
+  scoped_refptr<NamespaceInfo> ns;
+  RETURN_NAMESPACE_NOT_FOUND(FindNamespace(req->namespace_(), &ns), resp);
+  NamespaceId namespace_id = ns->id();
+
+  Schema schema;
+  Schema client_schema;
+  RETURN_NOT_OK(SchemaFromPB(req->schema(), &client_schema));
+  // If the schema contains column ids, we are copying a Postgres table from one namespace to
+  // another. In that case, just use the schema as-is. Otherwise, validate the schema.
+  if (client_schema.has_column_ids()) {
+    schema = std::move(client_schema);
+  } else {
+    RETURN_NOT_OK(ValidateCreateTableSchema(client_schema, resp));
+    schema = client_schema.CopyWithColumnIds();
+  }
+  schema.mutable_table_properties()->set_is_ysql_catalog_table(true);
+
+  // Verify no hash partition schema is specified.
+  if (req->partition_schema().has_hash_schema()) {
+    return SetupError(resp->mutable_error(), MasterErrorPB::INVALID_SCHEMA,
+                      STATUS(InvalidArgument,
+                             "PostgreSQL system catalog tables are non-partitioned"));
+  }
+
+  if (req->table_type() != TableType::PGSQL_TABLE_TYPE) {
+    return SetupError(resp->mutable_error(), MasterErrorPB::INVALID_SCHEMA,
+                      STATUS_FORMAT(
+                          InvalidArgument,
+                          "Expected table type to be PGSQL_TABLE_TYPE ($0), got $1 ($2)",
+                          PGSQL_TABLE_TYPE,
+                          TableType_Name(req->table_type())));
+
+  }
+
+  // Create partition schema and one partition.
+  PartitionSchema partition_schema;
+  vector<Partition> partitions;
+  RETURN_NOT_OK(partition_schema.CreatePartitions(1, &partitions));
+
+  // Create table info in memory.
+  scoped_refptr<TableInfo> table;
+  vector<TabletInfo*> tablets;
+  {
+    std::lock_guard<LockType> l(lock_);
+    TRACE("Acquired catalog manager lock");
+
+    // Verify that the table does not exist.
+    table = FindPtrOrNull(table_names_map_, {namespace_id, req->name()});
+    if (table != nullptr) {
+      return SetupError(resp->mutable_error(), MasterErrorPB::OBJECT_ALREADY_PRESENT,
+                        STATUS_SUBSTITUTE(AlreadyPresent,
+                            "Object '$0.$1' already exists", ns->name(), table->name()));
+    }
+
+    RETURN_NOT_OK(CreateTableInMemory(*req, schema, partition_schema, false /* create_tablets */,
+                                      namespace_id, partitions, nullptr /* index_info */,
+                                      nullptr /* tablets */, resp, &table));
+
+    scoped_refptr<TabletInfo> tablet = tablet_map_->find(kSysCatalogTabletId)->second;
+    auto tablet_lock = tablet->LockForWrite();
+    tablet_lock->mutable_data()->pb.add_table_ids(table->id());
+    table->AddTablet(tablet.get());
+
+    RETURN_NOT_OK(sys_catalog_->UpdateItem(tablet.get(), leader_ready_term_));
+    tablet_lock->Commit();
+  }
+  TRACE("Inserted new table info into CatalogManager maps");
+
+  // Update the on-disk table state to "running".
+  table->mutable_metadata()->mutable_dirty()->pb.set_state(SysTablesEntryPB::RUNNING);
+  Status s = sys_catalog_->AddItem(table.get(), leader_ready_term_);
+  if (PREDICT_FALSE(!s.ok())) {
+    return AbortTableCreation(table.get(), tablets,
+                              s.CloneAndPrepend(
+                                  Substitute("An error occurred while inserting to sys-tablets: $0",
+                                             s.ToString())),
+                              resp);
+  }
+  TRACE("Wrote table to system table");
+
+  // Commit the in-memory state.
+  table->mutable_metadata()->CommitMutation();
+
+  tserver::ChangeMetadataRequestPB change_req;
+  change_req.set_tablet_id(kSysCatalogTabletId);
+  auto& add_table = *change_req.mutable_add_table();
+
+  add_table.set_table_id(req->table_id());
+  add_table.set_table_type(TableType::PGSQL_TABLE_TYPE);
+  add_table.set_table_name(req->name());
+  SchemaToPB(schema, add_table.mutable_schema());
+  add_table.set_schema_version(0);
+
+  partition_schema.ToPB(add_table.mutable_partition_schema());
+
+  RETURN_NOT_OK(tablet::SyncReplicateChangeMetadataOperation(
+      &change_req, sys_catalog_->tablet_peer().get(), leader_ready_term_));
+
+  if (initial_snapshot_writer_) {
+    initial_snapshot_writer_->AddMetadataChange(change_req);
+  }
+  return Status::OK();
+}
+
+Status TableCreationManager::CreateTransactionsStatusTableIfNeeded(rpc::RpcContext *rpc) {
+  TableIdentifierPB table_indentifier;
+  table_indentifier.set_table_name(kTransactionsTableName);
+  table_indentifier.mutable_namespace_()->set_name(kSystemNamespaceName);
+
+  // Check that the namespace exists.
+  scoped_refptr<NamespaceInfo> ns_info;
+  RETURN_NOT_OK(FindNamespace(table_indentifier.namespace_(), &ns_info));
+  if (!ns_info) {
+    return STATUS(NotFound, "Namespace does not exist", kSystemNamespaceName);
+  }
+
+  // If status table exists, do nothing, otherwise create it.
+  scoped_refptr<TableInfo> table_info;
+  RETURN_NOT_OK(FindTable(table_indentifier, &table_info));
+
+  if (table_info) {
+    VLOG(1) << "Transaction status table already exists, not creating.";
+    return Status::OK();
+  }
+
+  LOG(INFO) << "Creating the transaction status table";
+  // Set up a CreateTable request internally.
+  CreateTableRequestPB req;
+  CreateTableResponsePB resp;
+  req.set_name(kTransactionsTableName);
+  req.mutable_namespace_()->set_name(kSystemNamespaceName);
+  req.set_table_type(TableType::TRANSACTION_STATUS_TABLE_TYPE);
+
+  // Explicitly set the number tablets if the corresponding flag is set, otherwise CreateTable
+  // will use the same defaults as for regular tables.
+  if (FLAGS_transaction_table_num_tablets > 0) {
+    req.set_num_tablets(FLAGS_transaction_table_num_tablets);
+  }
+
+  ColumnSchema hash(kRedisKeyColumnName, BINARY, /* is_nullable */ false, /* is_hash_key */ true);
+  ColumnSchemaToPB(hash, req.mutable_schema()->mutable_columns()->Add());
+
+  Status s = CreateTable(&req, &resp, rpc);
+  // We do not lock here so it is technically possible that the table was already created.
+  // If so, there is nothing to do so we just ignore the "AlreadyPresent" error.
+  if (!s.ok() && !s.IsAlreadyPresent()) {
+    return s;
+  }
+
+  return Status::OK();
+}
+
+Status TableCreationManager::CreateMetricsSnapshotsTableIfNeeded(rpc::RpcContext *rpc) {
+  TableIdentifierPB table_indentifier;
+  table_indentifier.set_table_name(kMetricsSnapshotsTableName);
+  table_indentifier.mutable_namespace_()->set_name(kSystemNamespaceName);
+
+  // Check that the namespace exists.
+  scoped_refptr<NamespaceInfo> ns_info;
+  RETURN_NOT_OK(FindNamespace(table_indentifier.namespace_(), &ns_info));
+  if (!ns_info) {
+    return STATUS(NotFound, "Namespace does not exist", kSystemNamespaceName);
+  }
+
+  // If status table exists do nothing, otherwise create it.
+  scoped_refptr<TableInfo> table_info;
+  RETURN_NOT_OK(FindTable(table_indentifier, &table_info));
+
+  if (!table_info) {
+    // Set up a CreateTable request internally.
+    CreateTableRequestPB req;
+    CreateTableResponsePB resp;
+    req.set_name(kMetricsSnapshotsTableName);
+    req.mutable_namespace_()->set_name(kSystemNamespaceName);
+    req.set_table_type(TableType::YQL_TABLE_TYPE);
+
+    // Explicitly set the number tablets if the corresponding flag is set, otherwise CreateTable
+    // will use the same defaults as for regular tables.
+    if (FLAGS_metrics_snapshots_table_num_tablets > 0) {
+      req.set_num_tablets(FLAGS_metrics_snapshots_table_num_tablets);
+    }
+
+    // Schema description: "node" refers to tserver uuid. "entity_type" can be either
+    // "tserver" or "table". "entity_id" is uuid of corresponding tserver or table.
+    // "metric" is the name of the metric and "value" is its val. "ts" is time at
+    // which the snapshot was recorded. "details" is a json column for future extensibility.
+
+    YBSchemaBuilder schemaBuilder;
+    schemaBuilder.AddColumn("node")->Type(STRING)->HashPrimaryKey()->NotNull();
+    schemaBuilder.AddColumn("entity_type")->Type(STRING)->PrimaryKey()->NotNull();
+    schemaBuilder.AddColumn("entity_id")->Type(STRING)->PrimaryKey()->NotNull();
+    schemaBuilder.AddColumn("metric")->Type(STRING)->PrimaryKey()->NotNull();
+    schemaBuilder.AddColumn("ts")->Type(TIMESTAMP)->PrimaryKey()->NotNull()->
+      SetSortingType(ColumnSchema::SortingType::kDescending);
+    schemaBuilder.AddColumn("value")->Type(INT64);
+    schemaBuilder.AddColumn("details")->Type(JSONB);
+
+    YBSchema ybschema;
+    CHECK_OK(schemaBuilder.Build(&ybschema));
+
+    auto schema = yb::client::internal::GetSchema(ybschema);
+    SchemaToPB(schema, req.mutable_schema());
+
+    Status s = CreateTable(&req, &resp, rpc);
+    // We do not lock here so it is technically possible that the table was already created.
+    // If so, there is nothing to do so we just ignore the "AlreadyPresent" error.
+    if (!s.ok() && !s.IsAlreadyPresent()) {
+      return s;
+    }
+  }
+  return Status::OK();
+}
+
+Status TableCreationManager::IsTransactionStatusTableCreated(IsCreateTableDoneResponsePB* resp) {
+  IsCreateTableDoneRequestPB req;
+
+  req.mutable_table()->set_table_name(kTransactionsTableName);
+  req.mutable_table()->mutable_namespace_()->set_name(kSystemNamespaceName);
+
+  return IsCreateTableDone(&req, resp);
+}
+
+Status TableCreationManager::IsMetricsSnapshotsTableCreated(IsCreateTableDoneResponsePB* resp) {
+  IsCreateTableDoneRequestPB req;
+
+  req.mutable_table()->set_table_name(kMetricsSnapshotsTableName);
+  req.mutable_table()->mutable_namespace_()->set_name(kSystemNamespaceName);
+  req.mutable_table()->mutable_namespace_()->set_database_type(YQLDatabase::YQL_DATABASE_CQL);
+
+  return IsCreateTableDone(&req, resp);
+}
+
+Status TableCreationManager::CreateCopartitionedTable(
+    const CreateTableRequestPB req,
+    CreateTableResponsePB* resp,
+    rpc::RpcContext* rpc,
+    Schema schema,
+    NamespaceId namespace_id) {
+  scoped_refptr<TableInfo> parent_table_info;
+  Status s;
+  PartitionSchema partition_schema;
+  std::vector<Partition> partitions;
+
+  std::lock_guard<LockType> l(lock_);
+  TRACE("Acquired catalog manager lock");
+  parent_table_info = FindPtrOrNull(*table_ids_map_,
+                                    schema.table_properties().CopartitionTableId());
+  if (parent_table_info == nullptr) {
+    s = STATUS(NotFound, "The object does not exist: copartitioned table with id",
+               schema.table_properties().CopartitionTableId());
+    return SetupError(resp->mutable_error(), MasterErrorPB::OBJECT_NOT_FOUND, s);
+  }
+
+  scoped_refptr<TableInfo> this_table_info;
+  std::vector<TabletInfo *> tablets;
+  TabletInfos scoped_ref_tablets;
+  // Verify that the table does not exist.
+  this_table_info = FindPtrOrNull(table_names_map_, {namespace_id, req.name()});
+
+  if (this_table_info != nullptr) {
+    s = STATUS_SUBSTITUTE(AlreadyPresent,
+        "Object '$0.$1' already exists",
+        GetNamespaceNameUnlocked(this_table_info), this_table_info->name());
+    return SetupError(resp->mutable_error(), MasterErrorPB::OBJECT_ALREADY_PRESENT, s);
+  }
+
+  // TODO: pass index_info for copartitioned index.
+  RETURN_NOT_OK(CreateTableInMemory(req, schema, partition_schema, false /* create_tablets */,
+                                    namespace_id, partitions, nullptr, nullptr, resp,
+                                    &this_table_info));
+
+  TRACE("Inserted new table info into CatalogManager maps");
+
+  // NOTE: the table is already locked for write at this point,
+  // since the CreateTableInfo function leave it in that state.
+  // It will get committed at the end of this function.
+  // Sanity check: the table should be in "preparing" state.
+  CHECK_EQ(SysTablesEntryPB::PREPARING, this_table_info->metadata().dirty().pb.state());
+  parent_table_info->GetAllTablets(&scoped_ref_tablets);
+  for (auto tablet : scoped_ref_tablets) {
+    tablets.push_back(tablet.get());
+    tablet->mutable_metadata()->StartMutation();
+    tablet->mutable_metadata()->mutable_dirty()->pb.add_table_ids(this_table_info->id());
+  }
+
+  // Update Tablets about new table id to sys-tablets.
+  s = sys_catalog_->UpdateItems(tablets, leader_ready_term_);
+  if (PREDICT_FALSE(!s.ok())) {
+    return AbortTableCreation(this_table_info.get(), tablets, s.CloneAndPrepend(
+        Substitute("An error occurred while inserting to sys-tablets: $0", s.ToString())), resp);
+  }
+  TRACE("Wrote tablets to system table");
+
+  // Update the on-disk table state to "running".
+  this_table_info->AddTablets(tablets);
+  this_table_info->mutable_metadata()->mutable_dirty()->pb.set_state(SysTablesEntryPB::RUNNING);
+  s = sys_catalog_->AddItem(this_table_info.get(), leader_ready_term_);
+  if (PREDICT_FALSE(!s.ok())) {
+    return AbortTableCreation(this_table_info.get(), tablets, s.CloneAndPrepend(
+        Substitute("An error occurred while inserting to sys-tablets: $0",
+                   s.ToString())), resp);
+  }
+  TRACE("Wrote table to system table");
+
+  // Commit the in-memory state.
+  this_table_info->mutable_metadata()->CommitMutation();
+
+  for (TabletInfo *tablet : tablets) {
+    tablet->mutable_metadata()->CommitMutation();
+  }
+
+  for (const auto& tablet : scoped_ref_tablets) {
+    SendCopartitionTabletRequest(tablet, this_table_info);
+  }
+
+  LOG(INFO) << "Successfully created table " << this_table_info->ToString()
+            << " per request from " << RequestorString(rpc);
+  return Status::OK();
+}
+
 }  // namespace master
 }  // namespace yb
+

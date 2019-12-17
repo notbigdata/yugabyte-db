@@ -173,6 +173,11 @@ class CatalogManager : public tserver::TabletPeerLookupIf,
                                     CreateNamespaceResponsePB* resp,
                                     rpc::RpcContext* rpc);
 
+  // See TableCreationManager.
+  CHECKED_STATUS CreateTable(const CreateTableRequestPB* req,
+                             CreateTableResponsePB* resp,
+                             rpc::RpcContext* rpc);
+
   // Create the transaction status table if needed (i.e. if it does not exist already).
   //
   // This is called at the end of CreateTable if the table has transactions enabled.
@@ -183,18 +188,14 @@ class CatalogManager : public tserver::TabletPeerLookupIf,
   // This is called at the end of CreateTable.
   CHECKED_STATUS CreateMetricsSnapshotsTableIfNeeded(rpc::RpcContext *rpc);
 
-  // Get the information about an in-progress create operation.
+  // See TableCreationManager.
   CHECKED_STATUS IsCreateTableDone(const IsCreateTableDoneRequestPB* req,
                                    IsCreateTableDoneResponsePB* resp);
 
-  // Check if the transaction status table creation is done.
-  //
-  // This is called at the end of IsCreateTableDone if the table has transactions enabled.
+  // See TableCreationManager.
   CHECKED_STATUS IsTransactionStatusTableCreated(IsCreateTableDoneResponsePB* resp);
 
-  // Check if the metrics snapshots table creation is done.
-  //
-  // This is called at the end of IsCreateTableDone.
+  // See TableCreationManager.
   CHECKED_STATUS IsMetricsSnapshotsTableCreated(IsCreateTableDoneResponsePB* resp);
 
   // Truncate the specified table.
@@ -365,7 +366,7 @@ class CatalogManager : public tserver::TabletPeerLookupIf,
   void SetLoadBalancerEnabled(bool is_enabled);
 
   // Return the table info for the table with the specified UUID, if it exists.
-  scoped_refptr<TableInfo> GetTableInfo(const TableId& table_id);
+  scoped_refptr<TableInfo> GetTableInfo(const TableId& table_id) override;
   scoped_refptr<TableInfo> GetTableInfoUnlocked(const TableId& table_id);
 
   // Get Table info given namespace id and table name.
@@ -552,7 +553,7 @@ class CatalogManager : public tserver::TabletPeerLookupIf,
                                        scoped_refptr<NamespaceInfo>* ns_info) const;
 
   CHECKED_STATUS FindNamespace(const NamespaceIdentifierPB& ns_identifier,
-                               scoped_refptr<NamespaceInfo>* ns_info) const;
+                               scoped_refptr<NamespaceInfo>* ns_info) const override;
 
   CHECKED_STATUS FindTable(const TableIdentifierPB& table_identifier,
                            scoped_refptr<TableInfo>* table_info);
@@ -566,7 +567,8 @@ class CatalogManager : public tserver::TabletPeerLookupIf,
     leader_lock_.AssertAcquiredForReading();
   }
 
-  std::string GenerateId(boost::optional<const SysRowEntry::Type> entity_type = boost::none);
+  std::string GenerateId(
+      boost::optional<const SysRowEntry::Type> entity_type = boost::none) override;
 
   ThreadPool* WorkerPool() { return worker_pool_.get(); }
 
@@ -588,6 +590,7 @@ class CatalogManager : public tserver::TabletPeerLookupIf,
 
   TableInfoByNameMap& table_info_by_name_map() const override;
   NamespaceNameMapper& namespace_name_mapper() const override;
+  VersionTracker<TableInfoMap>& table_ids_map() override;
 
  protected:
   // TODO Get rid of these friend classes and introduce formal interface.
@@ -600,7 +603,6 @@ class CatalogManager : public tserver::TabletPeerLookupIf,
   friend class RedisConfigLoader;
   friend class SysConfigLoader;
   friend class ::yb::master::ScopedLeaderSharedLock;
-  friend class PermissionsManager;
 
   FRIEND_TEST(SysCatalogTest, TestCatalogManagerTasksTracker);
   FRIEND_TEST(SysCatalogTest, TestPrepareDefaultClusterConfig);
@@ -688,9 +690,6 @@ class CatalogManager : public tserver::TabletPeerLookupIf,
                                      vector<TabletInfo*>* tablets,
                                      CreateTableResponsePB* resp,
                                      scoped_refptr<TableInfo>* table);
-  CHECKED_STATUS CreateTabletsFromTable(const vector<Partition>& partitions,
-                                        const scoped_refptr<TableInfo>& table,
-                                        std::vector<TabletInfo*>* tablets);
 
   // Helper for creating copartitioned table.
   CHECKED_STATUS CreateCopartitionedTable(const CreateTableRequestPB req,
@@ -712,12 +711,6 @@ class CatalogManager : public tserver::TabletPeerLookupIf,
   //
   // This method is thread-safe.
   CHECKED_STATUS InitSysCatalogAsync(bool is_first_run);
-
-  // Helper for creating the initial TabletInfo state.
-  // Leaves the tablet "write locked" with the new info in the
-  // "dirty" state field.
-  TabletInfo *CreateTabletInfo(TableInfo* table,
-                               const PartitionPB& partition);
 
   // Add index info to the indexed table.
   CHECKED_STATUS AddIndexInfoToTable(const scoped_refptr<TableInfo>& indexed_table,
@@ -915,11 +908,6 @@ class CatalogManager : public tserver::TabletPeerLookupIf,
                                     const Status& s,
                                     CreateTableResponsePB* resp);
 
-  // Validates that the passed-in table replication information respects the overall cluster level
-  // configuration. This should essentially not be more broader reaching than the cluster. As an
-  // example, if the cluster is confined to AWS, you cannot have tables in GCE.
-  CHECKED_STATUS ValidateTableReplicationInfo(const ReplicationInfoPB& replication_info);
-
   // Report metrics.
   void ReportMetrics();
 
@@ -957,10 +945,10 @@ class CatalogManager : public tserver::TabletPeerLookupIf,
   void CleanUpDeletedTables();
 
   // Called when a new table id is added to table_ids_map_.
-  void HandleNewTableId(const TableId& id);
+  void HandleNewTableId(const TableId& id) override;
 
   // Creates a new TableInfo object.
-  scoped_refptr<TableInfo> NewTableInfo(TableId id);
+  scoped_refptr<TableInfo> NewTableInfo(TableId id) override;
 
   template <class Loader>
   CHECKED_STATUS Load(const std::string& title, const int64_t term);
