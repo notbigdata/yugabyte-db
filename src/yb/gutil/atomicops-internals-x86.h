@@ -41,9 +41,9 @@
 #ifndef GUTIL_ATOMICOPS_INTERNALS_X86_H_
 #define GUTIL_ATOMICOPS_INTERNALS_X86_H_
 
-#include <stdint.h>
-
-#include <glog/logging.h>
+#include <glog/logging.h>  // for DCHECK_EQ
+#include <stdint.h>        // for int32_t, int64_t, uintptr_t
+#include <ostream>         // for operator<<
 
 #define BASE_HAS_ATOMIC64 1  // Use only in tests and base/atomic*
 

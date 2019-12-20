@@ -45,10 +45,8 @@
 #ifndef UTIL_MATH_MATHLIMITS_H__
 #define UTIL_MATH_MATHLIMITS_H__
 
-#include <math.h>
-#include <string.h>
-#include <cfloat>
-#include <cmath>
+#include <cfloat>  // for DBL_DIG, DBL_MAX_10_EXP, DBL_MIN_10_EXP, FLT_DIG
+#include <cmath>   // for isinf, isnan
 
 // ========================================================================= //
 

@@ -38,12 +38,9 @@
 // atomicops module on x86.
 
 #include "yb/gutil/atomicops-internals-x86.h"
-
-#include <string.h>
-
-#include <glog/logging.h>
-#include "yb/gutil/logging-inl.h"
-#include "yb/gutil/integral_types.h"
+#include <glog/logging.h>             // for COMPACT_GOOGLE_LOG_INFO, LogMes...
+#include <string.h>                   // for memcpy, strcmp
+#include "yb/gutil/integral_types.h"  // for uint32
 
 // This file only makes sense with atomicops-internals-x86.h -- it
 // depends on structs that are defined in that file.  If atomicops.h

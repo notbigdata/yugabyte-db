@@ -16,12 +16,8 @@
 //
 // A collection of useful (static) bit-twiddling functions.
 
-#include <glog/logging.h>
-
-#include "yb/gutil/basictypes.h"
-#include "yb/gutil/integral_types.h"
-#include "yb/gutil/logging-inl.h"
-#include "yb/gutil/macros.h"
+#include "yb/gutil/integral_types.h"  // for uint32, uint64, uint8, int64
+#include "yb/gutil/macros.h"          // for DISALLOW_COPY_AND_ASSIGN
 
 #ifndef _BITS_H_
 #define _BITS_H_

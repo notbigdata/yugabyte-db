@@ -72,6 +72,8 @@
 #ifndef YB_GUTIL_DYNAMIC_ANNOTATIONS_H
 #define YB_GUTIL_DYNAMIC_ANNOTATIONS_H
 
+#include <stddef.h>  // for size_t
+
 #ifndef DYNAMIC_ANNOTATIONS_ENABLED
 # define DYNAMIC_ANNOTATIONS_ENABLED 0
 #endif

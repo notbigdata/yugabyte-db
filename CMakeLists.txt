@@ -829,7 +829,9 @@ elseif("${COMPILER_FAMILY}" STREQUAL "gcc" OR "${COMPILER_FAMILY}" STREQUAL "gcc
   endif()
 
   # These flags are not understood by some versions of clang we are using.
-  ADD_CXX_FLAGS("-mno-abm -mno-movbe")
+  #ADD_CXX_FLAGS("-mno-abm -mno-movbe")
+  # -iwyu does not understand -mno-abm
+  ADD_CXX_FLAGS("-mno-movbe")
 else()
   message(FATAL_ERROR "Unknown compiler family: ${COMPILER_FAMILY}")
 endif()

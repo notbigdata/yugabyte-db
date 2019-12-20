@@ -18,6 +18,7 @@
 //
 
 #include "yb/gutil/callback_internal.h"
+#include <glog/logging.h>  // for COMPACT_GOOGLE_LOG_FATAL, DCHECK, LogMessa...
 
 namespace yb {
 namespace internal {

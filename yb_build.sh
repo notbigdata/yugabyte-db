@@ -974,6 +974,8 @@ done
 # Finished parsing command-line arguments, post-processing them.
 # -------------------------------------------------------------------------------------------------
 
+rm -f /tmp/cmds.txt
+
 update_submodules
 
 if [[ -n $YB_GTEST_FILTER && -z $cxx_test_name ]]; then

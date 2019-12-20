@@ -18,14 +18,9 @@
 //
 
 #include "yb/gutil/cpu.h"
-
-#include <stdlib.h>
-#include <string.h>
-
-#include <algorithm>
-
-#include "yb/gutil/basictypes.h"
-#include "yb/gutil/strings/stringpiece.h"
+#include <string.h>                   // for memcpy
+#include <utility>                    // for swap
+#include "yb/gutil/integral_types.h"  // for uint32, uint64
 
 #if defined(__x86_64__)
 #if defined(_MSC_VER)

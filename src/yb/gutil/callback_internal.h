@@ -23,14 +23,14 @@
 #ifndef YB_GUTIL_CALLBACK_INTERNAL_H_
 #define YB_GUTIL_CALLBACK_INTERNAL_H_
 
-#include <stddef.h>
+#include <stddef.h>                  // for size_t
+#include "yb/gutil/ref_counted.h"    // for RefCountedThreadSafe, scoped_refptr
+#include "yb/gutil/template_util.h"  // for YesType, NoType, is_const
+#include "yb/gutil/type_traits.h"    // for enable_if
 
-#include "yb/gutil/ref_counted.h"
-#include "yb/gutil/template_util.h"
-#include "yb/gutil/type_traits.h"
-
-template <typename T>
-class ScopedVector;
+// iwyu said we should remove this:
+// template <typename T>
+// class ScopedVector;
 
 namespace yb {
 namespace internal {

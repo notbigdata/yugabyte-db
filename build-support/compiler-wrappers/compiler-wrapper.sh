@@ -187,11 +187,19 @@ is_configure_mode_invocation() {
   # to do output any additional information in these cases.
   if [[ $compiler_args_str == "-v" ||
         $compiler_args_str == "-Wl,--version" ||
-        $compiler_args_str == "-fuse-ld=gold -Wl,--version" ||
+        $compiler_args_str == *" -Wl,--version" ||
         $compiler_args_str == "-dumpversion" ||
-        $compiler_args_str =~ .*\ -c\ test(C|CXX)Compiler[.](c|cc|cxx)$ ]]; then
+        $compiler_args_str =~ CMakeFiles/[^/]+/src[.]c[.]o\ -c\ src[.]c$ ||
+        $compiler_args_str =~ (test(C|CXX)Compiler|CMake(C|CXX)Compiler(Id|ABI)|CheckIncludeFile|CheckForPthreads|CheckFunctionExists)[.](c|cc|cxx|cpp)$ ]]
+  then
     return 0  # "true" return value in bash
   fi
+
+  # if [[ $compiler_args_str == *DCMAKE_HAVE_LIBC_PTHREAD* ]]; then
+  #   log "Matched the weird rule: $compiler_args_str"
+  #   echo "Matched the weird rule: $compiler_args_str" >>/tmp/cmds.txt
+  #   return 0
+  # fi
 
   return 1  # "false" return value in bash
 }
@@ -241,6 +249,8 @@ compiler_args_no_output=()
 analyzer_checkers_specified=false
 is_linking=false
 
+prev_is_output_arg=false
+prev_arg=""
 while [[ $# -gt 0 ]]; do
   is_output_arg=false
   case "$1" in
@@ -277,7 +287,8 @@ while [[ $# -gt 0 ]]; do
           # we contributed, e.g. for stricter error checking.
           has_yb_c_files=true
         fi
-        if [[ $1 == *.o ]]; then
+        if [[ $1 == *.o && $prev_arg != "-MT" && $prev_arg != "-MQ" ]]; then
+          echo "Setting is_linking=true for arg: $1" &>>/tmp/cmds.txt
           is_linking=true
         fi
       fi
@@ -305,6 +316,7 @@ while [[ $# -gt 0 ]]; do
   if ! "$is_output_arg"; then
     compiler_args_no_output+=( "$1" )
   fi
+  prev_arg=$1
   shift
 done
 
@@ -835,6 +847,58 @@ if [[ $compiler_exit_code -ne 0 ]]; then
   fi
 
   exit "$compiler_exit_code"
+fi
+
+if is_configure_mode_invocation; then
+  is_configure_mode=true
+else
+  is_configure_mode=false
+fi
+
+echo "DEBUG: args=${compiler_args[@]} ; is_configure_mode=$is_configure_mode ; is_linking=$is_linking" &>>/tmp/cmds.txt
+
+if ! is_configure_mode_invocation && ! "$is_linking" && [[ "${input_files[*]}" != *gen_opcode_table.cc* ]] && \
+   [[ $PWD != $BUILD_ROOT/postgres_build &&
+      $PWD != $BUILD_ROOT/postgres_build/* ]]; then
+  echo "Args: ${compiler_args[*]}" &>>/tmp/cmds.txt
+  set +e
+  /opt/yb-build/thirdparty/yugabyte-db-thirdparty-v20191209181439-7fc63d1583-centos/installed/common/bin/include-what-you-use \
+    -isystem /opt/yb-build/thirdparty/yugabyte-db-thirdparty-v20191209181439-7fc63d1583-centos/installed/uninstrumented/include \
+    -isystem /opt/yb-build/thirdparty/yugabyte-db-thirdparty-v20191209181439-7fc63d1583-centos/installed/common/include \
+    -isystem /opt/yb-build/brew/linuxbrew-20181203T161736v2-3ba4c2ed9b0587040949a4a9a95b576f520bae/Cellar/gcc/5.5.0_4/bin/../lib/gcc/x86_64-unknown-linux-gnu/5.5.0/../../../../include/c++/5.5.0 \
+    -isystem /opt/yb-build/brew/linuxbrew-20181203T161736v2-3ba4c2ed9b0587040949a4a9a95b576f520bae/Cellar/gcc/5.5.0_4/bin/../lib/gcc/x86_64-unknown-linux-gnu/5.5.0/../../../../include/c++/5.5.0/x86_64-unknown-linux-gnu \
+    -isystem /opt/yb-build/brew/linuxbrew-20181203T161736v2-3ba4c2ed9b0587040949a4a9a95b576f520bae/Cellar/gcc/5.5.0_4/bin/../lib/gcc/x86_64-unknown-linux-gnu/5.5.0/../../../../include/c++/5.5.0/backward \
+    -isystem /opt/yb-build/brew/linuxbrew-20181203T161736v2-3ba4c2ed9b0587040949a4a9a95b576f520bae/Cellar/gcc/5.5.0_4/bin/../lib/gcc/x86_64-unknown-linux-gnu/5.5.0/include \
+    -isystem /opt/yb-build/brew/linuxbrew-20181203T161736v2-3ba4c2ed9b0587040949a4a9a95b576f520bae/Cellar/gcc/5.5.0_4/bin/../lib/gcc/x86_64-unknown-linux-gnu/5.5.0/include-fixed \
+    -isystem /opt/yb-build/brew/linuxbrew-20181203T161736v2-3ba4c2ed9b0587040949a4a9a95b576f520bae/Cellar/gcc/5.5.0_4/bin/../lib/gcc/../../include \
+    -isystem /opt/yb-build/brew/linuxbrew-20181203T161736v2-3ba4c2ed9b0587040949a4a9a95b576f520bae/include \
+    "${compiler_args[@]}"
+  iwyu_exit_code=$?
+  set -e
+  if [[ $iwyu_exit_code -ne 0 && $iwyu_exit_code -ne 2 ]]; then
+    log "iwyu failed with code $iwyu_exit_code"
+    exit "$iwyu_exit_code"
+  else
+    log "iwyu succeeded, exit code: $iwyu_exit_code"
+  fi
+
+    # -isystem /opt/yb-build/thirdparty/yugabyte-db-thirdparty-v20191209181439-7fc63d1583-centos/installed/clang_uninstrumented/libcxx/include/c++/v1
+    # -isystem /opt/yb-build/brew/linuxbrew-20181203T161736v2/include
+    # -isystem /opt/yb-build/thirdparty/yugabyte-db-thirdparty-v20191209181439-7fc63d1583-centos/installed/clang_uninstrumented/include
+    # -isystem /opt/yb-build/thirdparty/yugabyte-db-thirdparty-v20191209181439-7fc63d1583-centos/installed/common/include
+    # -isystem /usr/local/include
+    # -isystem /opt/yb-build/thirdparty/yugabyte-db-thirdparty-v20191209181439-7fc63d1583-centos/installed_llvm7/common/lib/clang/7.0.1/include
+    # -isystem /usr/include
+
+    # -isystem /usr/include
+    # -isystem /usr/include/linux
+
+# -isystem /opt/yb-build/thirdparty/yugabyte-db-thirdparty-v20191209181439-7fc63d1583-centos/installed/clang_uninstrumented/libcxx/include/c++/v1 \
+# -isystem /opt/yb-build/brew/linuxbrew-20181203T161736v2-3ba4c2ed9b0587040949a4a9a95b576f520bae/Cellar/gcc/5.5.0_4/lib/gcc/x86_64-unknown-linux-gnu/5.5.0/include \
+        
+    #&>>/tmp/cmds.txt
+else
+  echo "Not invoking iwyu. Args: ${compiler_args[*]}; is_configure_mode=$is_configure_mode ; is_linking=$is_linking" &>>/tmp/cmds.txt
 fi
 
 if is_clang &&

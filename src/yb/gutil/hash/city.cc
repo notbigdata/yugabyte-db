@@ -30,25 +30,24 @@
 // under the License.
 //
 #include "yb/gutil/hash/city.h"
+#include <glog/logging.h>               // for DCHECK_GE, DCHECK_LE, DCHECK_EQ
+#include <sys/types.h>                  // for ssize_t
+#include <algorithm>                    // for copy, max, min, reverse, sort
+#include <utility>                      // for pair, swap, make_pair
+#include "yb/gutil/endian.h"            // for LittleEndian
+#include "yb/gutil/hash/hash128to64.h"  // for Hash128to64
+#include "yb/gutil/int128.h"            // for uint128, Uint128High64, Uint1...
+#include "yb/gutil/integral_types.h"    // for uint64, uint32, uint8
+#include "yb/gutil/port.h"              // for PREDICT_TRUE
 
-#include <sys/types.h>
-#include <algorithm>
 using std::copy;
 using std::max;
 using std::min;
 using std::reverse;
 using std::sort;
 using std::swap;
-#include <utility>
 using std::make_pair;
 using std::pair;
-
-#include "yb/gutil/int128.h"
-#include "yb/gutil/integral_types.h"
-#include <glog/logging.h>
-#include "yb/gutil/logging-inl.h"
-#include "yb/gutil/hash/hash128to64.h"
-#include "yb/gutil/endian.h"
 
 namespace util_hash {
 
