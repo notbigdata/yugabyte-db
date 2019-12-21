@@ -151,7 +151,7 @@ global_conf_dict = None
 
 SPARK_URLS = {
     'linux_default': os.getenv(
-        'YB_SPARK_URL_LINUX_DEFAULT',
+        'YB_SPARK_URL_LINUX_EXPERIMENTAL',
         'spark://spark-for-yugabyte-linux-default.example.com:7077'),
     'linux_asan_tsan': os.getenv(
         'YB_SPARK_URL_LINUX_ASAN_TSAN',
