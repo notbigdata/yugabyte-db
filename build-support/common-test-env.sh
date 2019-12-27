@@ -66,7 +66,7 @@ pthread .*: Device or resource busy|\
 FATAL: could not create shared memory segment: No space left on device"
 
 # We use this to submit test jobs for execution on Spark.
-readonly SPARK_SUBMIT_CMD_PATH_NON_ASAN_TSAN=/n/tools/spark/current/bin/spark-submit
+readonly SPARK_SUBMIT_CMD_PATH_NON_ASAN_TSAN=/n/tools/spark/current3/bin/spark-submit
 readonly SPARK_SUBMIT_CMD_PATH_ASAN_TSAN=/n/tools/spark/current-tsan/bin/spark-submit
 readonly INITIAL_SPARK_DRIVER_CORES=8
 
