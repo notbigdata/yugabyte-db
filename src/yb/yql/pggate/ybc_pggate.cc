@@ -73,11 +73,12 @@ void YBCInitPgGate(const YBCPgTypeEntity *YBCDataTypeTable, int count) {
 
 void YBCDestroyPgGate() {
   if (pgapi_shutdown_done.exchange(true)) {
-    LOG(FATAL) << __PRETTY_FUNCTION__ << " can only be called once";
+    delete pgapi;
+    pgapi = nullptr;
+    VLOG(1) << __PRETTY_FUNCTION__ << " finished";
+  } else {
+    VLOG(1) << __PRETTY_FUNCTION__ << " already called earlier, ignoring";
   }
-  delete pgapi;
-  pgapi = nullptr;
-  VLOG(1) << __PRETTY_FUNCTION__ << " finished";
 }
 
 YBCStatus YBCPgCreateEnv(YBCPgEnv *pg_env) {
