@@ -81,6 +81,11 @@ void DoInjectRandomLatency(double max_ms) {
   SleepFor(MonoDelta::FromMilliseconds(g_random->NextDoubleFraction() * max_ms));
 }
 
+bool DoShouldFaultWithProbability(double probability) {
+  GoogleOnceInit(&g_random_once, InitRandom);
+  return g_random->NextDoubleFraction() < probability;
+}
+
 } // namespace fault_injection
 
 } // namespace yb

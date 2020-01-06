@@ -21,6 +21,7 @@
 #include "yb/common/wire_protocol.h"
 #include "yb/consensus/consensus.h"
 
+#include "yb/util/flag_tags.h"
 #include "yb/util/atomic.h"
 #include "yb/util/metrics.h"
 #include "yb/util/opid.h"
@@ -44,10 +45,16 @@ METRIC_DEFINE_gauge_int64(tablet, replicated_retryable_request_ranges,
                           yb::MetricUnit::kRequests,
                           "Number of replicated retryable request ranges.");
 
+DEFINE_test_flag(double, fake_already_present_retryable_request_ratio, 0.0,
+                 "Fraction of operations that will be randomly reported as already present. "
+                 "For testing only.");
+
 namespace yb {
 namespace consensus {
 
 namespace {
+
+const char* kDuplicateRequestMsg = "Duplicate request";
 
 struct RunningRetryableRequest {
   RetryableRequestId request_id;
@@ -234,9 +241,12 @@ class RetryableRequests::Impl {
 
     auto& replicated_indexed_by_last_id = client_retryable_requests.replicated.get<LastIdIndex>();
     auto it = replicated_indexed_by_last_id.lower_bound(data.request_id());
-    if (it != replicated_indexed_by_last_id.end() && it->first_id <= data.request_id()) {
+    if ((it != replicated_indexed_by_last_id.end() && it->first_id <= data.request_id()) ||
+        PREDICT_FALSE(
+            fault_injection::ShouldFaultWithProbability(
+                FLAGS_fake_already_present_retryable_request_ratio))) {
       round->NotifyReplicationFinished(
-          STATUS(AlreadyPresent, "Duplicate request"), round->bound_term(),
+          STATUS(AlreadyPresent, kDuplicateRequestMsg), round->bound_term(),
           nullptr /* applied_op_ids */);
       return false;
     }
@@ -317,7 +327,7 @@ class RetryableRequests::Impl {
     VLOG_WITH_PREFIX(4) << "Running " << (status.ok() ? "replicated " : "aborted ") << data
                         << ", " << status;
 
-    static Status duplicate_write_status = STATUS(AlreadyPresent, "Duplicate request");
+    static Status duplicate_write_status = STATUS(AlreadyPresent, kDuplicateRequestMsg);
     auto status_for_duplicate = status.ok() ? duplicate_write_status : status;
     for (const auto& duplicate : running_it->duplicate_rounds) {
       duplicate->NotifyReplicationFinished(status_for_duplicate, leader_term,

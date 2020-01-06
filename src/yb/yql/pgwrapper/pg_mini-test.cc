@@ -47,6 +47,7 @@ DECLARE_int64(retryable_rpc_single_call_timeout_ms);
 DECLARE_uint64(max_clock_skew_usec);
 DECLARE_int64(db_write_buffer_size);
 DECLARE_bool(ysql_enable_manual_sys_table_txn_ctl);
+DECLARE_double(fake_already_present_retryable_request_ratio);
 
 namespace yb {
 namespace pgwrapper {
@@ -936,6 +937,16 @@ TEST_F(PgMiniTest, YB_DISABLE_TEST_IN_TSAN(DropDBWithTables)) {
     num_tables_after = tablet_lock->data().pb.table_ids_size();
   }
   ASSERT_EQ(num_tables_before, num_tables_after);
+}
+
+TEST_F(PgMiniTest, YB_DISABLE_TEST_IN_TSAN(DuplicateWriteHandling)) {
+  auto conn = ASSERT_RESULT(Connect());
+  SetAtomicFlag(0.1, &FLAGS_fake_already_present_retryable_request_ratio);
+  ASSERT_OK(conn.Execute("CREATE TABLE t (k INT PRIMARY KEY, v INT)"));
+  for (int i = 1; i <= 1000; ++i) {
+    ASSERT_OK(conn.ExecuteFormat("INSERT INTO t VALUES ($0, $1)", i, i * 2));
+  }
+  ASSERT_OK(conn.Execute("DROP TABLE t"));
 }
 
 } // namespace pgwrapper

@@ -212,8 +212,8 @@ YBShouldReportErrorStatus()
 }
 
 char* DupYBStatusMessage(YBCStatus status) {
-  const char* code_as_cstring = YBCStatusCodeAsCString(status);
-  size_t code_strlen = strlen(code_as_cstring);
+	const char* code_as_cstring = YBCStatusCodeAsCString(status);
+	size_t code_strlen = strlen(code_as_cstring);
 	size_t status_len = YBCStatusMessageLen(status);
 	char* msg_buf = palloc(code_strlen + status_len + 3);
 	char* pos = msg_buf;
@@ -230,8 +230,9 @@ void
 HandleYBStatus(YBCStatus status)
 {
 	if (!status) {
-    return;
-  }
+		return;
+	}
+
 	/* Copy the message to the current memory context and free the YBCStatus. */
 	char* msg_buf = DupYBStatusMessage(status);
 
@@ -377,7 +378,7 @@ YBCHandleCommitError()
 {
 	YBCStatus status = ybc_commit_status;
 	if (status != NULL) {
-    char* msg = DupYBStatusMessage(status);
+		char* msg = DupYBStatusMessage(status);
 		YBCResetCommitStatus();
 		ereport(ERROR,
 				(errcode(ERRCODE_T_R_SERIALIZATION_FAILURE),

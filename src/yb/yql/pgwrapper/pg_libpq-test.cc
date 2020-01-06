@@ -893,5 +893,53 @@ TEST_F(PgLibPqTest, YB_DISABLE_TEST_IN_TSAN(TabletColocation)) {
       status.ToString(), "Cannot create hash partitioned table in colocated database");
 }
 
+
+TEST_F(PgLibPqTest, YB_DISABLE_TEST_IN_TSAN(ManyRowsWithNonUniqueIndexes)) {
+  auto conn = ASSERT_RESULT(Connect());
+
+  const int kNumCols = 20;
+  string create_cols;
+  string insert_stmt_template = "INSERT INTO t VALUES (";
+  for (int i = 1; i <= kNumCols; ++i) {
+    create_cols += Format("v$0 INT", i);
+    insert_stmt_template += "$0";
+    if (i < kNumCols) {
+      create_cols += ", ";
+      insert_stmt_template += ", ";
+    }
+  }
+  insert_stmt_template += ")";
+  ASSERT_OK(conn.ExecuteFormat("CREATE TABLE t (k INT PRIMARY KEY, $0)", create_cols));
+  for (int i = 1; i <= kNumCols; ++i) {
+    LOG(INFO) << "Creating index on column v" << i;
+    ASSERT_OK(conn.ExecuteFormat("CREATE INDEX ON t (v$0)", i));
+    LOG(INFO) << "Finished creating index on column v" << i;
+  }
+
+  TestThreadHolder thread_holder;
+
+  const int kNumThreads = 4;
+  const int kNumRows = 100000;
+  std::atomic<int> k{1};
+  for (int thread_index = 0; thread_index < kNumThreads; ++thread_index) {
+    thread_holder.AddThreadFunctor([this, &stop = thread_holder.stop_flag(), &k,
+                                    &insert_stmt_template]() {
+      auto conn = ASSERT_RESULT(Connect());
+      while (!stop.load(std::memory_order_acquire)) {
+        int i = k.fetch_add(1);
+        if (i > kNumRows) {
+          stop.store(true, std::memory_order_release);
+          break;
+        }
+        ASSERT_OK(conn.ExecuteFormat(insert_stmt_template, i));
+        if (i % 1000 == 0) {
+          LOG(INFO) << "Inserted " << i << " rows";
+        }
+      }
+    });
+  }
+  thread_holder.WaitAndStop(600s);
+}
+
 } // namespace pgwrapper
 } // namespace yb

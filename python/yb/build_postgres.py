@@ -740,7 +740,7 @@ class PostgresBuilder:
             else:
                 logging.info(
                     "PostgreSQL is already up-to-date in directory %s, skipping %s.",
-                    (self.pg_build_root, self.steps_description()))
+                    self.pg_build_root, self.steps_description())
                 return
 
         with WorkDirContext(self.pg_build_root):
