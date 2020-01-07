@@ -19,6 +19,7 @@
 #include "yb/common/pgsql_protocol.pb.h"
 #include "yb/common/transaction_error.h"
 #include "yb/common/ybc-internal.h"
+#include "yb/common/error_messages.h"
 
 #include "yb/util/bytes_formatter.h"
 #include "yb/util/debug-util.h"
@@ -33,6 +34,7 @@
 #include "yb/util/net/net_util.h"
 
 #include "yb/gutil/stringprintf.h"
+#include "yb/util/yb_pg_errcodes.h"
 
 using std::string;
 DEFINE_test_flag(string,
@@ -163,7 +165,10 @@ bool YBCStatusIsNotFound(YBCStatus s) {
 }
 
 bool YBCStatusIsDuplicateKey(YBCStatus s) {
-  return StatusWrapper(s)->IsAlreadyPresent();
+  auto status_wrapper = StatusWrapper(s);
+  const uint8_t* pgsql_err = status_wrapper->ErrorData(PgsqlErrorTag::kCategory);
+  return pgsql_err != nullptr &&
+         PgsqlErrorTag::Decode(pgsql_err) == YBPgErrorCode::YB_PG_UNIQUE_VIOLATION;
 }
 
 uint32_t YBCStatusPgsqlError(YBCStatus s) {

@@ -19,6 +19,8 @@
 #include <boost/multi_index/ordered_index.hpp>
 
 #include "yb/common/wire_protocol.h"
+#include "yb/common/error_messages.h"
+#include "yb/common/transaction_error.h"
 #include "yb/consensus/consensus.h"
 
 #include "yb/util/flag_tags.h"
@@ -53,8 +55,6 @@ namespace yb {
 namespace consensus {
 
 namespace {
-
-const char* kDuplicateRequestMsg = "Duplicate request";
 
 struct RunningRetryableRequest {
   RetryableRequestId request_id;
@@ -246,7 +246,7 @@ class RetryableRequests::Impl {
             fault_injection::ShouldFaultWithProbability(
                 FLAGS_fake_already_present_retryable_request_ratio))) {
       round->NotifyReplicationFinished(
-          STATUS(AlreadyPresent, kDuplicateRequestMsg), round->bound_term(),
+          YB_DUPLICATE_RAFT_REQUEST_STATUS(), round->bound_term(),
           nullptr /* applied_op_ids */);
       return false;
     }
@@ -327,8 +327,7 @@ class RetryableRequests::Impl {
     VLOG_WITH_PREFIX(4) << "Running " << (status.ok() ? "replicated " : "aborted ") << data
                         << ", " << status;
 
-    static Status duplicate_write_status = STATUS(AlreadyPresent, kDuplicateRequestMsg);
-    auto status_for_duplicate = status.ok() ? duplicate_write_status : status;
+    auto status_for_duplicate = status.ok() ? YB_DUPLICATE_RAFT_REQUEST_STATUS() : status;
     for (const auto& duplicate : running_it->duplicate_rounds) {
       duplicate->NotifyReplicationFinished(status_for_duplicate, leader_term,
                                            nullptr /* applied_op_ids */);

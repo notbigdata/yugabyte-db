@@ -38,6 +38,7 @@
 #include "yb/consensus/log_util.h"
 #include "yb/consensus/quorum_util.h"
 #include "yb/consensus/replica_state.h"
+#include "yb/consensus/retryable_requests.h"
 #include "yb/gutil/map-util.h"
 #include "yb/gutil/strings/join.h"
 #include "yb/gutil/strings/strcat.h"
@@ -51,6 +52,8 @@
 #include "yb/util/trace.h"
 #include "yb/util/thread_restrictions.h"
 #include "yb/util/enums.h"
+#include "yb/common/error_messages.h"
+#include "yb/common/transaction_error.h"
 
 using namespace std::literals;
 
@@ -676,7 +679,7 @@ Status ReplicaState::AddPendingOperation(const scoped_refptr<ConsensusRound>& ro
     }
   } else if (op_type == WRITE_OP) {
     if (!retryable_requests_.Register(round)) {
-      return STATUS(AlreadyPresent, "Duplicate request");
+      return YB_DUPLICATE_RAFT_REQUEST_STATUS();
     }
   }
 

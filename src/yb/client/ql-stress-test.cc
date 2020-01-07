@@ -20,6 +20,7 @@
 #include "yb/client/transaction.h"
 
 #include "yb/common/ql_value.h"
+#include "yb/common/error_messages.h"
 
 #include "yb/consensus/log_reader.h"
 #include "yb/consensus/raft_consensus.h"
@@ -343,7 +344,7 @@ void QLStressTest::TestRetryWrites(bool restarts) {
         }
         ASSERT_TRUE(flush_status.IsIOError()) << "Status: " << flush_status;
         ASSERT_EQ(op->response().status(), QLResponsePB::YQL_STATUS_RUNTIME_ERROR);
-        ASSERT_EQ(op->response().error_message(), "Duplicate request");
+        ASSERT_EQ(op->response().error_message(), kDuplicateRequestErrorMsg);
       }
     });
   }

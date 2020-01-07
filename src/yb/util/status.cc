@@ -329,9 +329,10 @@ Status::Status(Code code,
                const char* file_name,
                int line_number,
                const Slice& msg,
-               const Slice& errors,
+               const Slice& encoded_errors,
                DupFileName dup_file_name)
-    : state_(State::Create(code, file_name, line_number, msg, Slice(), errors, dup_file_name)) {
+    : state_(State::Create(code, file_name, line_number, msg, /* msg2= */ Slice(), encoded_errors,
+                           dup_file_name)) {
 }
 
 Status::Status(StatePtr state)

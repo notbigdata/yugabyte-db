@@ -24,6 +24,7 @@
 #include "yb/docdb/primitive_value_util.h"
 
 #include "yb/util/trace.h"
+#include "yb/util/yb_pg_errcodes.h"
 
 DECLARE_bool(trace_docdb_calls);
 DECLARE_int64(retryable_rpc_single_call_timeout_ms);
@@ -116,6 +117,7 @@ Status PgsqlWriteOperation::ApplyInsert(const DocOperationApplyData& data, IsUps
       VLOG(4) << "Duplicate row: " << table_row->ToString();
       // Primary key or unique index value found.
       response_->set_status(PgsqlResponsePB::PGSQL_STATUS_DUPLICATE_KEY_ERROR);
+      response_->set_pg_error_code(to_underlying(YBPgErrorCode::YB_PG_UNIQUE_VIOLATION));
       response_->set_error_message("Duplicate key found in primary key or unique index");
       return Status::OK();
     }

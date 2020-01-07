@@ -19,13 +19,15 @@
 
 namespace yb {
 
+// The values of this enum's elements are part of the wire protocol and should not be changed.
 YB_DEFINE_ENUM(TransactionErrorCode,
-    // Special value used to indicate no error of this type
-    (kNone)
-    (kAborted)
-    (kReadRestartRequired)
-    (kConflict)
-    (kSnapshotTooOld));
+    ((kNone, 0))  // A special value used to indicate absence of an error of this type.
+    ((kAborted, 1))
+    ((kReadRestartRequired, 2))
+    ((kConflict, 3))
+    ((kSnapshotTooOld, 4))
+    ((kDuplicateRaftRequest, 5))
+);
 
 struct TransactionErrorTag : IntegralErrorTag<TransactionErrorCode> {
   // It is part of the wire protocol and should not be changed once released.

@@ -54,6 +54,11 @@ constexpr typename std::underlying_type<E>::type to_underlying(E e) {
 //   string for invalid values.
 // - A stream output operator for MyEnum using the above ToString function.
 // - A ToCString() function converting an enum value to a C string, or nullptr for invalid values.
+//
+// Also it is possible to specify exact values for every enum element as follows. This is useful
+// when enum values are used over the wire and should not be changed once the code is released.
+//
+//   YB_DEFINE_ENUM(MyEnum, ((kFoo, 1))((kBar, 2))((kBaz, 3)))
 
 #define YB_ENUM_ITEM_NAME(elem) \
     BOOST_PP_IF(BOOST_PP_IS_BEGIN_PARENS(elem), BOOST_PP_TUPLE_ELEM(2, 0, elem), elem)

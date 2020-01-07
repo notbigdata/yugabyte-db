@@ -66,7 +66,7 @@ CHECKED_STATUS MakeConflictStatus(const TransactionId& our_id, const Transaction
                                   const char* reason, Counter* conflicts_metric) {
   conflicts_metric->Increment();
   return (STATUS(TryAgain, Format("$0 Conflicts with $1 transaction: $2", our_id, reason, other_id),
-                 Slice(), TransactionError(TransactionErrorCode::kConflict)));
+                 TransactionError(TransactionErrorCode::kConflict)));
 }
 
 class ConflictResolver;
@@ -489,7 +489,7 @@ class TransactionConflictResolverContext : public ConflictResolverContext {
           conflicts_metric_->Increment();
           return (STATUS(TryAgain,
                          Format("Value write after transaction start: $0 >= $1",
-                                doc_ht.hybrid_time(), read_time_), Slice(),
+                                doc_ht.hybrid_time(), read_time_),
                          TransactionError(TransactionErrorCode::kConflict)));
         }
         buffer.Reset(existing_key);

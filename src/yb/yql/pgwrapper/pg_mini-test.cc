@@ -30,6 +30,7 @@
 
 #include "yb/common/pgsql_error.h"
 #include "yb/common/row_mark.h"
+#include "yb/common/error_messages.h"
 #include "yb/util/random_util.h"
 #include "yb/util/scope_exit.h"
 
@@ -164,10 +165,13 @@ TEST_F(PgMiniTest, YB_DISABLE_TEST_IN_SANITIZERS(WriteRetry)) {
   SetAtomicFlag(0.25, &FLAGS_respond_write_failed_probability);
 
   LOG(INFO) << "Insert " << kKeys << " keys";
+  const auto kFullDuplicateRequestMsg = Format("Already present: $0", kDuplicateRequestErrorMsg);
+  // Inserting unique keys. We don't expect any "duplicate key value violates unique constraint"
+  // errors here.
   for (int key = 0; key != kKeys; ++key) {
     auto status = conn.ExecuteFormat("INSERT INTO t (key) VALUES ($0)", key);
-    ASSERT_TRUE(status.ok() || PgsqlError(status) == YBPgErrorCode::YB_PG_UNIQUE_VIOLATION ||
-                status.ToString().find("Already present: Duplicate request") != std::string::npos)
+    ASSERT_TRUE(status.ok() ||
+                status.ToString().find(kFullDuplicateRequestMsg) != std::string::npos)
         << status;
   }
 

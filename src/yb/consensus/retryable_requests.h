@@ -17,6 +17,8 @@
 #include "yb/consensus/consensus_fwd.h"
 
 #include "yb/util/restart_safe_clock.h"
+#include "yb/common/error_messages.h"
+#include "yb/common/transaction_error.h"
 
 namespace yb {
 
@@ -66,6 +68,10 @@ class RetryableRequests {
   class Impl;
   std::unique_ptr<Impl> impl_;
 };
+
+#define YB_DUPLICATE_RAFT_REQUEST_STATUS() \
+    STATUS(AlreadyPresent, kDuplicateRequestErrorMsg, \
+           TransactionError(TransactionErrorCode::kDuplicateRaftRequest))
 
 } // namespace consensus
 } // namespace yb

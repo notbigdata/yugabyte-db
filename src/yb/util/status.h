@@ -436,18 +436,20 @@ class Status {
     // TODO: Move error codes into an error_code.proto or something similar.
   };
 
-  Status(Code code,
-         const char* file_name,
-         int line_number,
+#define YB_COMMON_STATUS_CONSTRUCTOR_FIELDS \
+    Code code, \
+    const char* file_name, \
+    int line_number
+
+  Status(YB_COMMON_STATUS_CONSTRUCTOR_FIELDS,
          const Slice& msg,
          // Error message details. If present - would be combined as "msg: msg2".
          const Slice& msg2 = Slice(),
          const StatusErrorCode* error = nullptr,
          DupFileName dup_file_name = DupFileName::kFalse);
 
-  Status(Code code,
-         const char* file_name,
-         int line_number,
+  // A constructor taking an ErrorCode reference instead of pointer.
+  Status(YB_COMMON_STATUS_CONSTRUCTOR_FIELDS,
          const Slice& msg,
          // Error message details. If present - would be combined as "msg: msg2".
          const Slice& msg2,
@@ -456,30 +458,29 @@ class Status {
       : Status(code, file_name, line_number, msg, msg2, &error, dup_file_name) {
   }
 
-  Status(Code code,
-         const char* file_name,
-         int line_number,
+  // A constructor taking no error message, but taking a status error code.
+  Status(YB_COMMON_STATUS_CONSTRUCTOR_FIELDS,
          const StatusErrorCode& error,
          DupFileName dup_file_name = DupFileName::kFalse)
       : Status(code, file_name, line_number, error.Message(), Slice(), error, dup_file_name) {
   }
 
-  Status(Code code,
-         const char* file_name,
-         int line_number,
+  // A constructor taking only one error message.
+  Status(YB_COMMON_STATUS_CONSTRUCTOR_FIELDS,
          const Slice& msg,
          const StatusErrorCode& error,
          DupFileName dup_file_name = DupFileName::kFalse)
       : Status(code, file_name, line_number, msg, error.Message(), error, dup_file_name) {
   }
 
-
-  Status(Code code,
-         const char* file_name,
-         int line_number,
+  // A constructor taking only one error message and an encoded representation of a set of error
+  // codes. Suitable for deserializing statuses received over the network.
+  Status(YB_COMMON_STATUS_CONSTRUCTOR_FIELDS,
          const Slice& msg,
-         const Slice& errors,
+         const Slice& encoded_errors,
          DupFileName dup_file_name);
+
+#undef YB_COMMON_STATUS_CONSTRUCTOR_FIELDS
 
   Code code() const;
 

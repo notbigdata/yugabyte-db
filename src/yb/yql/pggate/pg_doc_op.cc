@@ -172,8 +172,11 @@ void PgDocOp::HandleResponseStatus(client::YBPgsqlOp* op) {
 
   if (response.status() == PgsqlResponsePB::PGSQL_STATUS_DUPLICATE_KEY_ERROR) {
     // We're doing this to eventually replace the error message by one mentioning the index name.
-    exec_status_ = STATUS(AlreadyPresent, op->response().error_message(), Slice(),
-        PgsqlError(pg_error_code));
+    if (pg_error_code == YBPgErrorCode::YB_PG_INTERNAL_ERROR) {
+      pg_error_code = YBPgErrorCode::YB_PG_UNIQUE_VIOLATION;
+    }
+    exec_status_ = STATUS(AlreadyPresent, op->response().error_message(),
+                          PgsqlError(pg_error_code));
   } else {
     exec_status_ = STATUS(QLError, op->response().error_message(), Slice(),
         PgsqlError(pg_error_code));

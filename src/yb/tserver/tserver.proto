@@ -134,7 +134,7 @@ message TabletServerErrorPB {
     // This follower hasn't heard from the leader for a specified amount of time.
     STALE_FOLLOWER = 25;
 
-    // The operation is already in progress. Used for remote bootstrap requests for now.
+    // The operation is already in progress. Used for remote bootstrap requests.
     ALREADY_IN_PROGRESS = 26;
 
     // Tablet server has some tablets pending local bootstraps.

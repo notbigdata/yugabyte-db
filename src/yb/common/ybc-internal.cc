@@ -50,7 +50,7 @@ YBCStatus ToYBCStatus(Status&& status) {
 }
 
 void FreeYBCStatus(YBCStatus status) {
-  // Create Status object that receives control over provided status, so it will be destoyed with
+  // Create Status object that receives control over provided status, so it will be destroyed with
   // yb_status.
   Status yb_status(status, AddRef::kFalse);
 }

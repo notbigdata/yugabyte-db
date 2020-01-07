@@ -95,7 +95,15 @@ bool LocalTabletServerOnly(const InFlightOps& ops) {
           !FLAGS_forward_redis_requests);
 }
 
+template<typename ErrorTag>
+inline typename std::underlying_type<typename ErrorTag::Value>::type GetErrorForPgResponsePB(
+    const Status& status,
+    typename ErrorTag::Value default_value) {
+  const uint8_t* err_ptr = status.ErrorData(ErrorTag::kCategory);
+  return to_underlying(err_ptr != nullptr ? ErrorTag::Decode(err_ptr) : default_value);
 }
+
+}  // anonymous namespace
 
 AsyncRpcMetrics::AsyncRpcMetrics(const scoped_refptr<yb::MetricEntity>& entity)
     : remote_write_rpc_time(METRIC_handler_latency_yb_client_write_remote.Instantiate(entity)),
@@ -215,18 +223,10 @@ void AsyncRpc::Failed(const Status& status) {
         resp->set_status(status.IsTryAgain() ? PgsqlResponsePB::PGSQL_STATUS_RESTART_REQUIRED_ERROR
                                              : PgsqlResponsePB::PGSQL_STATUS_RUNTIME_ERROR);
         resp->set_error_message(error_message);
-        const uint8_t* pg_err_ptr = status.ErrorData(PgsqlErrorTag::kCategory);
-        if (pg_err_ptr != nullptr) {
-          resp->set_pg_error_code(static_cast<uint32_t>(PgsqlErrorTag::Decode(pg_err_ptr)));
-        } else {
-          resp->set_pg_error_code(static_cast<uint32_t>(YBPgErrorCode::YB_PG_INTERNAL_ERROR));
-        }
-        const uint8_t* txn_err_ptr = status.ErrorData(TransactionErrorTag::kCategory);
-        if (txn_err_ptr != nullptr) {
-          resp->set_txn_error_code(static_cast<uint16_t>(TransactionErrorTag::Decode(txn_err_ptr)));
-        } else {
-          resp->set_txn_error_code(static_cast<uint16_t>(TransactionErrorCode::kNone));
-        }
+        resp->set_pg_error_code(
+            GetErrorForPgResponsePB<PgsqlErrorTag>(status, YBPgErrorCode::YB_PG_INTERNAL_ERROR));
+        resp->set_txn_error_code(
+            GetErrorForPgResponsePB<TransactionErrorTag>(status, TransactionErrorCode::kNone));
         break;
       }
       default:
@@ -313,7 +313,7 @@ bool AsyncRpcBase<Req, Resp>::CommonResponseCheck(const Status& status) {
     if (read_point) {
       read_point->RestartRequired(req_.tablet_id(), restart_read_time);
     }
-    Failed(STATUS(TryAgain, Format("Restart read required at: $0", restart_read_time), Slice(),
+    Failed(STATUS(TryAgain, Format("Restart read required at: $0", restart_read_time),
                   TransactionError(TransactionErrorCode::kReadRestartRequired)));
     return false;
   }
