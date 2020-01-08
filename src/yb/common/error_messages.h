@@ -17,8 +17,7 @@
 namespace yb {
 
 // This error message is used when the same request is submitted to a tablet multiple times, most
-// frequently as a result of timeouts and retries. For historical reasons we compare against this
-// exact string value on the pggate side, so it should not be changed.
+// frequently as a result of timeouts and retries.
 static constexpr const char* kDuplicateRequestErrorMsg = "Duplicate request";
 
 };  // namespace yb

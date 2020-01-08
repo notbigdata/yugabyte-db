@@ -436,12 +436,12 @@ class Status {
     // TODO: Move error codes into an error_code.proto or something similar.
   };
 
-#define YB_COMMON_STATUS_CONSTRUCTOR_FIELDS \
+#define YB_STATUS_CONSTRUCTOR_COMMON_ARGS \
     Code code, \
     const char* file_name, \
     int line_number
 
-  Status(YB_COMMON_STATUS_CONSTRUCTOR_FIELDS,
+  Status(YB_STATUS_CONSTRUCTOR_COMMON_ARGS,
          const Slice& msg,
          // Error message details. If present - would be combined as "msg: msg2".
          const Slice& msg2 = Slice(),
@@ -449,7 +449,7 @@ class Status {
          DupFileName dup_file_name = DupFileName::kFalse);
 
   // A constructor taking an ErrorCode reference instead of pointer.
-  Status(YB_COMMON_STATUS_CONSTRUCTOR_FIELDS,
+  Status(YB_STATUS_CONSTRUCTOR_COMMON_ARGS,
          const Slice& msg,
          // Error message details. If present - would be combined as "msg: msg2".
          const Slice& msg2,
@@ -459,14 +459,14 @@ class Status {
   }
 
   // A constructor taking no error message, but taking a status error code.
-  Status(YB_COMMON_STATUS_CONSTRUCTOR_FIELDS,
+  Status(YB_STATUS_CONSTRUCTOR_COMMON_ARGS,
          const StatusErrorCode& error,
          DupFileName dup_file_name = DupFileName::kFalse)
       : Status(code, file_name, line_number, error.Message(), Slice(), error, dup_file_name) {
   }
 
   // A constructor taking only one error message.
-  Status(YB_COMMON_STATUS_CONSTRUCTOR_FIELDS,
+  Status(YB_STATUS_CONSTRUCTOR_COMMON_ARGS,
          const Slice& msg,
          const StatusErrorCode& error,
          DupFileName dup_file_name = DupFileName::kFalse)
@@ -475,12 +475,12 @@ class Status {
 
   // A constructor taking only one error message and an encoded representation of a set of error
   // codes. Suitable for deserializing statuses received over the network.
-  Status(YB_COMMON_STATUS_CONSTRUCTOR_FIELDS,
+  Status(YB_STATUS_CONSTRUCTOR_COMMON_ARGS,
          const Slice& msg,
          const Slice& encoded_errors,
          DupFileName dup_file_name);
 
-#undef YB_COMMON_STATUS_CONSTRUCTOR_FIELDS
+#undef YB_STATUS_CONSTRUCTOR_COMMON_ARGS
 
   Code code() const;
 

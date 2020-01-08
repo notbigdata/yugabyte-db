@@ -160,7 +160,8 @@ void PgDocOp::HandleResponseStatus(client::YBPgsqlOp* op) {
 
   const auto& response = op->response();
 
-  YBPgErrorCode pg_error_code = YBPgErrorCode::YB_PG_INTERNAL_ERROR;
+  const auto kDefaultPgErrorCode = YBPgErrorCode::YB_PG_INTERNAL_ERROR;
+  YBPgErrorCode pg_error_code = kDefaultPgErrorCode;
   if (response.has_pg_error_code()) {
     pg_error_code = static_cast<YBPgErrorCode>(response.pg_error_code());
   }
@@ -172,14 +173,14 @@ void PgDocOp::HandleResponseStatus(client::YBPgsqlOp* op) {
 
   if (response.status() == PgsqlResponsePB::PGSQL_STATUS_DUPLICATE_KEY_ERROR) {
     // We're doing this to eventually replace the error message by one mentioning the index name.
-    if (pg_error_code == YBPgErrorCode::YB_PG_INTERNAL_ERROR) {
+    if (pg_error_code == kDefaultPgErrorCode) {
       pg_error_code = YBPgErrorCode::YB_PG_UNIQUE_VIOLATION;
     }
     exec_status_ = STATUS(AlreadyPresent, op->response().error_message(),
                           PgsqlError(pg_error_code));
   } else {
     exec_status_ = STATUS(QLError, op->response().error_message(), Slice(),
-        PgsqlError(pg_error_code));
+                          PgsqlError(pg_error_code));
   }
 
   exec_status_ = exec_status_.CloneAndAddErrorCode(TransactionError(txn_error_code));

@@ -47,10 +47,6 @@ METRIC_DEFINE_gauge_int64(tablet, replicated_retryable_request_ranges,
                           yb::MetricUnit::kRequests,
                           "Number of replicated retryable request ranges.");
 
-DEFINE_test_flag(double, fake_already_present_retryable_request_ratio, 0.0,
-                 "Fraction of operations that will be randomly reported as already present. "
-                 "For testing only.");
-
 namespace yb {
 namespace consensus {
 
@@ -241,10 +237,7 @@ class RetryableRequests::Impl {
 
     auto& replicated_indexed_by_last_id = client_retryable_requests.replicated.get<LastIdIndex>();
     auto it = replicated_indexed_by_last_id.lower_bound(data.request_id());
-    if ((it != replicated_indexed_by_last_id.end() && it->first_id <= data.request_id()) ||
-        PREDICT_FALSE(
-            fault_injection::ShouldFaultWithProbability(
-                FLAGS_fake_already_present_retryable_request_ratio))) {
+    if (it != replicated_indexed_by_last_id.end() && it->first_id <= data.request_id()) {
       round->NotifyReplicationFinished(
           YB_DUPLICATE_RAFT_REQUEST_STATUS(), round->bound_term(),
           nullptr /* applied_op_ids */);

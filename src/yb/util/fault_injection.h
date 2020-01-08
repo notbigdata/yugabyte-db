@@ -62,7 +62,6 @@ namespace fault_injection {
 // Out-of-line implementation.
 void DoMaybeFault(const char* fault_str, double fraction);
 void DoInjectRandomLatency(double max_latency);
-bool DoShouldFaultWithProbability(double probability);
 
 inline void MaybeFault(const char* fault_str, double fraction) {
   if (PREDICT_TRUE(fraction <= 0)) return;
@@ -72,13 +71,6 @@ inline void MaybeFault(const char* fault_str, double fraction) {
 inline void MaybeInjectRandomLatency(double max_latency) {
   if (PREDICT_TRUE(max_latency <= 0)) return;
   DoInjectRandomLatency(max_latency);
-}
-
-inline bool ShouldFaultWithProbability(double probability) {
-  if (PREDICT_TRUE(probability <= 0)) {
-    return false;
-  }
-  return DoShouldFaultWithProbability(probability);
 }
 
 } // namespace fault_injection
