@@ -300,6 +300,14 @@ readonly EPHEMERAL_DRIVES_FILTER_REGEX="^/mnt/(ephemeral|d)[0-9]+"  # No "$" in 
 # http://stackoverflow.com/questions/5349718/how-can-i-repeat-a-character-in-bash
 readonly HORIZONTAL_LINE=$( printf '=%.0s' {1..80} )
 
+declare -i -r DIRECTORY_EXISTENCE_WAIT_TIMEOUT_SEC=100
+
+declare -i -r YB_DOWNLOAD_LOCK_TIMEOUT_SEC=120
+
+readonly YB_DOWNLOAD_LOCKS_DIR=/tmp/yb_download_locks
+
+readonly YB_NFS_PATH_RE="^/(n|z|u|net|Volumes/net|servers|nfusr)/"
+
 # -------------------------------------------------------------------------------------------------
 # Functions
 # -------------------------------------------------------------------------------------------------
