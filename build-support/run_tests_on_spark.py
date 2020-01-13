@@ -224,6 +224,7 @@ def init_spark_context(details=[]):
     global spark_context
     if spark_context:
         return
+    global_conf = yb_dist_tests.global_conf
     build_type = yb_dist_tests.global_conf.build_type
     from pyspark import SparkContext
     # We sometimes fail tasks due to unsynchronized clocks, so we should tolerate a fair number of
@@ -257,6 +258,8 @@ def init_spark_context(details=[]):
 
     spark_context = SparkContext(spark_master_url, "YB tests ({})".format(', '.join(details)))
     spark_context.addPyFile(yb_dist_tests.__file__)
+    spark_context.addFile(
+            os.path.join(global_conf.build_root, 'archive_for_tests_on_spark.tar.gz.noextract'))
 
 
 def set_global_conf_for_spark_jobs():
@@ -274,6 +277,8 @@ def parallel_run_test(test_descriptor_str):
     """
     This is invoked in parallel to actually run tests.
     """
+    from pyspark import SparkFiles
+
     adjust_pythonpath()
     wait_for_path_to_exist(YB_PYTHONPATH_ENTRY)
     try:
@@ -404,8 +409,53 @@ def parallel_list_test_descriptors(rel_test_path):
     this, listing all gtest tests across 330 test programs might take about 5 minutes on TSAN and 2
     minutes in debug.
     """
+    from pyspark import SparkFiles
+    f = SparkFiles.get('archive_for_tests_on_spark.tar.gz.noextract')
+    print("File: %s" % f)
+    worker_tmp_dir = os.path.dirname(f)
+    remote_yb_src_root = os.path.join(worker_tmp_dir, 'yugabyte-db')
+    tar_cmd_line = ' '.join([
+        'tar',
+        'xzf',
+        f,
+        '-C',
+        remote_yb_src_root
+    ])
+    try:
+        untar_script_path = os.path.join(
+                worker_tmp_dir, 'untar_archive_once_%d.sh' % random.randint(0, 2**64))
+        # We also copy the temporary script here for later reference.
+        untar_script_path_for_reference = os.path.join(
+                worker_tmp_dir, 'untar_archive_once.sh')
+        lock_path = os.path.join(worker_tmp_dir, 'untar.lock')
+        with open(untar_script_path, 'w') as untar_script_file:
+            untar_script_file.write("""#!/usr/bin/env bash
+set -euo pipefail -x
+(
+    flock -w 60 200
+    if [[ ! -d '{remote_yb_src_root}' ]]; then
+        if [[ ! -f '{untar_script_path_for_reference}' ]]; then
+            cp '{untar_script_path}' '{untar_script_path_for_reference}'
+        fi
+        chmod 0755 '{untar_script_path_for_reference}'
+        yb_src_root_extract_tmp_dir='{remote_yb_src_root}'.$RANDOM.$RANDOM.$RANDOM.$RANDOM
+        mkdir "$yb_src_root_extract_tmp_dir"
+        tar xzf '{f}' -C "$yb_src_root_extract_tmp_dir"
+        mv "$yb_src_root_extract_tmp_dir" '{remote_yb_src_root}'
+    fi
+)  200>'{lock_path}'
+""".format(**locals()))
+        os.chmod(untar_script_path, 0755)
+        subprocess.check_call(untar_script_path)
+    finally:
+        # os.remove(untar_script_path)
+        pass
+    
+    return []
+
     adjust_pythonpath()
-    wait_for_path_to_exist(YB_PYTHONPATH_ENTRY)
+    #wait_for_path_to_exist(YB_PYTHONPATH_ENTRY)
+
     try:
         from yb import yb_dist_tests, command_util
     except ImportError as ex:

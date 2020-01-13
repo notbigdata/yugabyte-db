@@ -44,10 +44,11 @@ MAX_TIME_TO_WAIT_FOR_CLOCK_SYNC_SEC = 60
 class TestDescriptor:
     """
     A "test descriptor" identifies a particular test we could run on a distributed test worker.
-    A string representation of a "test descriptor" is one of the following:
+    A string representation of a "test descriptor" is an optional "attempt_<index>:::" followed by
+    one of the options below:
     - A C++ test program name relative to the build root. This implies running all tests within
       the test program. This has the disadvantage that a failure of one of those tests will cause
-      the rest of tests to not be run.
+      the rest of tests not to be run.
     - A C++ test program name relative to the build root followed by the ':::' separator and the
       gtest filter identifying a test within that test program,
     - A string like 'com.yugabyte.jedis.TestYBJedis#testPool[1]' describing a Java test. This is
