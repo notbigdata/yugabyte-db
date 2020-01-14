@@ -53,7 +53,8 @@ if [[ $YB_SRC_ROOT == */ ]]; then
 fi
 
 YB_BASH_COMMON_DIR=$YB_SRC_ROOT/submodules/yugabyte-bash-common
-if [[ ! -d $YB_BASH_COMMON_DIR || -z "$( ls -A "$YB_BASH_COMMON_DIR" )" ]]; then
+if [[ ! -d $YB_BASH_COMMON_DIR || -z "$( ls -A "$YB_BASH_COMMON_DIR" )" ]] &&
+   [[ -d $YB_SRC_ROOT/.git ]]; then
   ( cd "$YB_SRC_ROOT"; git submodule update --init --recursive )
 fi
 
@@ -1099,11 +1100,19 @@ wait_for_directory_existence() {
 }
 
 detect_linuxbrew() {
+  if [[ -z ${BUILD_ROOT:-} ]]; then
+    fatal "BUILD_ROOT is not set"
+  fi
   if ! is_linux; then
     fatal "Expected this function to only be called on Linux"
   fi
   if [[ -n ${YB_LINUXBREW_DIR:-} ]]; then
     export YB_LINUXBREW_DIR
+    return
+  fi
+  if [[ -n ${BUILD_ROOT:-} && -f $BUILD_ROOT/linuxbrew_path.txt ]]; then
+    export YB_LINUXBREW_DIR=$(<$BUILD_ROOT/linuxbrew_path.txt)
+    echo "YB_LINUXBREW_DIR: $YB_LINUXBREW_DIR"
     return
   fi
 
@@ -1143,6 +1152,9 @@ detect_linuxbrew() {
     local linuxbrew_dir
     for linuxbrew_dir in "${candidates[@]}"; do
       if try_set_linuxbrew_dir "$linuxbrew_dir"; then
+        if [[ -n ${BUILD_ROOT:-} ]]; then
+          echo "$YB_LINUXBREW_DIR" >"$BUILD_ROOT/linuxbrew_path.txt"
+        fi
         return
       fi
     done
@@ -1259,7 +1271,7 @@ set_use_ninja() {
       fi
     fi
 
-    if using_ninja && [[ -z ${yb_ninja_path:-} ]]; then
+    if using_ninja && [[ -z ${yb_ninja_path:-} && "${yb_ninja_not_needed:-}" != "true" ]]; then
       set +e
       local which_ninja=$( which ninja 2>/dev/null )
       set -e
@@ -1760,12 +1772,6 @@ check_python_script_syntax() {
   popd
 }
 
-add_python_wrappers_dir_to_path() {
-  # Make sure the Python wrappers directory is the first on PATH
-  remove_path_entry "$YB_PYTHON_WRAPPERS_DIR"
-  export PATH=$YB_PYTHON_WRAPPERS_DIR:$PATH
-}
-
 activate_virtualenv() {
   local virtualenv_parent_dir=$YB_BUILD_PARENT_DIR
   local virtualenv_dir=$virtualenv_parent_dir/$YB_VIRTUALENV_BASENAME
@@ -1779,9 +1785,6 @@ activate_virtualenv() {
     rm -rf "$virtualenv_dir"
     unset YB_RECREATE_VIRTUALENV
   fi
-
-  # To run pip2 itself we already need to add our Python wrappers directory to PATH.
-  add_python_wrappers_dir_to_path
 
   if [[ ! -d $virtualenv_dir ]]; then
     if "$yb_readonly_virtualenv"; then
@@ -2041,12 +2044,14 @@ set_java_home() {
 }
 
 update_submodules() {
-  # This does NOT create any new commits in the top-level repository (the "superproject").
-  #
-  # From documentation on "update" from https://git-scm.com/docs/git-submodule:
-  # Update the registered submodules to match what the superproject expects by cloning missing
-  # submodules and updating the working tree of the submodules
-  ( cd "$YB_SRC_ROOT"; git submodule update --init --recursive )
+  if [[ -d $YB_SRC_ROOT/.git ]]; then
+    # This does NOT create any new commits in the top-level repository (the "superproject").
+    #
+    # From documentation on "update" from https://git-scm.com/docs/git-submodule:
+    # Update the registered submodules to match what the superproject expects by cloning missing
+    # submodules and updating the working tree of the submodules
+    ( cd "$YB_SRC_ROOT"; git submodule update --init --recursive )
+  fi
 }
 
 set_prebuilt_thirdparty_url() {
@@ -2125,10 +2130,3 @@ readonly YB_DEFAULT_CMAKE_OPTS=(
   "-DCMAKE_C_COMPILER=$YB_COMPILER_WRAPPER_CC"
   "-DCMAKE_CXX_COMPILER=$YB_COMPILER_WRAPPER_CXX"
 )
-
-YB_PYTHON_WRAPPERS_DIR=$YB_BUILD_SUPPORT_DIR/python-wrappers
-
-if ! "${yb_is_python_wrapper_script:-false}"; then
-  detect_brew
-  add_python_wrappers_dir_to_path
-fi

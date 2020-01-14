@@ -145,10 +145,6 @@ PROPAGATED_ENV_VAR_PREFIX = 'YB_'
 # This must match the constant with the same name in common-test-env.sh.
 LIST_OF_TESTS_DIR_NAME = 'list_of_tests'
 
-# Global variables.
-propagated_env_vars = {}
-global_conf_dict = None
-
 SPARK_URLS = {
     'linux_default': os.getenv(
         'YB_SPARK_URL_LINUX_DEFAULT',
@@ -163,8 +159,6 @@ SPARK_URLS = {
 
 # This has to match what we output in run-test.sh if YB_LIST_CTEST_TESTS_ONLY is set.
 CTEST_TEST_PROGRAM_RE = re.compile(r'^.* ctest test: \"(.*)\"$')
-
-spark_context = None
 
 # Non-gtest tests and tests with internal dependencies that we should run in one shot. This almost
 # duplicates a  from common-test-env.sh, but that is probably OK since we should not be adding new
@@ -183,10 +177,15 @@ HASH_COMMENT_RE = re.compile('#.*$')
 # fail this number of attempts. Should be greater than or equal to 1. Number of allowed retries =
 # this value - 1.
 SPARK_TASK_MAX_FAILURES = 100
+SPARK_TASK_MAX_FAILURES = 1
 
+# Global variables. Some of these are used on the remote worker side.
 verbose = False
-
 g_spark_master_url_override = None
+propagated_env_vars = {}
+global_conf_dict = None
+spark_context = None
+archive_sha256sum = None
 
 
 def get_sys_path_info_str():
@@ -218,12 +217,17 @@ def delete_if_exists_log_errors(file_path):
             logging.error("Error deleting file %s: %s", file_path, os_error)
 
 
+def log_heading(msg):
+    logging.info('\n%s\n%s\n%s' % ('-' * 80, msg, '-' * 80))
+
+
 # Initializes the spark context. The details list will be incorporated in the Spark application
 # name visible in the Spark web UI.
 def init_spark_context(details=[]):
     global spark_context
     if spark_context:
         return
+    log_heading("Initializing Spark context")
     global_conf = yb_dist_tests.global_conf
     build_type = yb_dist_tests.global_conf.build_type
     from pyspark import SparkContext
@@ -256,10 +260,26 @@ def init_spark_context(details=[]):
     if 'BUILD_URL' in os.environ:
         details.append('URL: {}'.format(os.environ['BUILD_URL']))
 
-    spark_context = SparkContext(spark_master_url, "YB tests ({})".format(', '.join(details)))
-    spark_context.addPyFile(yb_dist_tests.__file__)
-    spark_context.addFile(
-            os.path.join(global_conf.build_root, 'archive_for_tests_on_spark.tar.gz.noextract'))
+    spark_context = SparkContext(spark_master_url, "YB tests: {}".format(' '.join(details)))
+    # TODO: use a temporary name for this zip file and remove it at exit.
+    fd, yb_python_zip_path = tempfile.mkstemp(
+            prefix='yb_python_module_for_spark_workers_', suffix='.zip')
+    os.close(fd)
+    os.remove(yb_python_zip_path)
+    def cleanup():
+        if os.path.exists(yb_python_zip_path):
+            os.remove(yb_python_zip_path)
+    logging.info("Creating a zip archive with the yb python module at %s", yb_python_zip_path)
+    subprocess.check_call(
+            ['zip', '-r', yb_python_zip_path, 'yb', '-x', '*.sw?'],
+            cwd=os.path.join(global_conf.yb_src_root, 'python'))
+    spark_context.addPyFile(yb_python_zip_path)
+    if global_conf.archive_for_workers is not None:
+        logging.info("Will send the archive %s to all Spark workers",
+                     global_conf.archive_for_workers)
+        spark_context.addFile(global_conf.archive_for_workers)
+
+    log_heading("Initialized Spark context")
 
 
 def set_global_conf_for_spark_jobs():
@@ -277,8 +297,7 @@ def parallel_run_test(test_descriptor_str):
     """
     This is invoked in parallel to actually run tests.
     """
-    from pyspark import SparkFiles
-
+    global_conf = initialize_remote_task()
     adjust_pythonpath()
     wait_for_path_to_exist(YB_PYTHONPATH_ENTRY)
     try:
@@ -286,7 +305,6 @@ def parallel_run_test(test_descriptor_str):
     except ImportError as ex:
         raise ImportError("%s. %s" % (ex.message, get_sys_path_info_str()))
 
-    global_conf = yb_dist_tests.set_global_conf_from_dict(global_conf_dict)
     global_conf.set_env(propagated_env_vars)
     wait_for_path_to_exist(global_conf.build_root)
     yb_dist_tests.global_conf = global_conf
@@ -403,44 +421,80 @@ def parallel_run_test(test_descriptor_str):
         delete_if_exists_log_errors(test_started_running_flag_file)
 
 
-def parallel_list_test_descriptors(rel_test_path):
-    """
-    This is invoked in parallel to list all individual tests within our C++ test programs. Without
-    this, listing all gtest tests across 330 test programs might take about 5 minutes on TSAN and 2
-    minutes in debug.
-    """
+def initialize_remote_task():
+    global_conf = yb_dist_tests.set_global_conf_from_dict(global_conf_dict)
+    if not global_conf.archive_for_workers:
+        return
+
     from pyspark import SparkFiles
-    f = SparkFiles.get('archive_for_tests_on_spark.tar.gz.noextract')
-    print("File: %s" % f)
-    worker_tmp_dir = os.path.dirname(f)
-    remote_yb_src_root = os.path.join(worker_tmp_dir, 'yugabyte-db')
-    tar_cmd_line = ' '.join([
-        'tar',
-        'xzf',
-        f,
-        '-C',
-        remote_yb_src_root
-    ])
+    archive_name = os.path.basename(SparkFiles.get(global_conf.archive_for_workers))
+    expected_archive_sha256sum = global_conf.archive_sha256sum
+    worker_tmp_dir = os.path.abspath(SparkFiles.getRootDirectory())
+    archive_path = os.path.join(worker_tmp_dir, archive_name)
+    if not os.path.exists(archive_path):
+        raise IOError("Archive not found: %s" % archive_path)
+    # We install the code into the same path where it was installed on the main build node (Jenkins
+    # slave or dev server), but put it in as separate variable to have flexibility to change it
+    # later.
+    remote_yb_src_root = global_conf.yb_src_root
+
+    subprocess.check_call([
+        'mkdir',
+        '-p',
+        os.path.dirname(remote_yb_src_root)])
     try:
         untar_script_path = os.path.join(
                 worker_tmp_dir, 'untar_archive_once_%d.sh' % random.randint(0, 2**64))
         # We also copy the temporary script here for later reference.
         untar_script_path_for_reference = os.path.join(
                 worker_tmp_dir, 'untar_archive_once.sh')
-        lock_path = os.path.join(worker_tmp_dir, 'untar.lock')
+        lock_path = '/tmp/yb_dist_tests_update_archive%s.lock' % (
+                global_conf.yb_src_root.replace('/', '__'))
         with open(untar_script_path, 'w') as untar_script_file:
+            # Do the locking using the flock command in Bash -- file locking in Python is painful.
+            # Some curly braces in the script template are escaped as "{{" and }}".
             untar_script_file.write("""#!/usr/bin/env bash
-set -euo pipefail -x
+set -euo pipefail
 (
     flock -w 60 200
+    if [[ -d '{remote_yb_src_root}' ]]; then
+        previous_sha256_file_path='{remote_yb_src_root}/extracted_from_archive.sha256'
+        if [[ ! -f $previous_sha256_file_path ]]; then
+            # Prevent accidental deletion of directories that were not installed by untarring
+            # an archive.
+            echo "File $previous_sha256_file_path does not exist!" >&2
+            exit 1
+        fi
+        previous_sha256sum=$(<"$previous_sha256_file_path")
+        if [[ $previous_sha256sum == '{expected_archive_sha256sum}' ]]; then
+            echo "Found existing archive installation at '{remote_yb_src_root}' with correct" \
+                 "expected checksum '$previous_sha256sum'."
+        else
+            echo "Removing '{remote_yb_src_root}': it was installed from archive with checksum" \
+                 "'$previous_sha256sum' but we are installing one with checksum" \
+                 "'{expected_archive_sha256sum}'."
+            rm -rf '{remote_yb_src_root}'
+        fi
+    fi
     if [[ ! -d '{remote_yb_src_root}' ]]; then
         if [[ ! -f '{untar_script_path_for_reference}' ]]; then
             cp '{untar_script_path}' '{untar_script_path_for_reference}'
         fi
+        actual_archive_sha256sum=$( (
+            [[ $OSTYPE == linux* ]] && sha256sum '{archive_path}' || 
+            shasum --portable --algorithm 256
+        ) | awk '{{ print $1 }}' )
+        if [[ $actual_archive_sha256sum != '{expected_archive_sha256sum}' ]]; then
+          echo "Archive SHA256 sum of '{archive_path}' is $actual_archive_sha256sum, which" \
+               "does not match expected value: {expected_archive_sha256sum}." >&2
+          exit 1
+        fi
         chmod 0755 '{untar_script_path_for_reference}'
         yb_src_root_extract_tmp_dir='{remote_yb_src_root}'.$RANDOM.$RANDOM.$RANDOM.$RANDOM
         mkdir "$yb_src_root_extract_tmp_dir"
-        tar xzf '{f}' -C "$yb_src_root_extract_tmp_dir"
+        tar xzf '{archive_path}' -C "$yb_src_root_extract_tmp_dir"
+        echo '{expected_archive_sha256sum}' \
+                >"$yb_src_root_extract_tmp_dir/extracted_from_archive.sha256"
         mv "$yb_src_root_extract_tmp_dir" '{remote_yb_src_root}'
     fi
 )  200>'{lock_path}'
@@ -448,19 +502,28 @@ set -euo pipefail -x
         os.chmod(untar_script_path, 0755)
         subprocess.check_call(untar_script_path)
     finally:
-        # os.remove(untar_script_path)
-        pass
+        if os.path.exists(untar_script_path):
+            os.remove(untar_script_path)
+    return global_conf
+
     
-    return []
+def parallel_list_test_descriptors(rel_test_path):
+    """
+    This is invoked in parallel to list all individual tests within our C++ test programs. Without
+    this, listing all gtest tests across 330 test programs might take about 5 minutes on TSAN and 2
+    minutes in debug.
+    """
+    
+    from yb import yb_dist_tests
+    global_conf = initialize_remote_task()
 
     adjust_pythonpath()
-    #wait_for_path_to_exist(YB_PYTHONPATH_ENTRY)
+    wait_for_path_to_exist(YB_PYTHONPATH_ENTRY)
 
     try:
         from yb import yb_dist_tests, command_util
     except ImportError as ex:
         raise ImportError("%s. %s" % (ex.message, get_sys_path_info_str()))
-    global_conf = yb_dist_tests.set_global_conf_from_dict(global_conf_dict)
     global_conf.set_env(propagated_env_vars)
     wait_for_path_to_exist(global_conf.build_root)
     list_tests_cmd_line = [
@@ -668,7 +731,7 @@ def collect_cpp_tests(max_tests, cpp_test_program_filter, cpp_test_program_re_st
     """
 
     global_conf = yb_dist_tests.global_conf
-    logging.info("Collecting the list of C++ test programs")
+    logging.info("Collecting the list of C++ test programs (locally; not a Spark job)")
     start_time_sec = time.time()
     build_root_realpath = os.path.realpath(global_conf.build_root)
     ctest_cmd_result = command_util.run_program(
@@ -932,6 +995,16 @@ def main():
                              'debugging.')
     parser.add_argument('--spark-master-url',
                         help='Override Spark master URL to use. Useful for debugging.')
+    parser.add_argument('--send_archive_to_workers',
+                        action='store_true',
+                        default=True,
+                        help='Create an archive containing everything required to run tests and '
+                             'send it to workers instead.')
+    parser.add_argument('--recreate_archive_for_workers',
+                        action='store_true',
+                        help='When --send_archive_to_workers is specified, use this option to '
+                             're-create the archive that we would send to workers even if it '
+                             'already exists.')
 
     args = parser.parse_args()
     global g_spark_master_url_override
@@ -975,17 +1048,30 @@ def main():
 
     failed_test_list_path = args.failed_test_list
     if failed_test_list_path and not is_parent_dir_writable(failed_test_list_path):
-        fatal_error(("Parent directory of failed test list destination path ('{}') is not " +
-                     "writable").format(args.failed_test_list))
+        fatal_error("Parent directory of failed test list destination path ('{}') is not "
+                    "writable".format(args.failed_test_list))
 
     test_list_path = args.test_list
     if test_list_path and not os.path.isfile(test_list_path):
         fatal_error("File specified by --test_list does not exist or is not a file: '{}'".format(
             test_list_path))
+    
+    if not args.send_archive_to_workers and args.recreate_archive_for_workers:
+        fatal_error("Specify --send_archive_to_workers to use --recreate_archive_for_workers")
+
+    # End of argument validation.
 
     # ---------------------------------------------------------------------------------------------
     # Start the timer.
     global_start_time = time.time()
+
+    # This needs to be done before Spark context initialization, which will happen as we try to
+    # collect all gtest tests in all C++ test programs.
+    if args.send_archive_to_workers:
+        if (args.recreate_archive_for_workers or
+            not os.path.exists(yb_dist_tests.global_conf.archive_for_workers)):
+            yb_dist_tests.create_archive_for_workers()
+        yb_dist_tests.compute_archive_sha256sum()
 
     if test_list_path:
         test_descriptors = load_test_list(test_list_path)

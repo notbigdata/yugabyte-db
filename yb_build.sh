@@ -1117,6 +1117,8 @@ fi
 
 set_build_root
 
+detect_brew
+
 set_prebuilt_thirdparty_url
 if [[ ${YB_DOWNLOAD_THIRDPARTY:-} == "1" ]]; then
   download_thirdparty
@@ -1126,8 +1128,8 @@ if [[ ${YB_DOWNLOAD_THIRDPARTY:-} == "1" ]]; then
     log "Using Linuxbrew directory: $YB_LINUXBREW_DIR"
   fi
 elif [[ -f $do_not_use_local_thirdparty_flag_path ]] ||
-   "$use_nfs_shared_thirdparty" ||
-   using_remote_compilation && ! "$no_shared_thirdparty"; then
+     "$use_nfs_shared_thirdparty" ||
+      using_remote_compilation && ! "$no_shared_thirdparty"; then
   find_thirdparty_dir
 fi
 
