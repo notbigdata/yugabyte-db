@@ -53,7 +53,6 @@ import signal
 from collections import defaultdict
 
 BUILD_SUPPORT_DIR = os.path.dirname(os.path.realpath(__file__))
-YB_PYTHONPATH_ENTRY = os.path.realpath(os.path.join(BUILD_SUPPORT_DIR, '..', 'python'))
 
 # An upper bound on a single test's running time. In practice there are multiple other timeouts
 # that should be triggered earlier.
@@ -64,20 +63,6 @@ TEST_TIMEOUT_UPPER_BOUND_SEC = 35 * 60
 # this amount of time, we terminate the run-test.sh script. This should prevent tests getting stuck
 # for a long time in macOS builds.
 TIME_SEC_TO_START_RUNNING_TEST = 30
-
-# Additional Python module path elements that we've successfully added (that were not already in
-# sys.path).
-pythonpath_adjustments = []
-
-
-def add_pythonpath_entry(entry):
-    if entry not in sys.path:
-        sys.path.append(entry)
-        pythonpath_adjustments.append(entry)
-
-
-def adjust_pythonpath():
-    add_pythonpath_entry(YB_PYTHONPATH_ENTRY)
 
 
 def wait_for_path_to_exist(target_path):
@@ -104,12 +89,7 @@ def wait_for_path_to_exist(target_path):
         elapsed_time, target_path
     ))
 
-
-adjust_pythonpath()
-
-# Wait for our module path, which may be on NFS, to be mounted.
-wait_for_path_to_exist(YB_PYTHONPATH_ENTRY)
-
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'python'))
 from yb import yb_dist_tests  # noqa
 from yb import command_util  # noqa
 from yb.common_util import set_to_comma_sep_str, get_bool_env_var, is_macos  # noqa
@@ -188,15 +168,11 @@ spark_context = None
 archive_sha256sum = None
 
 
-def get_sys_path_info_str():
-    return 'Host: %s, pythonpath_adjustments=%s, sys.path entries: %s' % (
-        socket.gethostname(),
-        repr(pythonpath_adjustments),
-        ', '.join([
-            '"%s" (%s)' % (path_entry, "exists" if os.path.exists(path_entry) else "does NOT exist")
-            for path_entry in sys.path
-        ])
-    )
+def configure_logging():
+    log_level = logging.INFO
+    logging.basicConfig(
+        level=log_level,
+        format="[%(filename)s:%(lineno)d] %(asctime)s %(levelname)s: %(message)s")
 
 
 def is_pid_running(pid):
@@ -261,17 +237,12 @@ def init_spark_context(details=[]):
         details.append('URL: {}'.format(os.environ['BUILD_URL']))
 
     spark_context = SparkContext(spark_master_url, "YB tests: {}".format(' '.join(details)))
-    # TODO: use a temporary name for this zip file and remove it at exit.
-    fd, yb_python_zip_path = tempfile.mkstemp(
-            prefix='yb_python_module_for_spark_workers_', suffix='.zip')
-    os.close(fd)
-    os.remove(yb_python_zip_path)
-    def cleanup():
-        if os.path.exists(yb_python_zip_path):
-            os.remove(yb_python_zip_path)
+    yb_python_zip_path = yb_dist_tests.get_tmp_filename(
+            prefix='yb_python_module_for_spark_workers_', suffix='.zip', auto_remove=True)
     logging.info("Creating a zip archive with the yb python module at %s", yb_python_zip_path)
     subprocess.check_call(
-            ['zip', '-r', yb_python_zip_path, 'yb', '-x', '*.sw?'],
+            ['zip', '--recurse-paths', '--quiet', yb_python_zip_path, 'yb',
+             '-x', '*.sw?', '-x', '*.pyc'],
             cwd=os.path.join(global_conf.yb_src_root, 'python'))
     spark_context.addPyFile(yb_python_zip_path)
     if global_conf.archive_for_workers is not None:
@@ -298,12 +269,7 @@ def parallel_run_test(test_descriptor_str):
     This is invoked in parallel to actually run tests.
     """
     global_conf = initialize_remote_task()
-    adjust_pythonpath()
-    wait_for_path_to_exist(YB_PYTHONPATH_ENTRY)
-    try:
-        from yb import yb_dist_tests, command_util
-    except ImportError as ex:
-        raise ImportError("%s. %s" % (ex.message, get_sys_path_info_str()))
+    from yb import yb_dist_tests, command_util
 
     global_conf.set_env(propagated_env_vars)
     wait_for_path_to_exist(global_conf.build_root)
@@ -326,6 +292,11 @@ def parallel_run_test(test_descriptor_str):
 
     os.environ['YB_TEST_STARTED_RUNNING_FLAG_FILE'] = test_started_running_flag_file
     os.environ['YB_TEST_EXTRA_ERROR_LOG_PATH'] = test_descriptor.error_output_path
+
+    test_log_file_list_path = yb_dist_tests.get_tmp_filename(
+            prefix='yb_test_log_file_list', suffix='.txt')
+    os.environ['YB_TEST_LOG_FILE_LIST_PATH'] = test_log_file_list_path
+    logging.info("Setting YB_TEST_LOG_FILE_LIST_PATH to %s", test_log_file_list_path)
 
     yb_dist_tests.wait_for_clock_sync()
 
@@ -391,9 +362,11 @@ def parallel_run_test(test_descriptor_str):
         exit_code = process.wait()
 
         elapsed_time_sec = time.time() - start_time_sec
-        logging.info("Test {} ran on {} in %.1f seconds, rc={}".format(
-            test_descriptor, socket.gethostname(), exit_code))
+        logging.info("Test %s ran on %s in %.1f seconds, rc=%d",
+                     test_descriptor, socket.gethostname(), exit_code)
         return exit_code, elapsed_time_sec
+
+    # End of the local run_test() function.
 
     try:
         exit_code, elapsed_time_sec = run_test()
@@ -401,6 +374,7 @@ def parallel_run_test(test_descriptor_str):
 
         failed_without_output = False
         if os.path.isfile(error_output_path) and os.path.getsize(error_output_path) == 0:
+            # Empty error output file (<something>__error.log).
             if exit_code == 0:
                 # Test succeeded, no error output.
                 os.remove(error_output_path)
@@ -412,6 +386,38 @@ def parallel_run_test(test_descriptor_str):
                 # Also mark this in test results.
                 failed_without_output = True
 
+        log_files_to_copy = [error_output_path]
+        if os.path.exists(test_log_file_list_path):
+            with open(test_log_file_list_path) as test_log_file_list_file:
+                for log_file_pattern in test_log_file_list_file:
+                    logging.info("Log pattern to copy to main build host: %s", log_file_pattern)
+                    glob_result = glob.glob(os.path.abspath(log_file_pattern))
+                    for log_file_path in glob_result:
+                        if os.path.exists(log_file_path):
+                            log_files_to_copy.append(log_file_path)
+                        else:
+                            logging.warning("Log file does not exist: %s", log_file_path)
+                    if not glob_result:
+                        logging.warning("No log files found for pattern: %s", log_file_pattern)
+        else:
+            logging.warning("Log file list file does not exist: %s", test_log_file_list_path)
+
+        num_log_files_copied = 0
+        for log_file_path in log_files_to_copy:
+            dest_path = yb_dist_tests.to_real_nfs_path(log_file_path)
+            dest_dir = os.path.dirname(dest_path)
+            if not os.path.exists(dest_dir):
+                logging.info("Creating directory %s", dest_dir)
+                subprocess.check_call(['mkdir', '-p', dest_dir])
+            logging.info("Copying %s to %s", log_file_path, dest_path)
+            subprocess.check_call([
+                'cp',
+                log_file_path,
+                dest_path
+            ])
+            num_log_files_copied += 1
+        logging.info("Number of log files copied: %d", num_log_files_copied)
+
         return yb_dist_tests.TestResult(
                 exit_code=exit_code,
                 test_descriptor=test_descriptor,
@@ -419,9 +425,12 @@ def parallel_run_test(test_descriptor_str):
                 failed_without_output=failed_without_output)
     finally:
         delete_if_exists_log_errors(test_started_running_flag_file)
+        delete_if_exists_log_errors(test_log_file_list_path)
 
 
 def initialize_remote_task():
+    configure_logging()
+
     global_conf = yb_dist_tests.set_global_conf_from_dict(global_conf_dict)
     if not global_conf.archive_for_workers:
         return
@@ -514,16 +523,9 @@ def parallel_list_test_descriptors(rel_test_path):
     minutes in debug.
     """
     
-    from yb import yb_dist_tests
+    from yb import yb_dist_tests, command_util
     global_conf = initialize_remote_task()
 
-    adjust_pythonpath()
-    wait_for_path_to_exist(YB_PYTHONPATH_ENTRY)
-
-    try:
-        from yb import yb_dist_tests, command_util
-    except ImportError as ex:
-        raise ImportError("%s. %s" % (ex.message, get_sys_path_info_str()))
     global_conf.set_env(propagated_env_vars)
     wait_for_path_to_exist(global_conf.build_root)
     list_tests_cmd_line = [
@@ -999,7 +1001,7 @@ def main():
                         action='store_true',
                         default=True,
                         help='Create an archive containing everything required to run tests and '
-                             'send it to workers instead.')
+                             'send it to workers instead of assuming an NFS filesystem.')
     parser.add_argument('--recreate_archive_for_workers',
                         action='store_true',
                         help='When --send_archive_to_workers is specified, use this option to '
@@ -1019,11 +1021,8 @@ def main():
 
     global verbose
     verbose = args.verbose
-
-    log_level = logging.INFO
-    logging.basicConfig(
-        level=log_level,
-        format="[%(filename)s:%(lineno)d] %(asctime)s %(levelname)s: %(message)s")
+    
+    configure_logging()
 
     if not args.run_cpp_tests and not args.run_java_tests:
         fatal_error("At least one of --java or --cpp has to be specified")

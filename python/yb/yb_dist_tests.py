@@ -22,6 +22,8 @@ import glob
 import subprocess
 import random
 import sys
+import tempfile
+import atexit
 
 
 from yb.common_util import get_build_type_from_build_root, is_macos  # nopep8
@@ -385,6 +387,25 @@ def compute_archive_sha256sum():
         global_conf.archive_sha256sum = compute_sha256sum(global_conf.archive_for_workers)
         logging.info("SHA256 checksum of archive %s: %s" % (
             global_conf.archive_for_workers, global_conf.archive_sha256sum))
+
+
+def to_real_nfs_path(path):
+    assert path.startswith('/'), "Expecting the path to be absolute: %s" % path
+    path = os.path.abspath(path)
+    return '/real_%s' % path[1:]
+
+
+def get_tmp_filename(prefix='', suffix='', auto_remove=False):
+    fd, file_path = tempfile.mkstemp(prefix=prefix, suffix=suffix)
+    os.close(fd)
+    os.remove(file_path)
+    if auto_remove:
+        def cleanup():
+            if os.path.exists(file_path):
+                os.remove(file_path)
+        atexit.register(cleanup)
+    return file_path
+
 
 
 if __name__ == '__main__':

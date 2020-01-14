@@ -473,6 +473,7 @@ prepare_for_running_cxx_test() {
   test_cmd_line=( "$abs_test_binary_path" ${YB_EXTRA_GTEST_FLAGS:-} )
 
   test_log_path_prefix="$YB_TEST_LOG_ROOT_DIR/$rel_test_log_path_prefix"
+  register_test_log_files "$test_log_path_prefix.*"
   xml_output_file="$test_log_path_prefix.xml"
   if is_known_non_gtest_test_by_rel_path "$rel_test_binary"; then
     is_gtest_test=false
@@ -1493,9 +1494,14 @@ run_java_test() {
     fatal "Maven not found on PATH. PATH: $PATH"
   fi
 
+  # Note: "$surefire_reports_dir" contains the test method name as well.
   local junit_xml_path=$surefire_reports_dir/TEST-$test_class.xml
   local log_files_path_prefix=$surefire_reports_dir/$test_class
   local test_log_path=$log_files_path_prefix-output.txt
+
+  # For the log file prefix, remember the pattern with a trailing "*" -- we will expand it
+  # after the test has run.
+  register_test_log_files "$junit_xml_path" "$test_log_path" "${log_files_path_prefix}*"
   log "Using surefire reports directory: $surefire_reports_dir"
   log "Test log path: $test_log_path"
 
@@ -1870,6 +1876,24 @@ resolve_and_run_java_test() {
   else
     # TODO: support enterprise case by passing rel_module_dir here.
     run_repeat_unit_test "$module_name" "$java_test_name" --java
+  fi
+}
+
+# Allows remembering all the generated test log files in a file whose path is specified by the
+# YB_TEST_LOG_FILE_LIST_PATH variable.
+register_test_log_files() {
+  log "DEBUG: register_test_log_files called with: $*"
+  log "DEBUG: YB_TEST_LOG_FILE_LIST_PATH=${YB_TEST_LOG_FILE_LIST_PATH:-undefined}"
+  if [[ -n ${YB_TEST_LOG_FILE_LIST_PATH:-} ]]; then
+    local file_path
+    (
+      for file_path in "$@"; do
+        echo "$file_path"
+      done
+    ) >>"$YB_TEST_LOG_FILE_LIST_PATH"
+
+    echo "Current contents of $YB_TEST_LOG_FILE_LIST_PATH:"
+    cat "$YB_TEST_LOG_FILE_LIST_PATH"
   fi
 }
 
