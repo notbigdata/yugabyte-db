@@ -271,7 +271,6 @@ def parallel_run_test(test_descriptor_str):
     global_conf = initialize_remote_task()
     from yb import yb_dist_tests, command_util
 
-    global_conf.set_env_on_spark_worker(propagated_env_vars)
     wait_for_path_to_exist(global_conf.build_root)
     test_descriptor = yb_dist_tests.TestDescriptor(test_descriptor_str)
 
@@ -440,6 +439,7 @@ def initialize_remote_task():
     configure_logging()
 
     global_conf = yb_dist_tests.set_global_conf_from_dict(global_conf_dict)
+    global_conf.set_env_on_spark_worker(propagated_env_vars)
     if not global_conf.archive_for_workers:
         return
 
@@ -534,7 +534,6 @@ def parallel_list_test_descriptors(rel_test_path):
     from yb import yb_dist_tests, command_util
     global_conf = initialize_remote_task()
 
-    global_conf.set_env(propagated_env_vars)
     wait_for_path_to_exist(global_conf.build_root)
     list_tests_cmd_line = [
             os.path.join(global_conf.build_root, rel_test_path), '--gtest_list_tests']
@@ -710,12 +709,13 @@ def save_report(report_base_dir, results, total_elapsed_time_sec, spark_succeede
         tests=test_reports_by_descriptor
         )
 
+    full_report_paths = []
     if historical_report_path:
-        full_report_paths = [historical_report_path]
-        if save_to_build_dir:
-            full_report_paths.append(os.path.join(global_conf.build_root, 'full_build_report.json'))
+        full_report_paths.append(historical_report_path)
+    if save_to_build_dir:
+        full_report_paths.append(os.path.join(global_conf.build_root, 'full_build_report.json'))
 
-        save_json_to_paths('full build report', report, full_report_paths, should_gzip=True)
+    save_json_to_paths('full build report', report, full_report_paths, should_gzip=True)
 
     if save_to_build_dir:
         del report['tests']
@@ -1177,6 +1177,7 @@ def main():
 
     total_elapsed_time_sec = time.time() - global_start_time
     logging.info("Total elapsed time: {} sec".format(total_elapsed_time_sec))
+
     if report_base_dir and write_report or args.save_report_to_build_dir:
         save_report(report_base_dir, results, total_elapsed_time_sec, spark_succeeded,
                     save_to_build_dir=args.save_report_to_build_dir)
