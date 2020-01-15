@@ -271,9 +271,8 @@ def parallel_run_test(test_descriptor_str):
     global_conf = initialize_remote_task()
     from yb import yb_dist_tests, command_util
 
-    global_conf.set_env(propagated_env_vars)
+    global_conf.set_env_on_spark_worker(propagated_env_vars)
     wait_for_path_to_exist(global_conf.build_root)
-    yb_dist_tests.global_conf = global_conf
     test_descriptor = yb_dist_tests.TestDescriptor(test_descriptor_str)
 
     # This is saved in the test result file by process_test_result.py.
@@ -284,19 +283,16 @@ def parallel_run_test(test_descriptor_str):
     os.environ['YB_RUNNING_TEST_ON_SPARK'] = '1'
     os.environ['BUILD_ROOT'] = global_conf.build_root
 
-    test_started_running_flag_file = os.path.join(
-            tempfile.gettempdir(),
-            'yb_test_started_running_flag_file_%d_%s' % (
-                    os.getpid(),
-                    ''.join('%09d' % random.randrange(0, 1000000000) for i in xrange(4))))
+    test_started_running_flag_file = yb_dist_tests.get_tmp_filename(
+            prefix='yb_test_started_running_flag_file')
 
     os.environ['YB_TEST_STARTED_RUNNING_FLAG_FILE'] = test_started_running_flag_file
     os.environ['YB_TEST_EXTRA_ERROR_LOG_PATH'] = test_descriptor.error_output_path
 
-    test_log_file_list_path = yb_dist_tests.get_tmp_filename(
+    build_artifact_file_list_path = yb_dist_tests.get_tmp_filename(
             prefix='yb_test_log_file_list', suffix='.txt')
-    os.environ['YB_TEST_LOG_FILE_LIST_PATH'] = test_log_file_list_path
-    logging.info("Setting YB_TEST_LOG_FILE_LIST_PATH to %s", test_log_file_list_path)
+    os.environ['YB_TEST_LOG_FILE_LIST_PATH'] = build_artifact_file_list_path
+    logging.info("Setting YB_TEST_LOG_FILE_LIST_PATH to %s", build_artifact_file_list_path)
 
     yb_dist_tests.wait_for_clock_sync()
 
@@ -363,11 +359,13 @@ def parallel_run_test(test_descriptor_str):
 
         elapsed_time_sec = time.time() - start_time_sec
         logging.info("Test %s ran on %s in %.1f seconds, rc=%d",
-                     test_descriptor, socket.gethostname(), exit_code)
+                     test_descriptor, socket.gethostname(), elapsed_time_sec, exit_code)
         return exit_code, elapsed_time_sec
 
     # End of the local run_test() function.
 
+    # Created files/directories will be writable by the group.
+    old_umask = os.umask(2)
     try:
         exit_code, elapsed_time_sec = run_test()
         error_output_path = test_descriptor.error_output_path
@@ -387,23 +385,29 @@ def parallel_run_test(test_descriptor_str):
                 failed_without_output = True
 
         log_files_to_copy = [error_output_path]
-        if os.path.exists(test_log_file_list_path):
-            with open(test_log_file_list_path) as test_log_file_list_file:
-                for log_file_pattern in test_log_file_list_file:
-                    logging.info("Log pattern to copy to main build host: %s", log_file_pattern)
-                    glob_result = glob.glob(os.path.abspath(log_file_pattern))
-                    for log_file_path in glob_result:
-                        if os.path.exists(log_file_path):
-                            log_files_to_copy.append(log_file_path)
-                        else:
-                            logging.warning("Log file does not exist: %s", log_file_path)
+        if os.path.exists(build_artifact_file_list_path):
+            with open(build_artifact_file_list_path) as test_log_file_list_file:
+                for build_artifact_path_pattern in test_log_file_list_file:
+                    build_artifact_path_pattern = build_artifact_path_pattern.strip()
+                    if not build_artifact_path_pattern:
+                        continue
+                    logging.info("Build artifact pattern to copy to main build host: '%s'",
+                                 build_artifact_path_pattern)
+                    glob_result = glob.glob(os.path.abspath(build_artifact_path_pattern))
+                    log_files_to_copy.extend(sorted(glob_result))
                     if not glob_result:
-                        logging.warning("No log files found for pattern: %s", log_file_pattern)
+                        logging.warning("No build artifact files found for pattern: '%s'",
+                                        build_artifact_path_pattern)
         else:
-            logging.warning("Log file list file does not exist: %s", test_log_file_list_path)
+            logging.warning("Build artifact list file does not exist: '%s'",
+                            build_artifact_file_list_path)
 
         num_log_files_copied = 0
+        build_artifact_paths = []
         for log_file_path in log_files_to_copy:
+            if not os.path.exists(log_file_path):
+                logging.warning("Build artifact file does not exist: '%s'", log_file_path)
+                continue
             dest_path = yb_dist_tests.to_real_nfs_path(log_file_path)
             dest_dir = os.path.dirname(dest_path)
             if not os.path.exists(dest_dir):
@@ -415,17 +419,21 @@ def parallel_run_test(test_descriptor_str):
                 log_file_path,
                 dest_path
             ])
+            build_artifact_paths.append(
+                    os.path.relpath(os.path.abspath(log_file_path), global_conf.yb_src_root))
             num_log_files_copied += 1
-        logging.info("Number of log files copied: %d", num_log_files_copied)
+        logging.info("Number of build artifact files copied: %d", num_log_files_copied)
 
         return yb_dist_tests.TestResult(
                 exit_code=exit_code,
                 test_descriptor=test_descriptor,
                 elapsed_time_sec=elapsed_time_sec,
-                failed_without_output=failed_without_output)
+                failed_without_output=failed_without_output,
+                build_artifact_paths=build_artifact_paths)
     finally:
         delete_if_exists_log_errors(test_started_running_flag_file)
-        delete_if_exists_log_errors(test_log_file_list_path)
+        delete_if_exists_log_errors(build_artifact_file_list_path)
+        os.umask(old_umask)
 
 
 def initialize_remote_task():
@@ -682,7 +690,8 @@ def save_report(report_base_dir, results, total_elapsed_time_sec, spark_succeede
         test_report_dict = dict(
             elapsed_time_sec=result.elapsed_time_sec,
             exit_code=result.exit_code,
-            language=test_descriptor.language
+            language=test_descriptor.language,
+            build_artifact_paths=result.build_artifact_paths
         )
         test_reports_by_descriptor[test_descriptor.descriptor_str] = test_report_dict
         if test_descriptor.error_output_path and os.path.isfile(test_descriptor.error_output_path):
@@ -863,7 +872,7 @@ def fatal_error(msg):
 def collect_java_tests():
     java_test_list_path = os.path.join(yb_dist_tests.global_conf.build_root, 'java_test_list.txt')
     if not os.path.exists(java_test_list_path):
-        raise IOError("Java test list not found at '%s'", java_test_list_path)
+        raise IOError("Java test list not found at '%s'" % java_test_list_path)
     with open(java_test_list_path) as java_test_list_file:
         java_test_descriptors = [
             yb_dist_tests.TestDescriptor(java_test_str.strip())
@@ -1142,23 +1151,28 @@ def main():
 
     logging.info("Tests are done, set of exit codes: {}, will return exit code {}".format(
         sorted(test_exit_codes), global_exit_code))
+    num_tests_by_language = defaultdict(int)
     failures_by_language = defaultdict(int)
     failed_test_desc_strs = []
     for result in results:
+        test_language = result.test_descriptor.language
         if result.exit_code != 0:
             how_test_failed = ""
             if result.failed_without_output:
                 how_test_failed = " without any output"
             logging.info("Test failed{}: {}".format(how_test_failed, result.test_descriptor))
-            failures_by_language[result.test_descriptor.language] += 1
+            failures_by_language[test_langugage] += 1
             failed_test_desc_strs.append(result.test_descriptor.descriptor_str)
+        num_tests_by_language[test_language] += 1
 
     if failed_test_list_path:
         logging.info("Writing the list of failed tests to '{}'".format(failed_test_list_path))
         with open(failed_test_list_path, 'w') as failed_test_file:
             failed_test_file.write("\n".join(failed_test_desc_strs) + "\n")
 
-    for language, num_failures in failures_by_language.iteritems():
+    for language, num_tests in sorted(num_tests_by_language.iteritems()):
+        logging.info("Total tests we ran in {}: {}".format(language, num_tests))
+    for language, num_failures in sorted(failures_by_language.iteritems()):
         logging.info("Failures in {} tests: {}".format(language, num_failures))
 
     total_elapsed_time_sec = time.time() - global_start_time

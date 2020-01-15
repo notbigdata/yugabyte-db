@@ -185,6 +185,8 @@ Options:
     Use prebuilt third-party dependencies, downloadable e.g. from a GitHub release. Also records the
     third-party URL in the build root so that further invocations of yb_build.sh don't reqiure
     this option (this could be reset by --clean). Only supported on CentOS.
+  --collect-java-tests
+    Collect the set of Java test methods into a file
   --
     Pass all arguments after -- to repeat_unit_test.
 
@@ -598,6 +600,7 @@ running_any_tests=false
 clean_postgres=false
 make_ninja_extra_args=""
 java_lint=false
+collect_java_tests=false
 
 export YB_HOST_FOR_RUNNING_TESTS=${YB_HOST_FOR_RUNNING_TESTS:-}
 
@@ -784,6 +787,9 @@ while [[ $# -gt 0 ]]; do
     ;;
     --no-remote)
       export YB_REMOTE_COMPILATION=0
+    ;;
+    --collect-java-tests)
+      collect_java_tests=true
     ;;
     --)
       if [[ $num_test_repetitions -lt 2 ]]; then
@@ -1284,7 +1290,7 @@ if "$build_java"; then
       log "Some Java tests failed"
       global_exit_code=1
     fi
-  elif should_run_java_test_methods_separately; then
+  elif should_run_java_test_methods_separately || "$collect_java_tests"; then
     collect_java_tests
   fi
 

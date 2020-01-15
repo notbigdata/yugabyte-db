@@ -209,7 +209,6 @@ normalize_build_type() {
 # Sets the build directory based on the given build type (the build_type variable) and the value of
 # the YB_COMPILER_TYPE environment variable.
 set_build_root() {
-  set_use_ninja
   if [[ ${1:-} == "--no-readonly" ]]; then
     local -r make_build_root_readonly=false
     shift
@@ -247,6 +246,7 @@ set_build_root() {
 
   export BUILD_ROOT
   export YB_BUILD_ROOT=$BUILD_ROOT
+  set_use_ninja
 }
 
 # Resolve the BUILD_ROOT symlink and save the result to the real_build_root_path variable.
@@ -1152,7 +1152,10 @@ detect_linuxbrew() {
     local linuxbrew_dir
     for linuxbrew_dir in "${candidates[@]}"; do
       if try_set_linuxbrew_dir "$linuxbrew_dir"; then
-        if [[ -n ${BUILD_ROOT:-} ]]; then
+        if [[ -n ${BUILD_ROOT:-} && ! -f "$BUILD_ROOT/linuxbrew_path.txt" ]]; then
+          if [[ ! -d $BUILD_ROOT ]]; then
+            mkdir -p "$BUILD_ROOT"
+          fi
           echo "$YB_LINUXBREW_DIR" >"$BUILD_ROOT/linuxbrew_path.txt"
         fi
         return

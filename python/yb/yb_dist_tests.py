@@ -155,7 +155,7 @@ class GlobalTestConfig:
                  archive_for_workers,
                  rel_build_root,
                  archive_sha256sum):
-        self.build_root = build_root
+        self.build_root = os.path.abspath(build_root)
         self.build_type = build_type
         self.yb_src_root = yb_src_root
         self.archive_for_workers = archive_for_workers
@@ -165,7 +165,7 @@ class GlobalTestConfig:
     def get_run_test_script_path(self):
         return os.path.join(self.yb_src_root, 'build-support', 'run-test.sh')
 
-    def set_env(self, propagated_env_vars={}):
+    def set_env_on_spark_worker(self, propagated_env_vars={}):
         """
         Used on the distributed worker side (inside functions that run on Spark) to configure the
         necessary environment.
@@ -182,7 +182,8 @@ TestResult = collections.namedtuple(
         ['test_descriptor',
          'exit_code',
          'elapsed_time_sec',
-         'failed_without_output'])
+         'failed_without_output',
+         'build_artifact_paths'])
 
 ClockSyncCheckResult = collections.namedtuple(
         'ClockSyncCheckResult',
@@ -332,18 +333,30 @@ def create_archive_for_workers():
         if os.path.exists(dest_path):
             logging.info("Removing existing archive file %s", dest_path)
             os.remove(dest_path)
+        paths_in_src_dir = ARCHIVED_PATHS_IN_SRC_DIR
+        mvn_local_repo = os.environ.get('YB_MVN_LOCAL_REPO')
+        if mvn_local_repo:
+            mvn_local_repo = os.path.abspath(mvn_local_repo)
+            if mvn_local_repo.startswith(yb_src_root + '/'):
+                paths_in_src_dir.append(os.path.relpath(mvn_local_repo, yb_src_root))
+
         tar_args = [
             'tar',
             'czf',
             tmp_dest_path 
-        ] + ARCHIVED_PATHS_IN_SRC_DIR
-        tar_args.extend([
+        ] + [
+            path_rel_to_src_dir
+            for path_rel_to_src_dir in paths_in_src_dir
+            if os.path.exists(os.path.join(yb_src_root, path_rel_to_src_dir))
+        ] + [
             os.path.join(rel_build_root, path_rel_to_build_root)
             for path_rel_to_build_root in ARCHIVED_PATHS_IN_BUILD_DIR
             if os.path.exists(os.path.join(build_root, path_rel_to_build_root))
-        ])
-        for test_program_path in glob.glob(os.path.join(build_root, 'tests-*')):
-            tar_args.append(os.path.relpath(test_program_path, yb_src_root))
+        ] + [
+            os.path.relpath(test_program_path, yb_src_root)
+            for test_program_path in glob.glob(os.path.join(build_root, 'tests-*'))
+            if os.path.exists(test_program_path)
+        ]
 
         logging.info("Running the tar command: %s", tar_args)
         subprocess.check_call(tar_args, cwd=global_conf.yb_src_root)

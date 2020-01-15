@@ -1689,6 +1689,7 @@ collect_java_tests() {
 }
 
 run_all_java_test_methods_separately() {
+  # Create a subshell to be able to export environment variables temporarily.
   (
     export YB_RUN_JAVA_TEST_METHODS_SEPARATELY=1
     export YB_REDIRECT_MVN_OUTPUT_TO_FILE=1
