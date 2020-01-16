@@ -75,7 +75,7 @@ def get_build_type_from_build_root(build_root):
 
 def get_compiler_type_from_build_root(build_root):
     build_root_basename_components = os.path.basename(build_root).split('-')
-    if len(build_root_basename_components) < 2: 
+    if len(build_root_basename_components) < 2:
         raise ValueError(
                 "Too few components in build root basename: %s (build root: %s). "
                 "Cannot get compiler type." % (build_root_basename_components, build_root))

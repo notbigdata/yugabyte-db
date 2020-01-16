@@ -349,7 +349,7 @@ def find_rel_java_paths_to_archive(yb_src_root):
             for classes_dir_name in ['classes', 'test-classes']:
                 paths.append(os.path.join(submodule_dir_path, 'target', classes_dir_name))
     return [os.path.relpath(p, yb_src_root) for p in paths]
-        
+
 
 def create_archive_for_workers():
     dest_path = global_conf.archive_for_workers

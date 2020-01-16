@@ -275,7 +275,7 @@ def parallel_run_test(test_descriptor_str):
 
     # Created files/directories will be writable by the group.
     old_umask = os.umask(2)
-    
+
     test_descriptor = yb_dist_tests.TestDescriptor(test_descriptor_str)
 
     # This is saved in the test result file by process_test_result.py.

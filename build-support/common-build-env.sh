@@ -536,18 +536,23 @@ set_cmake_build_type_and_compiler_type() {
   if using_ninja; then
     cmake_opts+=( -G Ninja )
     make_program=ninja
-    if ! which ninja &>/dev/null; then
-      if using_linuxbrew; then
+    if [[ -z ${YB_NINJA_PATH} ]]; then
+      local which_ninja=$( which ninja >/dev/null )
+      if [[ -f $which_ninja ]]; then
+        YB_NINJA_PATH=$which_ninja
+      elif using_linuxbrew; then
         export YB_NINJA_PATH=$YB_LINUXBREW_DIR/bin/ninja
         make_program=$YB_NINJA_PATH
       elif using_custom_homebrew; then
         export YB_NINJA_PATH=$YB_CUSTOM_HOMEBREW_DIR/bin/ninja
         make_program=$YB_NINJA_PATH
       elif is_mac && ! is_jenkins; then
-        log "Did not find the 'ninja' executable, auto-installing ninja using Homebrew"
+        # Don't try to auto-install Ninja in a macOS Jenkins environment.
+        log "Did not find the 'ninja' executable, auto-installing Ninja using Homebrew"
         brew install ninja
       fi
     fi
+    export YB_NINJA_PATH
     make_file=build.ninja
   else
     make_program=make
@@ -1616,7 +1621,7 @@ find_shared_thirdparty_dir() {
 find_or_download_thirdparty() {
   if [[ -f $BUILD_ROOT/thirdparty_url.txt ]]; then
     local thirdparty_url_from_file=$(<"$BUILD_ROOT/thirdparty_url.txt")
-    if [[ -n ${YB_THIRDPARTY_URL:-} && 
+    if [[ -n ${YB_THIRDPARTY_URL:-} &&
           "$YB_THIRDPARTY_URL" != "$thirdparty_url_from_file" ]]; then
       fatal "YB_THIRDPARTY_URL is explicitly set to '$YB_THIRDPARTY_URL' but file" \
             "'$BUILD_ROOT/thirdparty_url.txt' contains '$thirdparty_url_from_file'"
