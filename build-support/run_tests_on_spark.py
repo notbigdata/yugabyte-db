@@ -297,6 +297,15 @@ def parallel_run_test(test_descriptor_str):
     os.environ['YB_TEST_ARTIFACT_LIST_PATH'] = artifact_list_path
     logging.info("Setting YB_TEST_ARTIFACT_LIST_PATH to %s", artifact_list_path)
 
+    if global_conf.archive_for_workers is not None:
+        # If we are uploading an archive, we expect all Maven dependencies to already be
+        # pre-packaged in the archive. Disable downloads from Maven Central.
+        m2_settings_path = os.path.join(
+                global_conf.yb_src_root, 'build-support', 'java', 'm2_settings_disable_central.xml')
+        if not os.path.exists(m2_settings_path):
+            raise IOError("File does not exist: %s" % m2_settings_path)
+        os.environ['YB_MVN_SETTINGS_PATH'] = m2_settings_path
+
     yb_dist_tests.wait_for_clock_sync()
 
     # We could use "run_program" here, but it collects all the output in memory, which is not
@@ -513,7 +522,12 @@ set -euo pipefail
         chmod 0755 '{untar_script_path_for_reference}'
         yb_src_root_extract_tmp_dir='{remote_yb_src_root}'.$RANDOM.$RANDOM.$RANDOM.$RANDOM
         mkdir "$yb_src_root_extract_tmp_dir"
-        tar xzf '{archive_path}' -C "$yb_src_root_extract_tmp_dir"
+        if [[ -x /bin/pigz ]]; then
+            # Decompress faster with pigz
+            /bin/pigz -dc '{archive_path}' | tar xf - -C "$yb_src_root_extract_tmp_dir"
+        else
+            tar xzf '{archive_path}' -C "$yb_src_root_extract_tmp_dir"
+        fi
         echo '{expected_archive_sha256sum}' \
                 >"$yb_src_root_extract_tmp_dir/extracted_from_archive.sha256"
         mv "$yb_src_root_extract_tmp_dir" '{remote_yb_src_root}'

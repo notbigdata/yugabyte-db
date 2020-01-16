@@ -49,9 +49,6 @@ CLOCK_SYNC_WAIT_LOGGING_INTERVAL_SEC = 10
 
 MAX_TIME_TO_WAIT_FOR_CLOCK_SYNC_SEC = 60
 
-# Path of a Maven settings file that disables Maven Central lookups (relative to YB_SRC_ROOT).
-M2_SETTINGS_DISABLE_CENTRAL_REL_PATH = 'build-support/java/m2_settings_disable_central.xml'
-
 
 class TestDescriptor:
     """
@@ -183,14 +180,6 @@ class GlobalTestConfig:
         # tests.
         for env_var_name, env_var_value in propagated_env_vars.iteritems():
             os.environ[env_var_name] = env_var_value
-        if self.archive_for_workers is not None:
-            # If we are uploading an archive, we expect all Maven dependencies to already be
-            # pre-packaged in the archive. Disable downloads from Maven Central.
-            m2_settings_disable_central = os.path.join(
-                    self.yb_src_root, M2_SETTINGS_DISABLE_CENTRAL_REL_PATH)
-            if not os.path.exists(m2_settings_disable_central):
-                raise IOError("File does not exist: %s" % m2_settings_disable_central)
-            os.environ['YB_MVN_SETTINGS_PATH'] = m2_settings_disable_central
 
 
 TestResult = collections.namedtuple(
@@ -349,7 +338,7 @@ def find_rel_java_paths_to_archive(yb_src_root):
     paths = []
     for ent in [False, True]:
         path_components = []
-        if ent is not None:
+        if ent:
             path_components.append('ent')
         path_components.append('java')
         java_dir_path = os.path.join(yb_src_root, *path_components)

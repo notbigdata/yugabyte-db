@@ -1,34 +1,44 @@
-<!-- From https://stackoverflow.com/questions/4997219/disable-maven-central-repository -->
-<repositories>
-    <repository>
-        <id>central</id>
-        <url>http://nosuchhost.invalid</url>
-        <snapshots>
+<?xml version="1.0"?>
+<settings>
+  <profiles>
+    <profile>
+      <id>disable-maven-central</id>
+      <repositories>
+        <repository>
+          <id>central</id>
+          <url>http://disable-maven-central.invalid</url>
+          <snapshots>
             <enabled>false</enabled>
-        </snapshots>
-    </repository>
-    <repository>
-        <id>snapshots</id>
-        <url>http://nosuchhost.invalid</url>
-        <releases>
+          </snapshots>
+        </repository>
+        <repository>
+          <id>snapshots</id>
+          <url>http://disable-maven-central.invalid</url>
+          <releases>
             <enabled>false</enabled>
-        </releases>
-    </repository>
-</repositories>
-<pluginRepositories>
-    <pluginRepository>
-        <id>central</id>
-        <url>http://nosuchhost.invalid</url>
-        <snapshots>
+          </releases>
+        </repository>
+      </repositories>
+      <pluginRepositories>
+        <pluginRepository>
+          <id>central</id>
+          <url>http://disable-maven-central.invalid</url>
+          <snapshots>
             <enabled>false</enabled>
-        </snapshots>
-    </pluginRepository>
-    <pluginRepository>
-        <id>snapshots</id>
-        <url>http://nosuchhost.invalid</url>
-        <releases>
+          </snapshots>
+        </pluginRepository>
+        <pluginRepository>
+          <id>snapshots</id>
+          <url>http://disable-maven-central.invalid</url>
+          <releases>
             <enabled>false</enabled>
-        </releases>
-    </pluginRepository>
-</pluginRepositories>
+          </releases>
+        </pluginRepository>
+      </pluginRepositories>
+    </profile>
+  </profiles>
+  <activeProfiles>
+    <activeProfile>disable-maven-central</activeProfile>
+  </activeProfiles>
+</settings>
 
