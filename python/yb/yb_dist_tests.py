@@ -49,6 +49,9 @@ CLOCK_SYNC_WAIT_LOGGING_INTERVAL_SEC = 10
 
 MAX_TIME_TO_WAIT_FOR_CLOCK_SYNC_SEC = 60
 
+# Path of a Maven settings file that disables Maven Central lookups (relative to YB_SRC_ROOT).
+M2_SETTINGS_DISABLE_CENTRAL_REL_PATH = 'build-support/java/m2_settings_disable_central.xml'
+
 
 class TestDescriptor:
     """
@@ -184,7 +187,7 @@ class GlobalTestConfig:
             # If we are uploading an archive, we expect all Maven dependencies to already be
             # pre-packaged in the archive. Disable downloads from Maven Central.
             m2_settings_disable_central = os.path.join(
-                    self.yb_src_root, 'm2_settings_disable_central.xml')
+                    self.yb_src_root, M2_SETTINGS_DISABLE_CENTRAL_REL_PATH)
             if not os.path.exists(m2_settings_disable_central):
                 raise IOError("File does not exist: %s" % m2_settings_disable_central)
             os.environ['YB_MVN_SETTINGS_PATH'] = m2_settings_disable_central
@@ -338,8 +341,7 @@ ARCHIVED_PATHS_IN_SRC_DIR = [
     'www',
     'yb_build.sh',
     'build/python_virtual_env',
-    'python_requirements_frozen.txt',
-    'build-support/java/m2_settings_disable_central.xml'
+    'python_requirements_frozen.txt'
 ]
 
 
