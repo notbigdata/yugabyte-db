@@ -53,7 +53,8 @@ if [[ $YB_SRC_ROOT == */ ]]; then
 fi
 
 YB_BASH_COMMON_DIR=$YB_SRC_ROOT/submodules/yugabyte-bash-common
-if [[ ! -d $YB_BASH_COMMON_DIR || -z "$( ls -A "$YB_BASH_COMMON_DIR" )" ]]; then
+if [[ ! -d $YB_BASH_COMMON_DIR || -z "$( ls -A "$YB_BASH_COMMON_DIR" )" ]] &&
+   [[ -d $YB_SRC_ROOT/.git ]]; then
   ( cd "$YB_SRC_ROOT"; git submodule update --init --recursive )
 fi
 
@@ -208,7 +209,6 @@ normalize_build_type() {
 # Sets the build directory based on the given build type (the build_type variable) and the value of
 # the YB_COMPILER_TYPE environment variable.
 set_build_root() {
-  set_use_ninja
   if [[ ${1:-} == "--no-readonly" ]]; then
     local -r make_build_root_readonly=false
     shift
@@ -246,6 +246,7 @@ set_build_root() {
 
   export BUILD_ROOT
   export YB_BUILD_ROOT=$BUILD_ROOT
+  set_use_ninja
 }
 
 # Resolve the BUILD_ROOT symlink and save the result to the real_build_root_path variable.
@@ -540,7 +541,7 @@ set_cmake_build_type_and_compiler_type() {
       elif using_custom_homebrew; then
         export YB_NINJA_PATH=$YB_CUSTOM_HOMEBREW_DIR/bin/ninja
         make_program=$YB_NINJA_PATH
-      elif is_mac; then
+      elif is_mac && ! is_jenkins; then
         log "Did not find the 'ninja' executable, auto-installing ninja using Homebrew"
         brew install ninja
       fi
@@ -1099,11 +1100,18 @@ wait_for_directory_existence() {
 }
 
 detect_linuxbrew() {
+  if [[ -z ${BUILD_ROOT:-} ]]; then
+    fatal "BUILD_ROOT is not set"
+  fi
   if ! is_linux; then
     fatal "Expected this function to only be called on Linux"
   fi
   if [[ -n ${YB_LINUXBREW_DIR:-} ]]; then
     export YB_LINUXBREW_DIR
+    return
+  fi
+  if [[ -n ${BUILD_ROOT:-} && -f $BUILD_ROOT/linuxbrew_path.txt ]]; then
+    export YB_LINUXBREW_DIR=$(<$BUILD_ROOT/linuxbrew_path.txt)
     return
   fi
 
@@ -1143,6 +1151,12 @@ detect_linuxbrew() {
     local linuxbrew_dir
     for linuxbrew_dir in "${candidates[@]}"; do
       if try_set_linuxbrew_dir "$linuxbrew_dir"; then
+        if [[ -n ${BUILD_ROOT:-} && ! -f "$BUILD_ROOT/linuxbrew_path.txt" ]]; then
+          if [[ ! -d $BUILD_ROOT ]]; then
+            mkdir -p "$BUILD_ROOT"
+          fi
+          echo "$YB_LINUXBREW_DIR" >"$BUILD_ROOT/linuxbrew_path.txt"
+        fi
         return
       fi
     done
@@ -1259,7 +1273,7 @@ set_use_ninja() {
       fi
     fi
 
-    if using_ninja && [[ -z ${yb_ninja_path:-} ]]; then
+    if using_ninja && [[ -z ${yb_ninja_path:-} && "${yb_ninja_not_needed:-}" != "true" ]]; then
       set +e
       local which_ninja=$( which ninja 2>/dev/null )
       set -e
@@ -1760,12 +1774,6 @@ check_python_script_syntax() {
   popd
 }
 
-add_python_wrappers_dir_to_path() {
-  # Make sure the Python wrappers directory is the first on PATH
-  remove_path_entry "$YB_PYTHON_WRAPPERS_DIR"
-  export PATH=$YB_PYTHON_WRAPPERS_DIR:$PATH
-}
-
 activate_virtualenv() {
   local virtualenv_parent_dir=$YB_BUILD_PARENT_DIR
   local virtualenv_dir=$virtualenv_parent_dir/$YB_VIRTUALENV_BASENAME
@@ -1779,9 +1787,6 @@ activate_virtualenv() {
     rm -rf "$virtualenv_dir"
     unset YB_RECREATE_VIRTUALENV
   fi
-
-  # To run pip2 itself we already need to add our Python wrappers directory to PATH.
-  add_python_wrappers_dir_to_path
 
   if [[ ! -d $virtualenv_dir ]]; then
     if "$yb_readonly_virtualenv"; then
@@ -1843,62 +1848,6 @@ VIRTUALENV DEBUGGING
   fi
 
   export VIRTUAL_ENV
-}
-
-check_python_interpreter_version() {
-  expect_num_args 3 "$@"
-  local python_interpreter=$1
-  local expected_major_version=$2
-  local minor_version_lower_bound=$3
-  # Get the Python interpreter version. Filter out debug output we may be adding if
-  # YB_PYTHON_WRAPPER_DEBUG is set.
-  local version_str=$(
-    export yb_log_quiet=true
-    "$python_interpreter" --version 2>&1 >/dev/null | grep -v "Invoking Python"
-  )
-  version_str=${version_str#Python }
-  local actual_major_version=${version_str%%.*}
-  local version_str_without_major=${version_str#*.}
-  local actual_minor_version=${version_str_without_major%%.*}
-  if [[ ! $actual_major_version =~ ^[0-9]+ ]]; then
-    fatal "Invalid format of Python major version: $actual_major_version." \
-          "Version string for interpreter $python_interpreter: $version_str"
-  fi
-  if [[ ! $actual_minor_version =~ ^[0-9]+ ]]; then
-    fatal "Invalid format of Python minor version: $actual_minor_version." \
-          "Version string for interpreter $python_interpreter: $version_str"
-  fi
-  if [[ $actual_major_version -ne $expected_major_version ]]; then
-    fatal "Expected major version for Python interpreter '$python_interpreter' to be" \
-          "'$expected_major_version', found '$actual_major_version'. Full Python version:" \
-          "'$version_str'."
-  fi
-  if [[ $actual_minor_version -lt $minor_version_lower_bound ]]; then
-    fatal "Expected minor version for Python interpreter '$python_interpreter' to be at least " \
-          "'$minor_version_lower_bound', found '$actual_minor_version'. Full Python version:" \
-          "'$version_str'."
-  fi
-}
-
-check_python_interpreter_versions() {
-  check_python_interpreter_version python2 2 7
-  if is_mac; then
-    local python_interpreter_basename
-    for python_interpreter_basename in python python2 python 2.7 python3; do
-      local homebrew_interpreter_path=/usr/local/bin/$python_interpreter_basename
-      if [[ -e $homebrew_interpreter_path ]]; then
-        if [[ ! -L $homebrew_interpreter_path ]]; then
-          fatal "$homebrew_interpreter_path exists but is not a symlink." \
-                "Broken Homebrew installation?"
-        fi
-        local link_target=$( readlink "$homebrew_interpreter_path" )
-        if [[ $link_target == /usr/bin/* ]]; then
-          fatal "Found symlink  $homebrew_interpreter_path -> $link_target." \
-                "Broken Homebrew installation?"
-        fi
-      fi
-    done
-  fi
 }
 
 log_file_existence() {
@@ -2041,12 +1990,14 @@ set_java_home() {
 }
 
 update_submodules() {
-  # This does NOT create any new commits in the top-level repository (the "superproject").
-  #
-  # From documentation on "update" from https://git-scm.com/docs/git-submodule:
-  # Update the registered submodules to match what the superproject expects by cloning missing
-  # submodules and updating the working tree of the submodules
-  ( cd "$YB_SRC_ROOT"; git submodule update --init --recursive )
+  if [[ -d $YB_SRC_ROOT/.git ]]; then
+    # This does NOT create any new commits in the top-level repository (the "superproject").
+    #
+    # From documentation on "update" from https://git-scm.com/docs/git-submodule:
+    # Update the registered submodules to match what the superproject expects by cloning missing
+    # submodules and updating the working tree of the submodules
+    ( cd "$YB_SRC_ROOT"; git submodule update --init --recursive )
+  fi
 }
 
 set_prebuilt_thirdparty_url() {
@@ -2125,10 +2076,3 @@ readonly YB_DEFAULT_CMAKE_OPTS=(
   "-DCMAKE_C_COMPILER=$YB_COMPILER_WRAPPER_CC"
   "-DCMAKE_CXX_COMPILER=$YB_COMPILER_WRAPPER_CXX"
 )
-
-YB_PYTHON_WRAPPERS_DIR=$YB_BUILD_SUPPORT_DIR/python-wrappers
-
-if ! "${yb_is_python_wrapper_script:-false}"; then
-  detect_brew
-  add_python_wrappers_dir_to_path
-fi

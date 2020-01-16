@@ -204,8 +204,6 @@ fi
 
 log "Running with PATH: $PATH"
 
-check_python_interpreter_versions
-
 set +e
 for python_command in python python2 python2.7 python3; do
   log "Location of $python_command: $( which "$python_command" )"
