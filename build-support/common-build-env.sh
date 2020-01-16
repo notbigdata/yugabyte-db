@@ -536,7 +536,7 @@ set_cmake_build_type_and_compiler_type() {
   if using_ninja; then
     cmake_opts+=( -G Ninja )
     make_program=ninja
-    if [[ -z ${YB_NINJA_PATH} ]]; then
+    if [[ -z ${YB_NINJA_PATH:-} ]]; then
       local which_ninja=$( which ninja >/dev/null )
       if [[ -f $which_ninja ]]; then
         YB_NINJA_PATH=$which_ninja
