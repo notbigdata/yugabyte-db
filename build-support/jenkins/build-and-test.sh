@@ -309,23 +309,8 @@ fi
 
 configure_remote_compilation
 
-log "YB_THIRDPARTY_DIR=$YB_THIRDPARTY_DIR"
-if using_default_thirdparty_dir; then
-  log "Found that YB_THIRDPARTY_DIR is the default location"
-  find_thirdparty_dir
-  if ! "$found_shared_thirdparty_dir"; then
-    if [[ ${NO_REBUILD_THIRDPARTY:-} == "1" ]]; then
-      log "Skiping third-party build because NO_REBUILD_THIRDPARTY is set."
-    else
-      log "Starting third-party dependency build"
-      time thirdparty/build_thirdparty.sh
-      log "Third-party dependency build finished (see timing information above)"
-    fi
-  fi
-else
-  log "YB_THIRDPARTY_DIR is explicitly specified as a non-default location '$YB_THIRDPARTY_DIR'," \
-      "not looking for a shared third-party directory."
-fi
+find_or_download_thirdparty
+log "YB_THIRDPARTY_DIR: $YB_THIRDPARTY_DIR"
 validate_thirdparty_dir
 
 export NO_REBUILD_THIRDPARTY=1

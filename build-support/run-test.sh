@@ -90,6 +90,10 @@ fi
 umask 0002
 
 echo "Test is running on host $HOSTNAME, arguments: $*"
+echo "YB_THIRDPARTY_DIR: ${YB_THIRDPARTY_DIR:-undefined}"
+if [[ $OSTYPE == linux* ]]; then
+  echo "YB_LINUXBREW_DIR: ${YB_LINUXBREW_DIR:-undefined}"
+fi
 
 set_java_home
 set_test_invocation_id
@@ -126,6 +130,9 @@ else
   readonly BUILD_ROOT
   unset preset_build_root
 fi
+
+find_or_download_thirdparty
+log_thirdparty_details
 detect_brew
 
 set_common_test_paths

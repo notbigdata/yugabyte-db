@@ -589,8 +589,6 @@ original_args=( "$@" )
 user_mvn_opts=""
 java_only=false
 cmake_only=false
-use_nfs_shared_thirdparty=false
-no_shared_thirdparty=false
 run_python_tests=false
 cmake_extra_args=""
 predefined_build_root=""
@@ -601,6 +599,8 @@ clean_postgres=false
 make_ninja_extra_args=""
 java_lint=false
 collect_java_tests=false
+
+# use_nfs_shared_thirdparty and no_nfs_shared_thirdparty are defined in common-build-env.sh.
 
 export YB_HOST_FOR_RUNNING_TESTS=${YB_HOST_FOR_RUNNING_TESTS:-}
 
@@ -709,8 +709,8 @@ while [[ $# -gt 0 ]]; do
     --use-shared-thirdparty|--ustp|--stp|--us3p|--s3p)
       use_nfs_shared_thirdparty=true
     ;;
-    --no-shared-thirdparty|--nstp|ns3p)
-      no_shared_thirdparty=true
+    --no-shared-thirdparty|--nstp|ns3p|--no-nfs-shared-thirdparty|--nnstp|--nns3p)
+      no_nfs_shared_thirdparty=true
     ;;
     --show-compiler-cmd-line|--sccl)
       export YB_SHOW_COMPILER_COMMAND_LINE=1
@@ -992,7 +992,7 @@ handle_predefined_build_root
 
 unset cmake_opts
 set_cmake_build_type_and_compiler_type
-log "YugaByte build is running on host '$HOSTNAME'"
+log "YugabyteDB build is running on host '$HOSTNAME'"
 log "YB_COMPILER_TYPE=$YB_COMPILER_TYPE"
 
 if "$verbose"; then
@@ -1065,7 +1065,6 @@ if "$use_nfs_shared_thirdparty" && "$no_shared_thirdparty"; then
 fi
 
 configure_remote_compilation
-do_not_use_local_thirdparty_flag_path=$YB_SRC_ROOT/thirdparty/.yb_thirdparty_do_not_use
 
 if "$java_lint"; then
   log "--lint-java-code specified, only linting java code and then exiting."
@@ -1123,23 +1122,9 @@ fi
 
 set_build_root
 
+find_or_download_thirdparty
 detect_brew
-
-set_prebuilt_thirdparty_url
-if [[ ${YB_DOWNLOAD_THIRDPARTY:-} == "1" ]]; then
-  download_thirdparty
-  export NO_REBUILD_THIRDPARTY=1
-  log "Using downloaded third-party directory: $YB_THIRDPARTY_DIR"
-  if using_linuxbrew; then
-    log "Using Linuxbrew directory: $YB_LINUXBREW_DIR"
-  fi
-elif [[ -f $do_not_use_local_thirdparty_flag_path ]] ||
-     "$use_nfs_shared_thirdparty" ||
-      using_remote_compilation && ! "$no_shared_thirdparty"; then
-  find_thirdparty_dir
-fi
-
-echo "Using third-party directory (YB_THIRDPARTY_DIR): $YB_THIRDPARTY_DIR"
+log_thirdparty_details
 
 validate_cmake_build_type "$cmake_build_type"
 

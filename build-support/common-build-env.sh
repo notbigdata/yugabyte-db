@@ -14,7 +14,6 @@
 #
 
 # This is common between build and test scripts.
-
 set -euo pipefail
 
 if [[ $BASH_SOURCE == $0 ]]; then
@@ -28,7 +27,7 @@ if [[ -n ${YB_COMMON_BUILD_ENV_SOURCED:-} ]]; then
   return
 fi
 
-YB_COMMON_BUILD_ENV_SOURCED=1
+readonly YB_COMMON_BUILD_ENV_SOURCED=1
 
 # -------------------------------------------------------------------------------------------------
 # Load yugabyte-bash-common
@@ -181,6 +180,9 @@ declare -i -r YB_DOWNLOAD_LOCK_TIMEOUT_SEC=120
 readonly YB_DOWNLOAD_LOCKS_DIR=/tmp/yb_download_locks
 
 readonly YB_NFS_PATH_RE="^/(n|z|u|net|Volumes/net|servers|nfusr)/"
+
+use_nfs_shared_thirdparty=false
+no_nfs_shared_thirdparty=false
 
 # -------------------------------------------------------------------------------------------------
 # Functions
@@ -1017,12 +1019,21 @@ download_and_extract_archive() {
 
 download_thirdparty() {
   download_and_extract_archive "$YB_THIRDPARTY_URL" /opt/yb-build/thirdparty
+  if [[ -n ${YB_THIRDPARTY_DIR:-} && $YB_THIRDPARTY_DIR != $extracted_dir ]]; then
+    fatal "YB_THIRDPARTY_DIR is already set to '$YB_THIRDPARTY_DIR', cannot set it to" \
+          "'$extracted_dir'"
+  fi
   export YB_THIRDPARTY_DIR=$extracted_dir
   local linuxbrew_url_path=$YB_THIRDPARTY_DIR/linuxbrew_url.txt
   if [[ -f $linuxbrew_url_path ]]; then
     local linuxbrew_url=$(<"$linuxbrew_url_path")
     download_and_extract_archive "$linuxbrew_url" /opt/yb-build/brew
+    if [[ -n ${YB_LINUXBREW_DIR:-} && $YB_LINUXBREW_DIR != $extracted_dir ]]; then
+      fatal "YB_LINUXBREW_DIR is already set to '$YB_LINUXBREW_DIR', cannot set it to" \
+            "'$extracted_dir'"
+    fi
     export YB_LINUXBREW_DIR=$extracted_dir
+    save_linuxbrew_path_to_build_dir
   else
     fatal "Cannot download Linuxbrew: file $linuxbrew_url_path does not exist"
   fi
@@ -1099,6 +1110,18 @@ wait_for_directory_existence() {
   done
 }
 
+save_linuxbrew_path_to_build_dir() {
+  if [[ -z ${BUILD_ROOT:-} ]]; then
+    fatal "BUILD_ROOT is not set"
+  fi
+  if [[ ! -f "$BUILD_ROOT/linuxbrew_path.txt" ]]; then
+    if [[ ! -d $BUILD_ROOT ]]; then
+      mkdir -p "$BUILD_ROOT"
+    fi
+    echo "$YB_LINUXBREW_DIR" >"$BUILD_ROOT/linuxbrew_path.txt"
+  fi
+}
+
 detect_linuxbrew() {
   if [[ -z ${BUILD_ROOT:-} ]]; then
     fatal "BUILD_ROOT is not set"
@@ -1151,12 +1174,7 @@ detect_linuxbrew() {
     local linuxbrew_dir
     for linuxbrew_dir in "${candidates[@]}"; do
       if try_set_linuxbrew_dir "$linuxbrew_dir"; then
-        if [[ -n ${BUILD_ROOT:-} && ! -f "$BUILD_ROOT/linuxbrew_path.txt" ]]; then
-          if [[ ! -d $BUILD_ROOT ]]; then
-            mkdir -p "$BUILD_ROOT"
-          fi
-          echo "$YB_LINUXBREW_DIR" >"$BUILD_ROOT/linuxbrew_path.txt"
-        fi
+        save_linuxbrew_path_to_build_dir
         return
       fi
     done
@@ -1548,6 +1566,10 @@ read_file_and_trim() {
   fi
 }
 
+# -------------------------------------------------------------------------------------------------
+# Finding the third-party directory
+# -------------------------------------------------------------------------------------------------
+
 using_default_thirdparty_dir() {
   if [[ -n ${YB_THIRDPARTY_DIR:-} &&
         $YB_THIRDPARTY_DIR != "$YB_SRC_ROOT/thirdparty" ]]; then
@@ -1557,24 +1579,7 @@ using_default_thirdparty_dir() {
   return 0
 }
 
-find_thirdparty_by_url() {
-  if [[ -n ${YB_THIRDPARTY_URL:-} ]]; then
-    download_thirdparty
-    export NO_REBUILD_THIRDPARTY=1
-  fi
-}
-
-# In our internal environment we build third-party dependencies in separate directories on NFS
-# so that we can use them across many builds.
-find_thirdparty_dir() {
-  if [[ -n ${YB_THIRDPARTY_URL:-} ]]; then
-    find_thirdparty_by_url
-    log "YB_THIRDPARTY_DIR=$YB_THIRDPARTY_DIR"
-    log "YB_LINUXBREW_DIR=$YB_LINUXBREW_DIR"
-    found_shared_thirdparty_dir=true
-    return
-  fi
-  found_shared_thirdparty_dir=false
+find_shared_thirdparty_dir() {
   local parent_dir_for_shared_thirdparty=$NFS_PARENT_DIR_FOR_SHARED_THIRDPARTY
   if [[ ! -d $parent_dir_for_shared_thirdparty ]]; then
     log "Parent directory for shared third-party directories" \
@@ -1599,7 +1604,6 @@ find_thirdparty_dir() {
       fi
     fi
     export YB_THIRDPARTY_DIR=$existing_thirdparty_dir
-    found_shared_thirdparty_dir=true
     export NO_REBUILD_THIRDPARTY=1
     return
   fi
@@ -1607,6 +1611,77 @@ find_thirdparty_dir() {
   log "Even though the top-level directory '$parent_dir_for_shared_thirdparty'" \
       "exists, we could not find a prebuilt shared third-party directory there that exists. " \
       "Falling back to building our own third-party dependencies."
+}
+
+find_or_download_thirdparty() {
+  if [[ -f $BUILD_ROOT/thirdparty_url.txt ]]; then
+    local thirdparty_url_from_file=$(<"$BUILD_ROOT/thirdparty_url.txt")
+    if [[ -n ${YB_THIRDPARTY_URL:-} && 
+          "$YB_THIRDPARTY_URL" != "$thirdparty_url_from_file" ]]; then
+      fatal "YB_THIRDPARTY_URL is explicitly set to '$YB_THIRDPARTY_URL' but file" \
+            "'$BUILD_ROOT/thirdparty_url.txt' contains '$thirdparty_url_from_file'"
+    fi
+    export YB_THIRDPARTY_URL=$thirdparty_url_from_file
+    if [[ ${YB_DOWNLOAD_THIRDPARTY:-} == "0" ]]; then
+      fatal "YB_DOWNLOAD_THIRDPARTY is explicitly set to 0 but file" \
+            "$BUILD_ROOT/thirdparty_url.txt exists"
+    fi
+    export YB_DOWNLOAD_THIRDPARTY=1
+  fi
+
+  if [[ -f $BUILD_ROOT/thirdparty_path.txt ]]; then
+    local thirdparty_dir_from_file=$(<"$BUILD_ROOT/thirdparty_path.txt")
+    if [[ -n ${YB_THIRDPARTY_DIR:-} &&
+          "$YB_THIRDPARTY_DIR" != "$thirdparty_dir_from_file" ]]; then
+      fatal "YB_THIRDPARTY_DIR is explicitly set to '$YB_THIRDPARTY_DIR' but file" \
+            "'$BUILD_ROOT/thirdparty_path.txt' contains '$thirdparty_dir_from_file'"
+    fi
+    export YB_THIRDPARTY_DIR=$thirdparty_dir_from_file
+  fi
+
+  if [[ -n ${YB_THIRDPARTY_DIR:-} && -d $YB_THIRDPARTY_DIR ]]; then
+    export YB_THIRDPARTY_DIR
+    if ! using_default_thirdparty_dir; then
+      export NO_REBUILD_THIRDPARTY=1
+    fi
+    return
+  fi
+
+  # Even if YB_THIRDPARTY_DIR is set but it does not exist, it is possible that we need to download
+  # the third-party archive.
+
+  set_prebuilt_thirdparty_url
+  if [[ ${YB_DOWNLOAD_THIRDPARTY:-} == "1" ]]; then
+    download_thirdparty
+    export NO_REBUILD_THIRDPARTY=1
+    log "Using downloaded third-party directory: $YB_THIRDPARTY_DIR"
+    if using_linuxbrew; then
+      log "Using Linuxbrew directory: $YB_LINUXBREW_DIR"
+    fi
+  else
+    local do_not_use_local_thirdparty_flag_path=$YB_SRC_ROOT/thirdparty/.yb_thirdparty_do_not_use
+    if [[ -f $do_not_use_local_thirdparty_flag_path ]] ||
+       "$use_nfs_shared_thirdparty" ||
+       using_remote_compilation && ! "$no_nfs_shared_thirdparty"; then
+      find_shared_thirdparty_dir
+    fi
+  fi
+  if [[ -z ${YB_THIRDPARTY_DIR:-} ]]; then
+    export YB_THIRDPARTY_DIR=$YB_SRC_ROOT/thirdparty
+  fi
+  echo "$YB_THIRDPARTY_DIR" >"$BUILD_ROOT/thirdparty_path.txt"
+}
+
+log_thirdparty_details() {
+  echo >&2 "Details for third-party dependencies:"
+  echo >&2 "   YB_THIRDPARTY_DIR: ${YB_THIRDPARTY_DIR:-undefined}"
+  if [[ -n ${YB_THIRDPARTY_URL:-} ]]; then
+    echo >&2 "   YB_THIRDPARTY_URL: $YB_THIRDPARTY_URL"
+  fi
+  if [[ -n ${YB_DOWNLOAD_THIRDPARTY:-} ]]; then
+    echo >&2 "   YB_DOWNLOAD_THIRDPARTY: $YB_DOWNLOAD_THIRDPARTY"
+  fi
+  echo >&2 "   NO_REBUILD_THIRDPARTY: ${NO_REBUILD_THIRDPARTY:-undefined}"
 }
 
 handle_predefined_build_root_quietly=false
@@ -2001,16 +2076,7 @@ update_submodules() {
 }
 
 set_prebuilt_thirdparty_url() {
-  local build_thirdparty_url_file=$BUILD_ROOT/thirdparty_url.txt
-  if [[ -f $build_thirdparty_url_file ]]; then
-    export YB_THIRDPARTY_URL=$(<"$build_thirdparty_url_file")
-    export YB_DOWNLOAD_THIRDPARTY=1
-    log "Reusing previously used third-party URL from the build dir: $YB_THIRDPARTY_URL"
-    return
-  fi
-
   if [[ ${YB_DOWNLOAD_THIRDPARTY:-} == "1" ]]; then
-
     local auto_thirdparty_url=""
     local thirdparty_url_file=$YB_BUILD_SUPPORT_DIR/thirdparty_url_${short_os_name}.txt
     if [[ -f $thirdparty_url_file ]]; then
@@ -2032,11 +2098,14 @@ set_prebuilt_thirdparty_url() {
             "the default value of $auto_thirdparty_url"
       fi
     else
-      fatal "YB_THIRDPARTY_URL is not set, and could not determine the default value."
+      fatal "YB_DOWNLOAD_THIRDPARTY is 1 but YB_THIRDPARTY_URL is not set, and could not" \
+            "determine the default value."
     fi
 
-    mkdir -p "$BUILD_ROOT"
-    echo "$YB_THIRDPARTY_URL" >"$build_thirdparty_url_file"
+    if [[ ! -f "$BUILD_ROOT/thirdparty_url.txt" ]]; then
+      mkdir -p "$BUILD_ROOT"
+      echo "$YB_THIRDPARTY_URL" >"$BUILD_ROOT/thirdparty_url.txt"
+    fi
   fi
 }
 
@@ -2066,10 +2135,6 @@ fi
 if [[ ! -d $YB_BUILD_SUPPORT_DIR ]]; then
   fatal "Could not determine YB source directory from '$BASH_SOURCE':" \
         "$YB_BUILD_SUPPORT_DIR does not exist."
-fi
-
-if [[ -z ${YB_THIRDPARTY_DIR:-} ]]; then
-  export YB_THIRDPARTY_DIR=$YB_SRC_ROOT/thirdparty
 fi
 
 readonly YB_DEFAULT_CMAKE_OPTS=(

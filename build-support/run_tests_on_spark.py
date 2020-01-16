@@ -272,6 +272,10 @@ def parallel_run_test(test_descriptor_str):
     from yb import yb_dist_tests, command_util
 
     wait_for_path_to_exist(global_conf.build_root)
+
+    # Created files/directories will be writable by the group.
+    old_umask = os.umask(2)
+    
     test_descriptor = yb_dist_tests.TestDescriptor(test_descriptor_str)
 
     # This is saved in the test result file by process_test_result.py.
@@ -300,6 +304,9 @@ def parallel_run_test(test_descriptor_str):
     # the standard error of the Spark task as well, which is sometimes helpful for debugging.
     def run_test():
         start_time_sec = time.time()
+        error_log_dir_path = os.path.dirname(os.path.abspath(test_descriptor.error_output_path))
+        if not os.path.isdir(error_log_dir_path):
+            subprocess.check_call(['mkdir', '-p', error_log_dir_path])
         runner_oneline = 'set -o pipefail; "%s" %s 2>&1 | tee "%s"; exit ${PIPESTATUS[0]}' % (
             global_conf.get_run_test_script_path(),
             test_descriptor.args_for_run_test,
@@ -363,8 +370,6 @@ def parallel_run_test(test_descriptor_str):
 
     # End of the local run_test() function.
 
-    # Created files/directories will be writable by the group.
-    old_umask = os.umask(2)
     try:
         exit_code, elapsed_time_sec = run_test()
         error_output_path = test_descriptor.error_output_path
@@ -396,13 +401,13 @@ def parallel_run_test(test_descriptor_str):
                     artifact_paths.extend(sorted(glob_result))
                     if not glob_result:
                         logging.warning("No artifacts found for pattern: '%s'",
-                                        test_artifact_path_pattern)
+                                        artifact_path_pattern)
         else:
             logging.warning("Artifact list does not exist: '%s'", artifact_list_path)
 
         num_log_files_copied = 0
         artifact_paths = []
-        for log_file_path in test_artifact_paths:
+        for log_file_path in artifact_paths:
             if not os.path.exists(log_file_path):
                 logging.warning("Build artifact file does not exist: '%s'", log_file_path)
                 continue
@@ -417,7 +422,7 @@ def parallel_run_test(test_descriptor_str):
                 log_file_path,
                 dest_path
             ])
-            test_artifact_paths.append(
+            artifact_paths.append(
                     os.path.relpath(os.path.abspath(log_file_path), global_conf.yb_src_root))
             num_log_files_copied += 1
         logging.info("Number of build artifact files copied: %d", num_log_files_copied)
@@ -427,7 +432,7 @@ def parallel_run_test(test_descriptor_str):
                 test_descriptor=test_descriptor,
                 elapsed_time_sec=elapsed_time_sec,
                 failed_without_output=failed_without_output,
-                test_artifact_paths=test_artifact_paths)
+                artifact_paths=artifact_paths)
     finally:
         delete_if_exists_log_errors(test_started_running_flag_file)
         delete_if_exists_log_errors(artifact_list_path)
@@ -689,7 +694,7 @@ def save_report(report_base_dir, results, total_elapsed_time_sec, spark_succeede
             elapsed_time_sec=result.elapsed_time_sec,
             exit_code=result.exit_code,
             language=test_descriptor.language,
-            test_artifact_paths=result.test_artifact_paths
+            rtifact_paths=result.artifact_paths
         )
         test_reports_by_descriptor[test_descriptor.descriptor_str] = test_report_dict
         if test_descriptor.error_output_path and os.path.isfile(test_descriptor.error_output_path):

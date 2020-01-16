@@ -1,0 +1,34 @@
+<!-- From https://stackoverflow.com/questions/4997219/disable-maven-central-repository -->
+<repositories>
+    <repository>
+        <id>central</id>
+        <url>http://nosuchhost.invalid</url>
+        <snapshots>
+            <enabled>false</enabled>
+        </snapshots>
+    </repository>
+    <repository>
+        <id>snapshots</id>
+        <url>http://nosuchhost.invalid</url>
+        <releases>
+            <enabled>false</enabled>
+        </releases>
+    </repository>
+</repositories>
+<pluginRepositories>
+    <pluginRepository>
+        <id>central</id>
+        <url>http://nosuchhost.invalid</url>
+        <snapshots>
+            <enabled>false</enabled>
+        </snapshots>
+    </pluginRepository>
+    <pluginRepository>
+        <id>snapshots</id>
+        <url>http://nosuchhost.invalid</url>
+        <releases>
+            <enabled>false</enabled>
+        </releases>
+    </pluginRepository>
+</pluginRepositories>
+

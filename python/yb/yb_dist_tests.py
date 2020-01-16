@@ -26,7 +26,9 @@ import tempfile
 import atexit
 
 
-from yb.common_util import get_build_type_from_build_root, is_macos  # nopep8
+from yb.common_util import get_build_type_from_build_root, \
+                           get_compiler_type_from_build_root, \
+                           is_macos  # nopep8
 
 
 # This is used to separate relative binary path from gtest_filter for C++ tests in what we call
@@ -154,13 +156,15 @@ class GlobalTestConfig:
                  yb_src_root,
                  archive_for_workers,
                  rel_build_root,
-                 archive_sha256sum):
+                 archive_sha256sum,
+                 compiler_type):
         self.build_root = os.path.abspath(build_root)
         self.build_type = build_type
         self.yb_src_root = yb_src_root
         self.archive_for_workers = archive_for_workers
         self.rel_build_root = rel_build_root
         self.archive_sha256sum = archive_sha256sum
+        self.compiler_type = compiler_type
 
     def get_run_test_script_path(self):
         return os.path.join(self.yb_src_root, 'build-support', 'run-test.sh')
@@ -170,11 +174,20 @@ class GlobalTestConfig:
         Used on the distributed worker side (inside functions that run on Spark) to configure the
         necessary environment.
         """
-        os.environ['BUILD_ROOT'] = self.build_root
+        os.environ['BUILD_ROOT'] = os.path.abspath(self.build_root)
+        os.environ['YB_COMPILER_TYPE'] = self.compiler_type
         # This is how we tell run-test.sh what set of C++ binaries to use for mini-clusters in Java
         # tests.
         for env_var_name, env_var_value in propagated_env_vars.iteritems():
             os.environ[env_var_name] = env_var_value
+        if self.archive_for_workers is not None:
+            # If we are uploading an archive, we expect all Maven dependencies to already be
+            # pre-packaged in the archive. Disable downloads from Maven Central.
+            m2_settings_disable_central = os.path.join(
+                    self.yb_src_root, 'm2_settings_disable_central.xml')
+            if not os.path.exists(m2_settings_disable_central):
+                raise IOError("File does not exist: %s" % m2_settings_disable_central)
+            os.environ['YB_MVN_SETTINGS_PATH'] = m2_settings_disable_central
 
 
 TestResult = collections.namedtuple(
@@ -183,7 +196,7 @@ TestResult = collections.namedtuple(
          'exit_code',
          'elapsed_time_sec',
          'failed_without_output',
-         'test_artifact_paths'])
+         'artifact_paths'])
 
 ClockSyncCheckResult = collections.namedtuple(
         'ClockSyncCheckResult',
@@ -220,6 +233,15 @@ def set_global_conf_from_args(args):
                 "source root: %s. build_root=%s, yb_src_root=%s" % (
                     rel_build_root, build_root, yb_src_root))
 
+    compiler_type = get_compiler_type_from_build_root(build_root)
+    compiler_type_from_env = os.environ.get('YB_COMPILER_TYPE')
+    if compiler_type_from_env is not None and compiler_type_from_env != compiler_type:
+        raise ValueError(
+                "Build root '%s' implies compiler type '%s' but YB_COMPILER_TYPE is '%s'" % (
+                    build_root, compiler_type, compiler_type_from_env))
+    from yb import common_util
+    os.environ['YB_COMPILER_TYPE'] = compiler_type
+
     global global_conf
     global_conf = GlobalTestConfig(
             build_root=build_root,
@@ -227,6 +249,7 @@ def set_global_conf_from_args(args):
             yb_src_root=yb_src_root,
             archive_for_workers=archive_for_workers,
             rel_build_root=rel_build_root,
+            compiler_type=compiler_type,
             # The archive might not even exist yet.
             archive_sha256sum=None)
     return global_conf
@@ -300,13 +323,13 @@ ARCHIVED_PATHS_IN_BUILD_DIR = [
     'share',
     'version_metadata.json',
     'linuxbrew_path.txt',
+    'thirdparty_path.txt',
     'thirdparty_url.txt'
 ]
 
 ARCHIVED_PATHS_IN_SRC_DIR = [
     'bin',
     'build-support',
-    'java',
     'managed/src/main/resources/version.txt',
     'managed/version.txt',
     'python',
@@ -315,9 +338,27 @@ ARCHIVED_PATHS_IN_SRC_DIR = [
     'www',
     'yb_build.sh',
     'build/python_virtual_env',
-    'python_requirements_frozen.txt'
+    'python_requirements_frozen.txt',
+    'build-support/java/m2_settings_disable_central.xml'
 ]
 
+
+def find_rel_java_paths_to_archive(yb_src_root):
+    paths = []
+    for ent in [False, True]:
+        path_components = []
+        if ent is not None:
+            path_components.append('ent')
+        path_components.append('java')
+        java_dir_path = os.path.join(yb_src_root, *path_components)
+        paths.append(os.path.join(java_dir_path, 'pom.xml'))
+        for submodule_dir_path in glob.glob(os.path.join(java_dir_path, '*')):
+            for name in ['pom.xml', 'src']:
+                paths.append(os.path.join(submodule_dir_path, name))
+            for classes_dir_name in ['classes', 'test-classes']:
+                paths.append(os.path.join(submodule_dir_path, 'target', classes_dir_name))
+    return [os.path.relpath(p, yb_src_root) for p in paths]
+        
 
 def create_archive_for_workers():
     dest_path = global_conf.archive_for_workers
@@ -329,20 +370,40 @@ def create_archive_for_workers():
     try:
         build_root = os.path.abspath(global_conf.build_root)
         yb_src_root = os.path.abspath(global_conf.yb_src_root)
+        build_root_parent = os.path.join(yb_src_root, 'build')
         rel_build_root = global_conf.rel_build_root
         if os.path.exists(dest_path):
             logging.info("Removing existing archive file %s", dest_path)
             os.remove(dest_path)
-        paths_in_src_dir = ARCHIVED_PATHS_IN_SRC_DIR
+        paths_in_src_dir = ARCHIVED_PATHS_IN_SRC_DIR + find_rel_java_paths_to_archive(yb_src_root)
+
+        added_local_repo = False
         mvn_local_repo = os.environ.get('YB_MVN_LOCAL_REPO')
         if mvn_local_repo:
             mvn_local_repo = os.path.abspath(mvn_local_repo)
-            if mvn_local_repo.startswith(yb_src_root + '/'):
+            if mvn_local_repo.startswith(build_root_parent + '/'):
+                # Here, the path we're adding has to be relative to YB_SRC_ROOT.
                 paths_in_src_dir.append(os.path.relpath(mvn_local_repo, yb_src_root))
+                logging.info("Will add YB_MVN_LOCAL_REPO to archive: %s", mvn_local_repo)
+                added_local_repo = True
+        if not added_local_repo:
+            raise ValueError("YB_MVN_LOCAL_REPO (%s) must be within $YB_SRC_ROOT/build (%s)" % (
+                mvn_local_repo, build_root_parent))
 
+        files_that_must_exist_in_build_dir = ['thirdparty_path.txt']
+        if sys.platform == 'linux':
+            files_that_must_exist_in_build_dir.append('linuxbrew_path.txt')
+        for rel_file_path in files_that_must_exist_in_build_dir:
+            full_path = os.path.join(build_root, rel_file_path)
+            if not os.path.exists(full_path):
+                raise IOError("Path does not exist: %s" % full_path)
+
+        # TODO: save the list of files added to the archive to a separate file for debuggability.
+        # TODO: use zip instead of tar/gz.
         tar_args = [
             'tar',
-            'czf',
+            'cz',
+            '-f',
             tmp_dest_path
         ] + [
             path_rel_to_src_dir
@@ -365,6 +426,7 @@ def create_archive_for_workers():
                     "Archive '%s' did not get created after command %s" % (
                         tmp_dest_path, tar_args))
         os.rename(tmp_dest_path, dest_path)
+        logging.info("Size of the archive: %.1f MiB", os.path.getsize(dest_path) / (1024.0 * 1024))
     finally:
         elapsed_time_sec = time.time() - start_time_sec
         logging.info("Elapsed archive creation time: %.1f seconds", elapsed_time_sec)
