@@ -1027,7 +1027,7 @@ def main():
                         help='Override Spark master URL to use. Useful for debugging.')
     parser.add_argument('--send_archive_to_workers',
                         action='store_true',
-                        default=True,
+                        default=False,
                         help='Create an archive containing everything required to run tests and '
                              'send it to workers instead of assuming an NFS filesystem.')
     parser.add_argument('--recreate_archive_for_workers',

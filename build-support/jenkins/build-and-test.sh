@@ -696,6 +696,10 @@ if [[ $YB_COMPILE_ONLY != "1" ]]; then
         extra_args+=( "--test_conf" "$test_conf_path" )
         unset test_conf_path
       fi
+      if is_linux; then
+        log "Will create an archive for Spark workers with all the code instead of using NFS."
+        extra_args+=( "--send_archive_to_workers" )
+      fi
       set +u  # because extra_args can be empty
       if ! run_tests_on_spark "${extra_args[@]}"; then
         set -u
