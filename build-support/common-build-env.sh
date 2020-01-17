@@ -184,6 +184,9 @@ readonly YB_NFS_PATH_RE="^/(n|z|u|net|Volumes/net|servers|nfusr)/"
 use_nfs_shared_thirdparty=false
 no_nfs_shared_thirdparty=false
 
+# This is needed so we can ignore linuxbrew_path.txt and thirdparty_path.txt.
+is_clean_build=false
+
 # -------------------------------------------------------------------------------------------------
 # Functions
 # -------------------------------------------------------------------------------------------------
@@ -532,12 +535,14 @@ set_cmake_build_type_and_compiler_type() {
 
   cmake_opts+=( "-DCMAKE_BUILD_TYPE=$cmake_build_type" )
   cmake_opts+=( "${YB_DEFAULT_CMAKE_OPTS[@]}" )
+}
 
+find_make_or_ninja_and_update_cmake_opts() {
   if using_ninja; then
     cmake_opts+=( -G Ninja )
     make_program=ninja
     if [[ -z ${YB_NINJA_PATH:-} ]]; then
-      local which_ninja=$( which ninja >/dev/null )
+      local which_ninja=$( which ninja 2>/dev/null )
       if [[ -f $which_ninja ]]; then
         YB_NINJA_PATH=$which_ninja
       elif using_linuxbrew; then
@@ -546,11 +551,12 @@ set_cmake_build_type_and_compiler_type() {
       elif using_custom_homebrew; then
         export YB_NINJA_PATH=$YB_CUSTOM_HOMEBREW_DIR/bin/ninja
         make_program=$YB_NINJA_PATH
-      elif is_mac && ! is_jenkins; then
-        # Don't try to auto-install Ninja in a macOS Jenkins environment.
-        log "Did not find the 'ninja' executable, auto-installing Ninja using Homebrew"
-        brew install ninja
+      else
+        fatal "Ninja not found"
       fi
+    fi
+    if [[ ! -x $YB_NINJA_PATH ]]; then
+      fatal "Ninja path $YB_NINJA_PATH does not exist or is not executable"
     fi
     export YB_NINJA_PATH
     make_file=build.ninja
@@ -1138,7 +1144,8 @@ detect_linuxbrew() {
     export YB_LINUXBREW_DIR
     return
   fi
-  if [[ -n ${BUILD_ROOT:-} && -f $BUILD_ROOT/linuxbrew_path.txt ]]; then
+  if ! "$is_clean_build" &&
+     [[ -n ${BUILD_ROOT:-} && -f $BUILD_ROOT/linuxbrew_path.txt ]]; then
     export YB_LINUXBREW_DIR=$(<$BUILD_ROOT/linuxbrew_path.txt)
     return
   fi
@@ -1634,7 +1641,8 @@ find_or_download_thirdparty() {
     export YB_DOWNLOAD_THIRDPARTY=1
   fi
 
-  if [[ -f $BUILD_ROOT/thirdparty_path.txt ]]; then
+  if ! "$is_clean_build" &&
+     [[ -f $BUILD_ROOT/thirdparty_path.txt ]]; then
     local thirdparty_dir_from_file=$(<"$BUILD_ROOT/thirdparty_path.txt")
     if [[ -n ${YB_THIRDPARTY_DIR:-} &&
           "$YB_THIRDPARTY_DIR" != "$thirdparty_dir_from_file" ]]; then
@@ -1664,29 +1672,34 @@ find_or_download_thirdparty() {
       log "Using Linuxbrew directory: $YB_LINUXBREW_DIR"
     fi
   else
-    local do_not_use_local_thirdparty_flag_path=$YB_SRC_ROOT/thirdparty/.yb_thirdparty_do_not_use
-    if [[ -f $do_not_use_local_thirdparty_flag_path ]] ||
+    if [[ -f $YB_SRC_ROOT/thirdparty/.yb_thirdparty_do_not_use ]] ||
        "$use_nfs_shared_thirdparty" ||
        using_remote_compilation && ! "$no_nfs_shared_thirdparty"; then
       find_shared_thirdparty_dir
     fi
   fi
+
   if [[ -z ${YB_THIRDPARTY_DIR:-} ]]; then
     export YB_THIRDPARTY_DIR=$YB_SRC_ROOT/thirdparty
   fi
-  echo "$YB_THIRDPARTY_DIR" >"$BUILD_ROOT/thirdparty_path.txt"
+  if [[ ! -e "$BUILD_ROOT/thirdparty_path.txt" ]]; then
+    mkdir -p "$BUILD_ROOT"
+    echo "$YB_THIRDPARTY_DIR" >"$BUILD_ROOT/thirdparty_path.txt"
+  fi
 }
 
 log_thirdparty_details() {
-  echo >&2 "Details for third-party dependencies:"
-  echo >&2 "   YB_THIRDPARTY_DIR: ${YB_THIRDPARTY_DIR:-undefined}"
+  echo >&2 "Details of third-party dependencies:"
+  echo >&2 "    YB_THIRDPARTY_DIR: ${YB_THIRDPARTY_DIR:-undefined}"
   if [[ -n ${YB_THIRDPARTY_URL:-} ]]; then
-    echo >&2 "   YB_THIRDPARTY_URL: $YB_THIRDPARTY_URL"
+    echo >&2 "    YB_THIRDPARTY_URL: $YB_THIRDPARTY_URL"
   fi
   if [[ -n ${YB_DOWNLOAD_THIRDPARTY:-} ]]; then
-    echo >&2 "   YB_DOWNLOAD_THIRDPARTY: $YB_DOWNLOAD_THIRDPARTY"
+    echo >&2 "    YB_DOWNLOAD_THIRDPARTY: $YB_DOWNLOAD_THIRDPARTY"
   fi
-  echo >&2 "   NO_REBUILD_THIRDPARTY: ${NO_REBUILD_THIRDPARTY:-undefined}"
+  if [[ -n ${NO_REBUILD_THIRDPARTY:-} ]]; then
+    echo >&2 "    NO_REBUILD_THIRDPARTY: ${NO_REBUILD_THIRDPARTY}"
+  fi
 }
 
 handle_predefined_build_root_quietly=false

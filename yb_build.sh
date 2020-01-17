@@ -26,6 +26,10 @@ ensure_option_has_arg() {
   fi
 }
 
+# DEBUG mba
+#export PS4='+(${BASH_SOURCE}:${LINENO}): ${FUNCNAME[0]:+${FUNCNAME[0]}(): }'
+#set -x
+
 show_help() {
   cat >&2 <<-EOT
 yb_build.sh (or "ybd") is the main build tool for YugaByte Database.
@@ -640,6 +644,7 @@ while [[ $# -gt 0 ]]; do
       cmake_only=true
     ;;
     --clean)
+      is_clean_build=true
       clean_before_build=true
     ;;
     --clean-thirdparty)
@@ -706,10 +711,10 @@ while [[ $# -gt 0 ]]; do
     --no-rebuild-thirdparty|--nrtp|--nr3p|--nbtp|--nb3p)
       export NO_REBUILD_THIRDPARTY=1
     ;;
-    --use-shared-thirdparty|--ustp|--stp|--us3p|--s3p)
+    --use-nfs-shared-thirdparty)
       use_nfs_shared_thirdparty=true
     ;;
-    --no-shared-thirdparty|--nstp|ns3p|--no-nfs-shared-thirdparty|--nnstp|--nns3p)
+    --no-nfs-shared-thirdparty)
       no_nfs_shared_thirdparty=true
     ;;
     --show-compiler-cmd-line|--sccl)
@@ -1060,8 +1065,9 @@ if [[ ${YB_SKIP_BUILD:-} == "1" ]]; then
   set_flags_to_skip_build
 fi
 
-if "$use_nfs_shared_thirdparty" && "$no_shared_thirdparty"; then
-  fatal "--use-shared-thirdparty and --no-shared-thirdparty cannot be specified at the same time"
+if "$use_nfs_shared_thirdparty" && "$no_nfs_shared_thirdparty"; then
+  fatal "--use-nfs-shared-thirdparty and --no-nfs-shared-thirdparty cannot be specified" \
+        "at the same time"
 fi
 
 configure_remote_compilation
@@ -1124,6 +1130,7 @@ set_build_root
 
 find_or_download_thirdparty
 detect_brew
+find_make_or_ninja_and_update_cmake_opts
 log_thirdparty_details
 
 validate_cmake_build_type "$cmake_build_type"
