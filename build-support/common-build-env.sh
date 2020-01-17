@@ -1083,7 +1083,7 @@ download_thirdparty() {
             "'$extracted_dir'"
     fi
     export YB_LINUXBREW_DIR=$extracted_dir
-    local yb_linuxbrew_dir_where_from=" (downloaded from $linuxbrew_url)"
+    yb_linuxbrew_dir_where_from=" (downloaded from $linuxbrew_url)"
     save_brew_path_to_build_dir
   else
     fatal "Cannot download Linuxbrew: file $linuxbrew_url_path does not exist"
@@ -1248,7 +1248,9 @@ detect_linuxbrew() {
   if ! is_jenkins && [[ ! -d $linuxbrew_local_dir ]]; then
     install_linuxbrew "$linuxbrew_version"
   fi
-  if ! try_set_linuxbrew_dir "$linuxbrew_local_dir"; then
+  if try_set_linuxbrew_dir "$linuxbrew_local_dir"; then
+    yb_linuxbrew_dir_where_from=" (local installation)"
+  else
     if [[ ${#candidates[@]} -gt 0 ]]; then
       log "Could not find Linuxbrew in any of these directories: ${candidates[@]}."
     else
