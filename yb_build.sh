@@ -614,6 +614,9 @@ collect_java_tests=false
 
 # use_nfs_shared_thirdparty and no_nfs_shared_thirdparty are defined in common-build-env.sh.
 
+# The default value of this parameter will be set based on whether we're running on Jenkins.
+reduce_log_output=""
+
 export YB_HOST_FOR_RUNNING_TESTS=${YB_HOST_FOR_RUNNING_TESTS:-}
 
 export YB_EXTRA_GTEST_FLAGS=""
