@@ -1136,6 +1136,7 @@ try_set_linuxbrew_dir() {
         -d "$linuxbrew_dir/lib" &&
         -d "$linuxbrew_dir/include" ]]; then
     export YB_LINUXBREW_DIR=$(realpath "$linuxbrew_dir")
+    save_brew_path_to_build_dir
     return 0
   else
     return 1
@@ -1237,7 +1238,7 @@ detect_linuxbrew() {
     local linuxbrew_dir
     for linuxbrew_dir in "${candidates[@]}"; do
       if try_set_linuxbrew_dir "$linuxbrew_dir"; then
-        save_linuxbrew_path_to_build_dir
+        yb_linuxbrew_dir_where_from=" (from '$version_file')"
         return
       fi
     done
