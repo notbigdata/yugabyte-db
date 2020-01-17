@@ -128,13 +128,13 @@ LIST_OF_TESTS_DIR_NAME = 'list_of_tests'
 
 SPARK_URLS = {
     'linux_default': os.getenv(
-        'YB_SPARK_URL_LINUX_DEFAULT',
+        'YB_LINUX_SPARK_URL',
         'spark://spark-for-yugabyte-linux-default.example.com:7077'),
     'linux_asan_tsan': os.getenv(
-        'YB_SPARK_URL_LINUX_ASAN_TSAN',
+        'YB_ASAN_TSAN_SPARK_URL',
         'spark://spark-for-yugabyte-linux-asan-tsan.example.com:7077'),
     'macos': os.getenv(
-        'YB_SPARK_URL_MACOS',
+        'YB_MACOS_SPARK_URL',
         'spark://spark-for-yugabyte-macos.example.com:7077'),
 }
 
@@ -1023,6 +1023,7 @@ def main():
                         help='Allow running with filters that yield no tests to run. Useful when '
                              'debugging.')
     parser.add_argument('--spark-master-url',
+                        default=os.environ.get('YB_SPARK_URL_OVERRIDE'),
                         help='Override Spark master URL to use. Useful for debugging.')
     parser.add_argument('--send_archive_to_workers',
                         action='store_true',

@@ -66,8 +66,6 @@ pthread .*: Device or resource busy|\
 FATAL: could not create shared memory segment: No space left on device"
 
 # We use this to submit test jobs for execution on Spark.
-readonly SPARK_SUBMIT_CMD_PATH_NON_ASAN_TSAN=/n/tools/spark/current/bin/spark-submit
-readonly SPARK_SUBMIT_CMD_PATH_ASAN_TSAN=/n/tools/spark/current-tsan/bin/spark-submit
 readonly INITIAL_SPARK_DRIVER_CORES=8
 
 # This is used to separate relative binary path from gtest_filter for C++ tests in what we call
@@ -1244,11 +1242,22 @@ show_disk_usage() {
 }
 
 find_spark_submit_cmd() {
-  if [[ $build_type == "tsan" || $build_type == "asan" ]]; then
-    spark_submit_cmd_path=$SPARK_SUBMIT_CMD_PATH_ASAN_TSAN
-  else
-    spark_submit_cmd_path=$SPARK_SUBMIT_CMD_PATH_NON_ASAN_TSAN
+  if [[ -n ${YB_SPARK_SUBMIT_CMD_OVERRIDE:-} ]]; then
+    spark_submit_cmd_path=$YB_SPARK_SUBMIT_CMD_OVERRIDE
+    return
   fi
+
+  if is_mac; then
+    spark_submit_cmd_path=$YB_MACOS_SPARK_SUBMIT_CMD
+    return
+  fi
+
+  if [[ $build_type == "tsan" || $build_type == "asan" ]]; then
+    spark_submit_cmd_path=$YB_ASAN_TSAN_SPARK_SUBMIT_CMD
+    return
+  fi
+
+  spark_submit_cmd_path=$YB_LINUX_SPARK_SUBMIT_CMD
 }
 
 spark_available() {
