@@ -69,10 +69,10 @@ declare -i MAX_JAVA_BUILD_ATTEMPTS=5
 declare -r -i YB_EXIT_CODE_NO_SUCH_FILE_OR_DIRECTORY=2
 
 # What matches these expressions will be filtered out of Maven output.
-MVN_OUTPUT_FILTER_REGEX='\[INFO\] (Download(ing|ed): '
-MVN_OUTPUT_FILTER_REGEX+='|[^ ]+ already added, skipping$)'
-MVN_OUTPUT_FILTER_REGEX+='|^Generating .*[.]html[.][.][.]$'
+MVN_OUTPUT_FILTER_REGEX='^\[INFO\] (Download(ing|ed)( from [-a-z0-9.]+)?): '
+MVN_OUTPUT_FILTER_REGEX+='|^\[INFO\] [^ ]+ already added, skipping$'
 MVN_OUTPUT_FILTER_REGEX+='|^\[INFO\] Copying .*[.]jar to .*[.]jar$'
+MVN_OUTPUT_FILTER_REGEX+='|^Generating .*[.]html[.][.][.]$'
 
 readonly YB_JENKINS_NFS_HOME_DIR=/n/jenkins
 
@@ -849,6 +849,7 @@ create_dir_on_ephemeral_drive() {
 # if the build runs to completion. This only filters stdin, so it is expected that stderr is
 # redirected to stdout when invoking the C++ build.
 filter_boring_cpp_build_output() {
+  # For Ninja, keep every 10th successful C/C++ compilation message.
   egrep -v --line-buffered "\
 ^(\[ *[0-9]{1,2}%\] +)*(\
 Building C(XX)? object |\
@@ -860,7 +861,12 @@ Scanning dependencies of target |\
 ^ssh: connect to host .* port [0-9]+: Connection (timed out|refused)|\
 Host .* seems to be down, retrying on a different host|\
 Connection to .* closed by remote host.|\
-ssh: Could not resolve hostname build-workers-.*: Name or service not known"
+ssh: Could not resolve hostname build-workers-.*: Name or service not known|\
+^\[[0-9]+?[1-9]/[0-9]+\] (\
+Building CXX object|\
+Running C[+][+] protocol buffer compiler|\
+Linking CXX shared library|\
+Linking CXX executable)"
 }
 
 

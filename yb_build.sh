@@ -389,12 +389,21 @@ run_cxx_build() {
   log "Running $make_program in $PWD"
   capture_sec_timestamp "make_start"
   set +u +e  # "set -u" may cause failures on empty lists
-  time (
-    set -x
-
-    "$make_program" "-j$YB_MAKE_PARALLELISM" "${make_opts[@]}" $make_ninja_extra_args \
-      "${make_targets[@]}"
+  make_program_args=(
+    "-j$YB_MAKE_PARALLELISM" "${make_opts[@]}" $make_ninja_extra_args "${make_targets[@]}"
   )
+  set -u
+  if "$reduce_log_output"; then
+    time (
+      set -x
+      "$make_program" "${make_program_args[@]}" | filter_boring_cpp_build_output
+    )
+  else
+    time (
+      set -x
+      "$make_program" "${make_program_args[@]}"
+    )
+  fi
 
   local exit_code=$?
   set -u -e
@@ -966,6 +975,9 @@ while [[ $# -gt 0 ]]; do
       # This is not a typo, we intend to log details of every statement in this mode:
       set -x
     ;;
+    --reduce-log-output)
+      reduce_log_output=true
+    ;;
     *)
       if [[ $1 =~ ^(YB_[A-Z0-9_]+|postgres_FLAGS_[a-zA-Z0-9_]+)=(.*)$ ]]; then
         env_var_name=${BASH_REMATCH[1]}
@@ -1083,6 +1095,10 @@ if ! is_jenkins && is_src_root_on_nfs && \
   if "$build_cxx"; then
     log "Setting YB_CCACHE_DIR=$YB_CCACHE_DIR by default for NFS-based builds"
   fi
+fi
+
+if is_jenkins && [[ -z $reduce_log_output ]]; then
+  reduce_log_output=true
 fi
 
 # -------------------------------------------------------------------------------------------------

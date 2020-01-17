@@ -124,9 +124,7 @@ build_cpp_code() {
     )
   fi
 
-  time "$YB_SRC_ROOT/yb_build.sh" $remote_opt \
-    "${yb_build_args[@]}" 2>&1 | \
-    filter_boring_cpp_build_output
+  time "$YB_SRC_ROOT/yb_build.sh" $remote_opt "${yb_build_args[@]}"
 
   log "Finished building C++ code (see timing information above)"
 
