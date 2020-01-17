@@ -26,10 +26,6 @@ ensure_option_has_arg() {
   fi
 }
 
-# DEBUG mba
-#export PS4='+(${BASH_SOURCE}:${LINENO}): ${FUNCNAME[0]:+${FUNCNAME[0]}(): }'
-#set -x
-
 show_help() {
   cat >&2 <<-EOT
 yb_build.sh (or "ybd") is the main build tool for YugaByte Database.
@@ -191,6 +187,8 @@ Options:
     this option (this could be reset by --clean). Only supported on CentOS.
   --collect-java-tests
     Collect the set of Java test methods into a file
+  --super-bash-debug
+    Log the location of every command executed in this script
   --
     Pass all arguments after -- to repeat_unit_test.
 
@@ -560,6 +558,7 @@ print_saved_log_path() {
   heading "To view log:"$'\n\n'"less '$log_path'"$'\n\n'\
 "Or using symlink:"$'\n\n'"less '$latest_log_symlink_path'"$'\n'
 }
+
 # -------------------------------------------------------------------------------------------------
 # Command line parsing
 # -------------------------------------------------------------------------------------------------
@@ -961,6 +960,12 @@ while [[ $# -gt 0 ]]; do
     --download-thirdparty|--dltp)
       export YB_DOWNLOAD_THIRDPARTY=1
     ;;
+    --super-bash-debug)
+      # From https://wiki-dev.bash-hackers.org/scripting/debuggingtips
+      export PS4='+(${BASH_SOURCE}:${LINENO}): ${FUNCNAME[0]:+${FUNCNAME[0]}(): }'
+      # This is not a typo, we intend to log details of every statement in this mode:
+      set -x
+    ;;
     *)
       if [[ $1 =~ ^(YB_[A-Z0-9_]+|postgres_FLAGS_[a-zA-Z0-9_]+)=(.*)$ ]]; then
         env_var_name=${BASH_REMATCH[1]}
@@ -1034,12 +1039,6 @@ fi
 if "$java_only" && ! "$build_java"; then
   fatal "--java-only specified along with an option that implies skipping the Java build, e.g." \
         "--cxx-test or --skip-java-build."
-fi
-
-if ! using_default_thirdparty_dir; then
-  log "YB_THIRDPARTY_DIR ('$YB_THIRDPARTY_DIR') is not what we expect based on the source root " \
-      "('$YB_SRC_ROOT/thirdparty'), not attempting to rebuild third-party dependencies."
-  export NO_REBUILD_THIRDPARTY=1
 fi
 
 if "$run_python_tests"; then
@@ -1131,7 +1130,15 @@ set_build_root
 find_or_download_thirdparty
 detect_brew
 find_make_or_ninja_and_update_cmake_opts
-log_thirdparty_details
+
+if ! using_default_thirdparty_dir && [[ ${NO_REBUILD_THIRDPARTY:-0} != "1" ]]; then
+  log "YB_THIRDPARTY_DIR ('$YB_THIRDPARTY_DIR') is not what we expect based on the source root " \
+      "('$YB_SRC_ROOT/thirdparty'), not attempting to rebuild third-party dependencies."
+  NO_REBUILD_THIRDPARTY=1
+fi
+export NO_REBUILD_THIRDPARTY
+
+log_thirdparty_and_toolchain_details
 
 validate_cmake_build_type "$cmake_build_type"
 
@@ -1147,6 +1154,9 @@ if "$verbose"; then
 fi
 
 # -------------------------------------------------------------------------------------------------
+# Cleaning confirmation
+# ~~~~~~~~~~~~~~~~~~~~~
+#
 # If we are running in an interactive session, check if a clean build was done less than an hour
 # ago. In that case, make sure this is what the user really wants.
 # -------------------------------------------------------------------------------------------------
@@ -1173,7 +1183,7 @@ if tty -s && ( $clean_before_build || $clean_thirdparty ); then
 fi
 
 # -------------------------------------------------------------------------------------------------
-# End of clean build confirmation.
+# Cleaning
 # -------------------------------------------------------------------------------------------------
 
 if "$clean_before_build"; then
@@ -1186,28 +1196,33 @@ else
   fi
 fi
 
-mkdir_safe "$BUILD_ROOT"
-mkdir_safe "thirdparty/installed/uninstrumented/include"
-mkdir_safe "thirdparty/installed-deps/include"
-
-# Install the cleanup handler that will print a report at the end, even if we terminate with an
-# error.
-trap cleanup EXIT
-
-cd "$BUILD_ROOT"
-
-activate_virtualenv
-check_python_script_syntax
-
-set_java_home
-
-if "$clean_thirdparty"; then
+if "$clean_thirdparty" && using_default_thirdparty_dir; then
   log "Removing and re-building third-party dependencies (--clean-thirdparty specified)"
   (
     set -x
     "$YB_THIRDPARTY_DIR"/clean_thirdparty.sh --all
   )
 fi
+
+# -------------------------------------------------------------------------------------------------
+# End of cleaning
+# -------------------------------------------------------------------------------------------------
+
+mkdir_safe "$BUILD_ROOT"
+cd "$BUILD_ROOT"
+
+if ! using_ninja; then
+  log "This build is NOT using Ninja. Consider specifying --ninja or setting YB_USE_NINJA=1."
+fi
+
+# Install the cleanup handler that will print a report at the end, even if we terminate with an
+# error.
+trap cleanup EXIT
+
+activate_virtualenv
+check_python_script_syntax
+
+set_java_home
 
 if "$no_ccache"; then
   export YB_NO_CCACHE=1

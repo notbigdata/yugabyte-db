@@ -132,7 +132,7 @@ else
 fi
 
 find_or_download_thirdparty
-log_thirdparty_details
+log_thirdparty_and_toolchain_details
 detect_brew
 
 set_common_test_paths
