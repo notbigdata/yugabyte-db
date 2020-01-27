@@ -1037,6 +1037,9 @@ popd() {
 # Creates files such as thirdparty_url.txt, thirdparty_path.txt, linuxbrew_path.txt in the build
 # directory. This is only being done if the file does not exist.
 save_var_to_file_in_build_dir() {
+  if [[ ${YB_IS_BUILD_THIRDPARTY_SCRIPT:-0} == "1" ]]; then
+    return
+  fi
   expect_num_args 2 "$@"
   local value=$1
   if [[ -z ${value:-} ]]; then
@@ -1229,8 +1232,9 @@ save_paths_to_build_dir() {
 }
 
 detect_linuxbrew() {
-  if [[ -z ${BUILD_ROOT:-} ]]; then
-    fatal "BUILD_ROOT is not set"
+  if [[ ${YB_IS_BUILD_THIRDPARTY_SCRIPT:-0} == "0" && -z ${BUILD_ROOT:-} ]]; then
+    fatal "BUILD_ROOT is not set, and we are not building third-party dependencies, not trying" \
+          "to use the default version of Linuxbrew."
   fi
   if ! is_linux; then
     fatal "Expected this function to only be called on Linux"
