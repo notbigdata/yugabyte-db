@@ -333,12 +333,23 @@ Status ClusterAdminClient::GetMasterLeaderInfo(PeerId* leader_uuid) {
   return Status::OK();
 }
 
-Status ClusterAdminClient::DumpMasterState() {
+Status ClusterAdminClient::DumpMasterState(bool to_console) {
   CHECK(initted_);
   master::DumpMasterStateRequestPB req;
   req.set_peers_also(true);
   req.set_on_disk(true);
-  return ResultToStatus(InvokeRpc(&MasterServiceProxy::DumpState, master_proxy_.get(), req));
+  req.set_return_dump_as_string(to_console);
+
+  const auto resp = VERIFY_RESULT(InvokeRpc(
+      &MasterServiceProxy::DumpState, master_proxy_.get(), req));
+
+  if (to_console) {
+    cout << resp.dump() << endl;
+  } else {
+    cout << "Master state dump has been completed and saved into "
+            "the master respective log files." << endl;
+  }
+  return Status::OK();
 }
 
 Status ClusterAdminClient::GetLoadMoveCompletion() {
@@ -825,6 +836,41 @@ Status ClusterAdminClient::ListPerTabletTabletServers(const TabletId& tablet_id)
 Status ClusterAdminClient::DeleteTable(const YBTableName& table_name) {
   RETURN_NOT_OK(yb_client_->DeleteTable(table_name));
   cout << "Deleted table " << table_name.ToString() << endl;
+  return Status::OK();
+}
+
+Status ClusterAdminClient::DeleteTableById(const TableId& table_id) {
+  RETURN_NOT_OK(yb_client_->DeleteTable(table_id));
+  cout << "Deleted table " << table_id << endl;
+  return Status::OK();
+}
+
+Status ClusterAdminClient::DeleteIndex(const YBTableName& table_name) {
+  YBTableName indexed_table_name;
+  RETURN_NOT_OK(yb_client_->DeleteIndexTable(table_name, &indexed_table_name));
+  cout << "Deleted index " << table_name.ToString() << " from table " <<
+      indexed_table_name.ToString() << endl;
+  return Status::OK();
+}
+
+Status ClusterAdminClient::DeleteIndexById(const TableId& table_id) {
+  YBTableName indexed_table_name;
+  RETURN_NOT_OK(yb_client_->DeleteIndexTable(table_id, &indexed_table_name));
+  cout << "Deleted index " << table_id << " from table " <<
+      indexed_table_name.ToString() << endl;
+  return Status::OK();
+}
+
+Status ClusterAdminClient::DeleteNamespace(const TypedNamespaceName& namespace_name) {
+  RETURN_NOT_OK(yb_client_->DeleteNamespace(namespace_name.name, namespace_name.db_type));
+  cout << "Deleted namespace " << namespace_name.name << endl;
+  return Status::OK();
+}
+
+Status ClusterAdminClient::DeleteNamespaceById(const NamespaceId& namespace_id) {
+  RETURN_NOT_OK(yb_client_->DeleteNamespace(
+      std::string() /* name */, boost::none /* database type */, namespace_id));
+  cout << "Deleted namespace " << namespace_id << endl;
   return Status::OK();
 }
 
