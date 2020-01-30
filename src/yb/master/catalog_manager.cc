@@ -1887,17 +1887,11 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   }
 
   // For index table, populate the index info.
-  scoped_refptr<TableInfo> indexed_table;
   IndexInfoPB index_info;
 
   if (req.has_index_info()) {
     // Current message format.
-    TRACE("Looking up indexed table");
     index_info.CopyFrom(req.index_info());
-    indexed_table = GetTableInfo(index_info.indexed_table_id());
-    if (indexed_table == nullptr) {
-      return STATUS(NotFound, "The indexed table does not exist");
-    }
 
     // Assign column-ids that have just been computed and assigned to "index_info".
     if (!is_pg_table) {
