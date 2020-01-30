@@ -1904,11 +1904,6 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
     }
   } else if (req.has_indexed_table_id()) {
     // Old client message format when rolling upgrade (Not having "index_info").
-    TRACE("Looking up indexed table");
-    indexed_table = GetTableInfo(req.indexed_table_id());
-    if (indexed_table == nullptr) {
-      return STATUS(NotFound, "The indexed table does not exist");
-    }
     IndexInfoBuilder index_info_builder(&index_info);
     index_info_builder.ApplyProperties(req.indexed_table_id(),
         req.is_local_index(), req.is_unique_index());
