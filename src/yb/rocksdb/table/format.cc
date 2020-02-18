@@ -262,7 +262,9 @@ Status ReadFooterFromFile(RandomAccessFileReader* file, uint64_t file_size,
   }
   if (enforce_table_magic_number != 0 &&
       enforce_table_magic_number != footer->table_magic_number()) {
-    return STATUS(Corruption, "Bad table magic number");
+    LOG(ERROR) << "DEBUG mbautin: Bad table magic number: " << yb::GetStackTrace();
+    return STATUS_FORMAT(Corruption, "Bad table magic number: $0",
+                         footer->table_magic_number());
   }
   return Status::OK();
 }
