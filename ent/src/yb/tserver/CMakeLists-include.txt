@@ -41,3 +41,5 @@ set(TSERVER_EXTENSIONS_TESTS
   header_manager_impl-test
   PARENT_SCOPE)
 
+ADD_YB_TEST(rocksdb_encrypted_env-test)
+target_link_libraries(rocksdb_encrypted_env-test encryption_test_util tserver)

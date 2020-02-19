@@ -40,6 +40,7 @@ Result<string> HeaderManagerMockImpl::SerializeEncryptionParams(
 
 Result<EncryptionParamsPtr>
 HeaderManagerMockImpl::DecodeEncryptionParamsFromEncryptionMetadata(const yb::Slice& s) {
+  LOG(INFO) << "DEBUG mbautin: DecodeEncryptionParamsFromEncryptionMetadata: " << GetStackTrace();
   auto encryption_params = std::make_unique<EncryptionParams>();
   memcpy(encryption_params.get(), encryption_params_.get(), sizeof(EncryptionParams));
   return encryption_params;

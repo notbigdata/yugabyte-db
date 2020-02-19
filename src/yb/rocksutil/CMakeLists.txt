@@ -39,6 +39,3 @@ set(YB_TEST_LINK_LIBS yb_rocksutil ${YB_TEST_LINK_LIBS_EXTENSIONS} ${YB_MIN_TEST
 
 ADD_YB_TEST(yb_rocksdb_logger-test)
 
-ADD_YB_TEST(rocksdb_encrypted_env-test)
-target_link_libraries(rocksdb_encrypted_env-test encryption_test_util)
-

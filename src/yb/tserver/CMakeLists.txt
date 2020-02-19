@@ -239,4 +239,4 @@ if(YB_ENT_CURRENT_SOURCE_DIR)
 endif()
 
 # Tablet server starts PostgreSQL as a child process
-adD_dependencies(tserver postgres)
+add_dependencies(tserver postgres)

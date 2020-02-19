@@ -18,6 +18,7 @@
 #include "yb/gutil/stringprintf.h"
 #include "yb/rocksutil/rocksdb_encrypted_file_factory.h"
 
+#include "yb/tserver/header_manager_impl.h"
 #include "yb/util/status.h"
 #include "yb/util/test_util.h"
 #include "yb/util/header_manager.h"
@@ -32,6 +33,8 @@
 #include "yb/rocksdb/table/table_builder.h"
 #include "yb/rocksdb/util/file_reader_writer.h"
 #include "yb/rocksdb/table/internal_iterator.h"
+
+#include "yb/util/universe_key_manager.h"
 
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -116,10 +119,31 @@ TEST_F(TestRocksDBEncryptedEnv, ParallelEncryptedFileOps) {
   thread_holder.WaitAndStop(600s);
 }
 
+std::unique_ptr<yb::enterprise::UniverseKeyManager> GenerateUniverseKeyManager() {
+  auto universe_key_manager = std::make_unique<yb::enterprise::UniverseKeyManager>();
+  UniverseKeyRegistryPB registry;
+  auto encryption_params = yb::enterprise::EncryptionParams::NewEncryptionParams();
+  EncryptionParamsPB params_pb;
+  encryption_params->ToEncryptionParamsPB(&params_pb);
+  auto version_id = RandomHumanReadableString(16);
+  (*registry.mutable_universe_keys())[version_id] = params_pb;
+  registry.set_encryption_enabled(true);
+  registry.set_latest_version_id(version_id);
+  universe_key_manager->SetUniverseKeyRegistry(registry);
+  return universe_key_manager;
+}
+
+std::string GetKey(int i) {
+  return StringPrintf("key%09dSSSSSSSS", i);
+}
+
+std::string GetValue(int i) {
+  return Format("value%d", i);
+}
 
 TEST_F(TestRocksDBEncryptedEnv, ParallelBlockBasedTables) {
   
-  const auto kWriteThreads = 1;
+  const auto kWriteThreads = 16;
   TestThreadHolder thread_holder;
 
   string test_dir;
@@ -145,18 +169,25 @@ TEST_F(TestRocksDBEncryptedEnv, ParallelBlockBasedTables) {
       ikc,
       /*skip_filters=*/ false);
 
+  std::shared_ptr<yb::enterprise::UniverseKeyManager> universe_key_manager = 
+      GenerateUniverseKeyManager();
+      
+  auto header_manager = tserver::enterprise::DefaultHeaderManager(universe_key_manager.get());
+  auto env = yb::enterprise::NewRocksDBEncryptedEnv(std::move(header_manager));
+  
   for (int j = 0; j != kWriteThreads; ++j) {
     thread_holder.AddThreadFunctor(
-        [&test_dir,
+        [// &test_dir,
          j,
          &stop = thread_holder.stop_flag(), 
          &table_builder_options,
-         &table_reader_options] {
-      auto header_manager = GetMockHeaderManager();
-      HeaderManager* hm_ptr = header_manager.get();
-      down_cast<HeaderManagerMockImpl*>(hm_ptr)->SetFileEncryption(true);
-      auto env = yb::enterprise::NewRocksDBEncryptedEnv(std::move(header_manager));
-      auto file_name = JoinPathSegments(test_dir, Format("test-file-$0", j));
+         &table_reader_options,
+         &env] {
+      
+      // auto header_manager = GetMockHeaderManager();
+      // HeaderManager* hm_ptr = header_manager.get();
+      // down_cast<HeaderManagerMockImpl*>(hm_ptr)->SetFileEncryption(true);
+      auto file_name = JoinPathSegments("/Volumes/RamDisk", Format("test-file-$0", j));
       while (!stop.load()) {
         if (env->FileExists(file_name).ok()) {
           env->DeleteFile(file_name);
@@ -167,8 +198,9 @@ TEST_F(TestRocksDBEncryptedEnv, ParallelBlockBasedTables) {
         rocksdb::WritableFileWriter base_writer(std::move(base_file), rocksdb::EnvOptions(), 
             /* suspender */ nullptr);
 
+        string data_file_name = file_name + ".sblock.0";
         std::unique_ptr<rocksdb::WritableFile> data_file;
-        ASSERT_OK(env->NewWritableFile(file_name + ".sblock.0", &data_file, rocksdb::EnvOptions()));
+        ASSERT_OK(env->NewWritableFile(data_file_name, &data_file, rocksdb::EnvOptions()));
         rocksdb::WritableFileWriter data_writer(std::move(data_file), rocksdb::EnvOptions(), 
             /* suspender */ nullptr);
 
@@ -176,21 +208,45 @@ TEST_F(TestRocksDBEncryptedEnv, ParallelBlockBasedTables) {
         auto table_builder = std::unique_ptr<rocksdb::TableBuilder>(bbtf.NewTableBuilder(
             table_builder_options, 0, &base_writer, &data_writer
         ));
-        for (int i = 0; i < 100000; ++i) {
-          string key = StringPrintf("key%09dSSSSSSSS", i);
-          table_builder->Add(key, Format("value%d", i));
+        const int kNumKeys = 10000000;
+        const int start_key = RandomUniformInt(0, 10000);
+        for (int i = start_key; i < start_key + kNumKeys; ++i) {
+          string key = GetKey(i);
+          table_builder->Add(key, GetValue(i));
         }
         ASSERT_OK(table_builder->Finish());
         LOG(INFO) << "Wrote a file of total size " << table_builder->TotalFileSize()
             << ", base file size: " << table_builder->BaseFileSize();
+        base_writer.Flush();
+        data_writer.Flush();
         base_writer.Close();
         data_writer.Close();
+
+        std::unique_ptr<yb::SequentialFile> seq_file;
+        ASSERT_OK(env->NewSequentialFile(file_name, &seq_file, rocksdb::EnvOptions()));
+        uint8_t buf[1024];
+        Slice slice_read;
+        size_t seq_file_size = 0;
+        do {
+          ASSERT_OK(seq_file->Read(sizeof(buf), &slice_read, buf));
+          seq_file_size += slice_read.size();
+        } while (slice_read.size() > 0);
+        LOG(INFO) << "Total bytes read using SequentialFile: " << seq_file_size;
 
         std::unique_ptr<rocksdb::RandomAccessFile> random_access_file;
         ASSERT_OK(env->NewRandomAccessFile(file_name, &random_access_file, rocksdb::EnvOptions()));
         auto base_file_size = ASSERT_RESULT(random_access_file->Size());
         LOG(INFO) << "Base file size as reported by RandomAccessFile: " << base_file_size;
-        
+
+        std::unique_ptr<rocksdb::RandomAccessFile> random_access_data_file;
+        ASSERT_OK(env->NewRandomAccessFile(
+            data_file_name, &random_access_data_file, rocksdb::EnvOptions()));
+        auto data_file_reader = std::make_unique<rocksdb::RandomAccessFileReader>(
+            std::move(random_access_data_file), env.get());
+
+        size_t raw_size = ASSERT_RESULT(Env::Default()->GetFileSize(file_name));
+        LOG(INFO) << "Raw file size as reported by default GetFileSize: " << raw_size;
+
         auto random_access_file_reader = std::make_unique<rocksdb::RandomAccessFileReader>(
             std::move(random_access_file));
 
@@ -198,22 +254,29 @@ TEST_F(TestRocksDBEncryptedEnv, ParallelBlockBasedTables) {
 
         ASSERT_OK(bbtf.NewTableReader(
             table_reader_options, std::move(random_access_file_reader),
-            base_file_size,
+            seq_file_size,
             &table_reader,
             rocksdb::DataIndexLoadMode::PRELOAD_ON_OPEN,
             rocksdb::PrefetchFilter::YES));
 
+        table_reader->SetDataFileReader(std::move(data_file_reader));
+
         auto it = std::unique_ptr<rocksdb::InternalIterator>(
             table_reader->NewIterator(rocksdb::ReadOptions()));
+        it->SeekToFirst();
+        int i = start_key;
         while (it->Valid()) {
-          LOG(INFO) << "Reading: key=" << it->key();
+          ASSERT_EQ(it->key(), GetKey(i));
+          ASSERT_EQ(it->value(), GetValue(i));
+          i++;
           it->Next();
         }
+        std::this_thread::sleep_for(1ms * RandomUniformInt(1, 1000));
       }
     });
   }
 
-  thread_holder.WaitAndStop(30s);  
+  thread_holder.WaitAndStop(500s);
 }
 
 } // namespace enterprise

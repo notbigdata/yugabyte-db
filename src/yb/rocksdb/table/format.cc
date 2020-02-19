@@ -246,6 +246,8 @@ Status ReadFooterFromFile(RandomAccessFileReader* file, uint64_t file_size,
       (file_size > Footer::kMaxEncodedLength)
           ? static_cast<size_t>(file_size - Footer::kMaxEncodedLength)
           : 0;
+  LOG(INFO) << "DEBUG mbautin: reading footer at offset " << read_offset 
+            << ", file size: " << file_size;
   Status s = file->Read(read_offset, Footer::kMaxEncodedLength, &footer_input,
                         footer_space);
   if (!s.ok()) return s;
@@ -263,8 +265,9 @@ Status ReadFooterFromFile(RandomAccessFileReader* file, uint64_t file_size,
   if (enforce_table_magic_number != 0 &&
       enforce_table_magic_number != footer->table_magic_number()) {
     LOG(ERROR) << "DEBUG mbautin: Bad table magic number: " << yb::GetStackTrace();
-    return STATUS_FORMAT(Corruption, "Bad table magic number: $0",
-                         footer->table_magic_number());
+    return STATUS_FORMAT(Corruption, "Bad table magic number: $0, expected: $1",
+                         footer->table_magic_number(),
+                         enforce_table_magic_number);
   }
   return Status::OK();
 }
