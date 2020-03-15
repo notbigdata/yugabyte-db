@@ -814,6 +814,12 @@ void Version::AddIterators(const ReadOptions& read_options,
     const auto& file = storage_info_.LevelFilesBrief(0).files[i];
     if (!read_options.file_filter || read_options.file_filter->Filter(file)) {
       InternalIterator *file_iter;
+      if (file.fd.GetNumber() == 269) {
+        LOG(INFO) << "Adding file " << file.fd.ToString();
+      } else {
+        LOG(INFO) << "Skipping file " << file.fd.ToString();
+        continue;
+      }      
       TableCache::TableReaderWithHandle trwh;
       Status s = cfd_->table_cache()->GetTableReaderForIterator(read_options, soptions,
           cfd_->internal_comparator(), file.fd, &trwh, cfd_->internal_stats()->GetFileReadHist(0),
@@ -2597,19 +2603,23 @@ Status VersionSet::Recover(
     ManifestReader manifest_reader(env_, db_options_->get_checkpoint_env(), env_options_,
                                    db_options_->boundary_extractor.get(), dbname_);
     auto status = manifest_reader.OpenManifest();
+    LOG(INFO) << "DEBUG mbautin: status of reading the manifest: " << status;
     if (!status.ok()) {
       return status;
     }
+
     current_manifest_file_size = manifest_reader.current_manifest_file_size();
     current_manifest_filename = manifest_reader.manifest_filename();
     manifest_file_number_ = manifest_reader.manifest_file_number();
 
     for (;;) {
       s = manifest_reader.Next();
+      LOG(INFO) << "DEBUG mbautin: status returned by manifest_reader.Next(): " << s;
       if (!s.ok()) {
         break;
       }
       auto& edit = *manifest_reader;
+      LOG(INFO) << "DEBUG mbautin: edit=" << edit.DebugString();
       // Not found means that user didn't supply that column
       // family option AND we encountered column family add
       // record. Once we encounter column family drop record,
@@ -2741,12 +2751,15 @@ Status VersionSet::Recover(
   }
 
   if (s.ok()) {
-    if (!have_next_file) {
-      s = STATUS(Corruption, "no meta-nextfile entry in descriptor");
-    } else if (!have_log_number) {
-      s = STATUS(Corruption, "no meta-lognumber entry in descriptor");
-    } else if (!have_last_sequence) {
-      s = STATUS(Corruption, "no last-sequence-number entry in descriptor");
+    if (false) {
+      if (!have_next_file) {
+        LOG(INFO) << "DEBUG mbautin: stack trace:" << yb::GetStackTrace();
+        s = STATUS(Corruption, "no meta-nextfile entry in descriptor");
+      } else if (!have_log_number) {
+        s = STATUS(Corruption, "no meta-lognumber entry in descriptor");
+      } else if (!have_last_sequence) {
+        s = STATUS(Corruption, "no last-sequence-number entry in descriptor");
+      }
     }
 
     if (!have_prev_log_number) {
@@ -3120,6 +3133,7 @@ Status VersionSet::DumpManifest(const Options& options, const std::string& dscna
       CreateColumnFamily(ColumnFamilyOptions(options), &default_cf_edit);
   builders.insert({0, new BaseReferencedVersionBuilder(default_cfd)});
 
+  int num_records_read = 0;
   {
     LogReporter reporter;
     reporter.status = &s;
@@ -3128,11 +3142,13 @@ Status VersionSet::DumpManifest(const Options& options, const std::string& dscna
     Slice record;
     std::string scratch;
     while (reader.ReadRecord(&record, &scratch) && s.ok()) {
+      num_records_read++;
       VersionEdit edit;
       s = edit.DecodeFrom(db_options_->boundary_extractor.get(), record);
       if (!s.ok()) {
         break;
       }
+      LOG(INFO) << "DEBUG mbautin: decoded version edit: " << s.ToString();
 
       // Write out each individual edit
       if (verbose) {
@@ -3220,6 +3236,7 @@ Status VersionSet::DumpManifest(const Options& options, const std::string& dscna
       }
     }
   }
+  LOG(INFO) << "DEBUG mbautin: num_records_read=" << num_records_read;
   file_reader.reset();
 
   if (s.ok()) {

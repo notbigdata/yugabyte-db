@@ -657,7 +657,7 @@ set_mvn_parameters() {
   fi
   export MVN_SETTINGS_PATH
 
-  declare -ag mvn_common_options=(
+  mvn_common_options=(
     --batch-mode
     -DbinDir="$BUILD_ROOT/bin"
     -Dmaven.repo.local="$YB_MVN_LOCAL_REPO"

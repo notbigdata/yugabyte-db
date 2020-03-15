@@ -170,9 +170,9 @@ Status DecodeBoundaryValues(BoundaryValuesExtractor* extractor,
       }
     }
   } else if (values.has_user_frontier()) {
-    return STATUS_FORMAT(
-        IllegalState, "Boundary values contains user frontier but extractor is not specified: $0",
-        values);
+    // return STATUS_FORMAT(
+    //     IllegalState, "Boundary values contains user frontier but extractor is not specified: $0",
+    //     values);
   }
   return Status::OK();
 }

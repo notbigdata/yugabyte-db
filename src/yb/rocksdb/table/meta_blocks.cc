@@ -161,7 +161,7 @@ Status ReadProperties(const Slice& handle_value, RandomAccessFileReader* file,
 
   BlockContents block_contents;
   ReadOptions read_options;
-  read_options.verify_checksums = false;
+  read_options.verify_checksums = true;
   Status s;
   s = ReadBlockContents(file, footer, read_options, handle, &block_contents,
                         env, nullptr /* mem_tracker */, false);
@@ -248,7 +248,7 @@ Status ReadTableProperties(RandomAccessFileReader* file, uint64_t file_size,
   auto metaindex_handle = footer.metaindex_handle();
   BlockContents metaindex_contents;
   ReadOptions read_options;
-  read_options.verify_checksums = false;
+  read_options.verify_checksums = true;
   s = ReadBlockContents(file, footer, read_options, metaindex_handle,
                         &metaindex_contents, env, nullptr /* mem_tracker */, false);
   if (!s.ok()) {
@@ -303,7 +303,7 @@ Status FindMetaBlock(RandomAccessFileReader* file, uint64_t file_size,
   auto metaindex_handle = footer.metaindex_handle();
   BlockContents metaindex_contents;
   ReadOptions read_options;
-  read_options.verify_checksums = false;
+  read_options.verify_checksums = true;
   s = ReadBlockContents(file, footer, read_options, metaindex_handle,
                         &metaindex_contents, env, mem_tracker, false);
   if (!s.ok()) {
@@ -333,7 +333,7 @@ Status ReadMetaBlock(RandomAccessFileReader* file, uint64_t file_size,
   auto metaindex_handle = footer.metaindex_handle();
   BlockContents metaindex_contents;
   ReadOptions read_options;
-  read_options.verify_checksums = false;
+  read_options.verify_checksums = true;
   status = ReadBlockContents(file, footer, read_options, metaindex_handle,
                              &metaindex_contents, env, mem_tracker, false);
   if (!status.ok()) {

@@ -109,7 +109,9 @@ TwoLevelIterator::TwoLevelIterator(TwoLevelIteratorState* state,
                                    bool need_free_iter_and_state)
     : state_(state),
       first_level_iter_(first_level_iter),
-      need_free_iter_and_state_(need_free_iter_and_state) {}
+      need_free_iter_and_state_(need_free_iter_and_state) {
+  LOG(INFO) << "DEBUG mbautin: instantiating a TwoLevelIterator: " << yb::GetStackTrace();
+}
 
 void TwoLevelIterator::Seek(const Slice& target) {
   if (state_->check_prefix_may_match &&

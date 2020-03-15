@@ -151,6 +151,17 @@ Status BlockAccessCipherStream::EncryptByBlock(
     }
   }
 
+  if (false) {  // TODO mbautin: remove
+    LOG(INFO) << "DEBUG mbautin: encrypting by block at block_index=" 
+              << block_index << ", corresponding offset: "
+              << (block_index * EncryptionParams::kBlockSize)
+              << ", counter_overflow_workaround=" << counter_overflow_workaround
+              << ", start_counter=" << encryption_params_->counter
+              << ", start_index=" << start_index
+              << ", overflow_offset="
+              << ((0x100000000UL - encryption_params_->counter) * EncryptionParams::kBlockSize);
+  }
+
   // Lock the encryption op since we modify encryption context.
   std::lock_guard<simple_spinlock> l(mutex_);
 

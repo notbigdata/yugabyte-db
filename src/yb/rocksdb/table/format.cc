@@ -27,7 +27,9 @@
 
 #include <string>
 
+#include "yb/gutil/macros.h"
 #include "yb/rocksdb/env.h"
+#include "yb/rocksdb/options.h"
 #include "yb/rocksdb/table/block.h"
 #include "yb/rocksdb/util/coding.h"
 #include "yb/rocksdb/util/compression.h"
@@ -49,15 +51,10 @@ namespace rocksdb {
 
 extern const uint64_t kLegacyBlockBasedTableMagicNumber;
 extern const uint64_t kBlockBasedTableMagicNumber;
-
-#ifndef ROCKSDB_LITE
-extern const uint64_t kLegacyPlainTableMagicNumber;
 extern const uint64_t kPlainTableMagicNumber;
-#else
-// ROCKSDB_LITE doesn't have plain table
-const uint64_t kLegacyPlainTableMagicNumber = 0;
-const uint64_t kPlainTableMagicNumber = 0;
-#endif
+extern const uint64_t kLegacyPlainTableMagicNumber;
+extern const uint64_t kCuckooTableMagicNumber;
+
 const uint32_t DefaultStackBufferSize = 5000;
 
 void BlockHandle::AppendEncodedTo(std::string* dst) const {
@@ -71,6 +68,9 @@ void BlockHandle::AppendEncodedTo(std::string* dst) const {
 Status BlockHandle::DecodeFrom(Slice* input) {
   if (GetVarint64(input, &offset_) &&
       GetVarint64(input, &size_)) {
+    if (offset_ == 196446 && size_ == 11057) {
+      LOG(INFO) << "DEBUG mbautin: bad block handle created from here: " << yb::GetStackTrace();
+    }
     return Status::OK();
   } else {
     return STATUS(Corruption, "bad block handle");
@@ -116,6 +116,15 @@ inline uint64_t UpconvertLegacyFooterFormat(uint64_t magic_number) {
   assert(false);
   return 0;
 }
+
+inline bool IsValidMagicNumber(uint64_t magic_number) {
+  return magic_number == kLegacyBlockBasedTableMagicNumber ||
+         magic_number == kBlockBasedTableMagicNumber ||
+         magic_number == kPlainTableMagicNumber ||
+         magic_number == kLegacyPlainTableMagicNumber ||
+         magic_number == kCuckooTableMagicNumber;
+}
+
 }  // namespace
 
 // legacy footer format:
@@ -273,12 +282,32 @@ Status ReadFooterFromFile(
       Slice mutable_read_result(read_result);
       *footer = Footer();
       RETURN_NOT_OK(footer->DecodeFrom(&mutable_read_result));
+      if (enforce_table_magic_number == 0 && !IsValidMagicNumber(footer->table_magic_number())) {
+        return STATUS_FORMAT(Corruption, "Bad table magic number: $0", enforce_table_magic_number);        
+      }
+
       if (enforce_table_magic_number != 0 &&
           enforce_table_magic_number != footer->table_magic_number()) {
+        LOG(INFO) << Format(
+                "DEBUG mbautin: bad table magic number $0, expected $1",
+                footer->table_magic_number(),
+                enforce_table_magic_number)
+            << " when reading footer from file "
+            << file->file()->filename()
+            << ", footer length=" << read_result.size();
+
         return STATUS_FORMAT(Corruption, "Bad table magic number: $0, expected: $1",
                               footer->table_magic_number(),
                               enforce_table_magic_number);
       }
+      LOG(INFO) << Format(
+              "DEBUG mbautin: GOOD table magic number $0, expected $1",
+              footer->table_magic_number(),
+              enforce_table_magic_number)
+          << " when reading footer from file "
+          << file->file()->filename()
+          << ", footer length=" << read_result.size();
+      LOG(INFO) << "DEBUG mbautin: footer data: " << footer->ToString();
       return Status::OK();
     }
     RandomAccessFileReader* file;
@@ -291,6 +320,37 @@ Status ReadFooterFromFile(
 
 // Without anonymous namespace here, we fail the warning -Wmissing-prototypes
 namespace {
+
+string GetHexDump(Slice data) {
+  std::ostringstream out;
+  vector<string> hex_lines;
+  vector<string> char_lines;
+  const auto kBytesPerLine = 64;
+
+  auto n = data.size();
+  auto block_size = n - kBlockTrailerSize;
+  out << "Data block of size " << block_size << " (plus " << kBlockTrailerSize << " bytes trailer): "
+      << std::endl;
+  for (size_t i = 0; i < n; ++i) {
+    if (i % kBytesPerLine == 0) {
+      hex_lines.emplace_back();
+      char_lines.emplace_back();
+    }
+    uint8_t c = data.data()[i];
+    hex_lines.back() += StringPrintf("%02x ", c);
+    char_lines.back().push_back((32 <= c && c <= 126) ? static_cast<char>(c) : '.');
+  }
+  for (size_t i = 0; i < hex_lines.size(); ++i) {
+    if (char_lines[i].empty()) {
+      break;
+    }
+    const auto& hex_line = hex_lines[i];
+    const auto& char_line = char_lines[i];
+    out << char_line << std::string(kBytesPerLine - char_line.size(), ' ') << ' '
+        << hex_line << std::endl;
+  }
+  return out.str();
+}
 
 struct ChecksumData {
   uint32_t expected;
@@ -329,7 +389,7 @@ Result<ChecksumData> ComputeChecksum(
       Corruption, "Unknown checksum type in file: $0, block handle: $1",
       file->file()->filename(), handle.ToDebugString());
 }
-
+    
 Status VerifyBlockChecksum(
     RandomAccessFileReader* file,
     const Footer& footer,
@@ -341,10 +401,102 @@ Status VerifyBlockChecksum(
   auto checksum = VERIFY_RESULT(
       ComputeChecksum(file, footer, handle, Slice(data, block_size + 1), raw_expected_checksum));
   if (checksum.actual != checksum.expected) {
+    std::cerr << "DEBUG mbautin: hex dump of a block with a checksum mismatch (" 
+              << "file " << file->file()->filename()
+              << ", " << handle.ToDebugString() << "):\n"
+              << GetHexDump(Slice(data, block_size + 5));
+
+    if (false) {
+      LOG(INFO) << "DEBUG mbautin: trying to restore block offsets in file "
+                << file->file()->filename();
+      uint64_t cur_offset = 0;
+      auto file_size_result = file->file()->Size();
+      CHECK_OK(file_size_result);
+      auto file_size = file_size_result.get();
+
+      std::vector<char> buf_vec;
+      buf_vec.resize(50 * 1024 * 1024);
+      char* buf = buf_vec.data();
+      
+      if (false && 
+          file->file()->filename() == "/nfusr/dev-server/mbautin/encryption_corruption/new_bad_file/tablet-f7be082e2db04aca9704c2f84d1d2721/000269.sst.sblock.0") {
+        Slice tmp_read_result;
+        CHECK_OK(file->Read(0, file_size, &tmp_read_result, buf));
+        const char* out_path = "/tmp/000269.sst.sblock.0.decrypted";
+        FILE* fp = fopen(out_path, "wb");
+        CHECK_NOTNULL(fp);
+        CHECK_EQ(fwrite(buf, 1, file_size, fp), file_size);
+        fclose(fp);
+        LOG(INFO) << "Wrote the decrypted file at " << out_path;
+        LOG(FATAL) << "Stop here";
+      }
+
+      if (false && file->file()->filename() == "/nfusr/dev-server/mbautin/encryption_corruption/new_bad_file/tablet-f7be082e2db04aca9704c2f84d1d2721/000269.sst.sblock.0") {
+        // Slice tmp_read_result;
+        // CHECK_OK(file->Read(0, file_size, &tmp_read_result, buf));
+        // CHECK_EQ(tmp_read_result.size(), file_size);
+        // CHECK_EQ(tmp_read_result.data(), buf);
+        // for (size_t i = 0; i < file_size; ++i) {
+        //   if (buf[i] == kSnappyCompression) {
+        //     size_t bytes_left = file_size - i;
+        //     if (bytes_left >= 5) {
+        //       const uint32_t raw_expected_checksum2 = DecodeFixed32(buf + i + 1); 
+        //       for (size_t start_pos = 0; start_pos < i; ++start_pos) {
+        //         auto checksum2 = VERIFY_RESULT(
+        //             ComputeChecksum(file, footer, handle, Slice(buf + start_pos, i + 1 - start_pos),
+        //             raw_expected_checksum2));
+        //       }
+        //     }
+        //   }
+        // }
+
+        LOG(FATAL) << "Stopping analysis here";
+      }
+
+      if (file->file()->filename() == "/nfusr/dev-server/mbautin/encryption_corruption/new_bad_file/tablet-f7be082e2db04aca9704c2f84d1d2721/000269.sst.sblock.0") {
+
+        while (cur_offset < file_size) {
+          bool found_valid = false;
+          uint64_t valid_block_size = 0;
+          for (uint64_t cur_block_size = 5;
+              cur_block_size <= file_size - cur_offset;
+              ++cur_block_size) {
+            if (cur_block_size % 100000 == 0) {
+              LOG(INFO) << "DEBUG mbautin: Trying block size " << cur_block_size << " at offset " << cur_offset;
+            }
+            Slice result;
+            Status read_block_result = file->Read(cur_offset, cur_block_size, &result, buf);
+            CHECK_OK(read_block_result);
+            const uint32_t raw_expected_checksum2 = DecodeFixed32(buf + cur_block_size - 4);
+            auto checksum2 = VERIFY_RESULT(
+                ComputeChecksum(file, footer, handle, Slice(buf, cur_block_size - 4),
+                raw_expected_checksum2));
+            if (checksum2.expected == checksum2.actual) {
+              LOG(INFO) << "DEBUG mbautin: Found valid block size for offset " << cur_offset
+                        << ": block_size (including checksum and compression type): " << cur_block_size;
+              found_valid = true;
+              valid_block_size = cur_block_size;
+              break;
+            }
+          }
+          if (found_valid) {
+            cur_offset += valid_block_size;
+            LOG(INFO) << "DEBUG mbautin: Advancing to offset: " << cur_offset;
+          } else {
+            LOG(INFO) << "DEBUG mbautin: could not find valid block size for offset " << cur_offset;
+            cur_offset++;
+            LOG(INFO) << "DEBUG mbautin: incremented offset to " << cur_offset;
+          }
+        }
+      }
+    }
+    
     return STATUS_FORMAT(
         Corruption, "Block checksum mismatch in file: $0, block handle: $1",
         file->file()->filename(), handle.ToDebugString());
   }
+  LOG(INFO) << "DEBUG mbautin: checksum matched for block: " << handle.ToDebugString()
+            << " in file " << file->file()->filename();
   return Status::OK();
 }
 

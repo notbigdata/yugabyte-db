@@ -254,6 +254,8 @@ class BlockBasedTable::BlockEntryIteratorState : public TwoLevelIteratorState {
         block_type_(block_type) {}
 
   InternalIterator* NewSecondaryIterator(const Slice& index_value) override {
+    LOG(INFO) << "DEBUG mbautin: NewSecondaryIterator called, index_value: "
+              << index_value.ToDebugString();
     return table_->NewDataBlockIterator(read_options_, index_value, block_type_);
   }
 
@@ -1525,6 +1527,7 @@ Status BlockBasedTable::CreateDataBlockIndexReader(
     index_type_on_file = IndexType::kBinarySearch;
   }
 
+  LOG(INFO) << "DEBUG mbautin: index type: " << index_type_on_file;
   switch (index_type_on_file) {
     case IndexType::kBinarySearch: {
       return BinarySearchIndexReader::Create(
@@ -1566,6 +1569,7 @@ Status BlockBasedTable::CreateDataBlockIndexReader(
             BlockBasedTablePropertyNames::kNumIndexLevels);
       }
       int num_levels = DecodeFixed32(pos->second.c_str());
+      LOG(INFO) << "DEBUG mbautin: num_levels=" << num_levels << ", footer=" << footer.ToString();
       auto result = MultiLevelIndexReader::Create(
           file, footer, num_levels, footer.index_handle(), env, comparator, rep_->mem_tracker);
       RETURN_NOT_OK(result);

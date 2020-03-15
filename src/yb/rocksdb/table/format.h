@@ -269,7 +269,11 @@ extern Status UncompressBlockContents(const char* data, size_t n,
 inline BlockHandle::BlockHandle() : BlockHandle(kUint64FieldNotSet, kUint64FieldNotSet) {}
 
 inline BlockHandle::BlockHandle(uint64_t _offset, uint64_t _size)
-    : offset_(_offset), size_(_size) {}
+    : offset_(_offset), size_(_size) {
+  if (_offset == 196446 && _size == 11057) {
+    LOG(INFO) << "DEBUG mbautin: bad block handle created from here: " << yb::GetStackTrace();
+  }
+}
 
 }  // namespace rocksdb
 
