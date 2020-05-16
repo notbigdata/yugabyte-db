@@ -44,7 +44,7 @@ void TransitionLoggingIteratorWrapper::SeekToLast() {
 
 void TransitionLoggingIteratorWrapper::Seek(const Slice& target) {
   LogBeforeAndAfter(
-      Format("Seek($0)", FormatSliceAsStr(target)),
+      Format("Seek($0)", target.ToDebugString()),
       [this, target]() { DbIteratorWrapper::Seek(target); });
 }
 
@@ -57,16 +57,14 @@ void TransitionLoggingIteratorWrapper::Prev() {
 }
 
 std::string TransitionLoggingIteratorWrapper::LogPrefix() const {
-  return StringPrintf("%sRocksDB Iterator %p ", rocksdb_log_prefix_.c_str(), wrapped_);
+  return StringPrintf("%sIter %p ", rocksdb_log_prefix_.c_str(), wrapped_);
 }
 
 std::string TransitionLoggingIteratorWrapper::StateStr() const {
   if (!Valid()) {
     return "<Invalid>";
   }
-  return Format("{ key: $0 value $1 }",
-                FormatSliceAsStr(key()),
-                FormatSliceAsStr(value()));
+  return Format("{ key: $0 value $1 }", key().ToDebugString(), value().ToDebugString());
 }
 
 }  // namespace rocksdb

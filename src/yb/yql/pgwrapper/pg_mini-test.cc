@@ -1085,11 +1085,7 @@ class PgMiniRocksDbIteratorLoggingTest : public PgMiniSingleTServerTest {
     int last_row_to_scan;
   };
 
-  int NumTabletServers() override {
-    return 1;
-  }
-
-  void RunIteratorLoggingTest(IteratorLoggingTestConfig config) {
+  void RunIteratorLoggingTest(const IteratorLoggingTestConfig& config) {
     auto conn = ASSERT_RESULT(Connect());
 
     std::string non_pk_columns_schema;
