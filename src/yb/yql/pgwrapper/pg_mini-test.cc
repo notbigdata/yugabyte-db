@@ -1057,7 +1057,7 @@ class PgMiniBigPrefetchTest : public PgMiniSingleTServerTest {
 TEST_F_EX(PgMiniTest, YB_DISABLE_TEST_IN_TSAN(BigRead), PgMiniBigPrefetchTest) {
   constexpr int kRows = RegularBuildVsSanitizers(1000000, 10000);
   constexpr int kBlockSize = 1000;
-  constexpr int kReads = 3;
+  constexpr int kReads = 10;
 
   Run(kRows, kBlockSize, kReads);
 }

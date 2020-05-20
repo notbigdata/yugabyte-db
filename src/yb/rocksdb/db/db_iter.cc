@@ -878,7 +878,6 @@ class RegularDBIter : public Iterator {
         version_number_(version_number),
         iter_pinned_(false) {
     RecordTick(statistics_, NO_ITERATORS);
-    max_skip_ = max_sequential_skip_in_iterations;
   }
 
   virtual ~RegularDBIter() {
@@ -973,7 +972,7 @@ class RegularDBIter : public Iterator {
   void RevalidateAfterUpperBoundChange() override {
     if (iter_->Valid() && direction_ == kForward) {
       valid_ = true;
-      FindNextUserEntry(/* skipping= */ false);
+      FindNextUserEntry();
     }
   }
 
@@ -982,11 +981,10 @@ class RegularDBIter : public Iterator {
   void PrevInternal();
   void FindParseableKey(ParsedInternalKey* ikey, Direction direction);
   bool FindValueForCurrentKey();
-  bool FindValueForCurrentKeyUsingSeek();
   void FindPrevUserKey();
   void FindNextUserKey();
-  inline void FindNextUserEntry(bool skipping);
-  void FindNextUserEntryInternal(bool skipping);
+  inline void FindNextUserEntry();
+  void FindNextUserEntryInternal();
   bool ParseKey(ParsedInternalKey* key);
 
   inline void ClearSavedValue() {
@@ -1011,7 +1009,6 @@ class RegularDBIter : public Iterator {
   Direction direction_;
   bool valid_;
   Statistics* statistics_;
-  uint64_t max_skip_;
   uint64_t version_number_;
   bool iter_pinned_;
 
@@ -1053,7 +1050,7 @@ void RegularDBIter::Next() {
     valid_ = false;
     return;
   }
-  FindNextUserEntry(true /* skipping the current user key */);
+  FindNextUserEntry();
   if (statistics_ != nullptr) {
     RecordTick(statistics_, NUMBER_DB_NEXT);
     if (valid_) {
@@ -1063,7 +1060,6 @@ void RegularDBIter::Next() {
   }
 }
 
-// PRE: saved_key_ has the current user key if skipping
 // POST: saved_key_ should have the next user key if valid_,
 //       if the current entry is a result of merge
 //           current_entry_is_merged_ => true
@@ -1071,39 +1067,28 @@ void RegularDBIter::Next() {
 //
 // NOTE: In between, saved_key_ can point to a user key that has
 //       a delete marker
-inline void RegularDBIter::FindNextUserEntry(bool skipping) {
+inline void RegularDBIter::FindNextUserEntry() {
   PERF_TIMER_GUARD(find_next_user_entry_time);
-  FindNextUserEntryInternal(skipping);
+  FindNextUserEntryInternal();
 }
 
 // Actual implementation of RegularDBIter::FindNextUserEntry()
-void RegularDBIter::FindNextUserEntryInternal(bool skipping) {
-  // Loop until we hit an acceptable entry to yield
+void RegularDBIter::FindNextUserEntryInternal() {
   assert(iter_->Valid());
   assert(direction_ == kForward);
   uint64_t num_skipped = 0;
   do {
     ParsedInternalKey ikey;
-
     if (ParseKey(&ikey)) {
-
-      if (ikey.sequence <= sequence_) {
-        if (skipping &&
-           user_comparator_->Compare(ikey.user_key, saved_key_.GetKey()) <= 0) {
-          num_skipped++;  // skip this entry
-          PERF_COUNTER_ADD(internal_key_skipped_count, 1);
-        } else {
-          switch (ikey.type) {
-            case kTypeValue:
-              valid_ = true;
-              saved_key_.SetKey(ikey.user_key,
-                                !iter_->IsKeyPinned() /* copy */);
-              return;
-            default:
-              LOG(FATAL) << "Unsupported internal key type: " << ikey.type;
-              break;
-          }
-        }
+      switch (ikey.type) {
+        case kTypeValue:
+          valid_ = true;
+          saved_key_.SetKey(ikey.user_key,
+                            !iter_->IsKeyPinned() /* copy */);
+          return;
+        default:
+          LOG(FATAL) << "Unsupported internal key type: " << ikey.type;
+          break;
       }
     }
     iter_->Next();
@@ -1184,14 +1169,8 @@ bool RegularDBIter::FindValueForCurrentKey() {
   ParsedInternalKey ikey;
   FindParseableKey(&ikey, kReverse);
 
-  size_t num_skipped = 0;
-  while (iter_->Valid() && ikey.sequence <= sequence_ &&
+  while (iter_->Valid() &&
          user_comparator_->Equal(ikey.user_key, saved_key_.GetKey())) {
-    // We iterate too much: let's use Seek() to avoid too much key comparisons
-    if (num_skipped >= max_skip_) {
-      return FindValueForCurrentKeyUsingSeek();
-    }
-
     last_key_entry_type = ikey.type;
     switch (last_key_entry_type) {
       case kTypeValue:
@@ -1204,7 +1183,6 @@ bool RegularDBIter::FindValueForCurrentKey() {
     PERF_COUNTER_ADD(internal_key_skipped_count, 1);
     assert(user_comparator_->Equal(ikey.user_key, saved_key_.GetKey()));
     iter_->Prev();
-    ++num_skipped;
     FindParseableKey(&ikey, kReverse);
   }
 
@@ -1217,33 +1195,6 @@ bool RegularDBIter::FindValueForCurrentKey() {
   }
   valid_ = true;
   return true;
-}
-
-// This function is used in FindValueForCurrentKey.
-// We use Seek() function instead of Prev() to find necessary value
-bool RegularDBIter::FindValueForCurrentKeyUsingSeek() {
-  std::string last_key;
-  AppendInternalKey(&last_key, ParsedInternalKey(saved_key_.GetKey(), sequence_,
-                                                 kValueTypeForSeek));
-  iter_->Seek(last_key);
-  RecordTick(statistics_, NUMBER_OF_RESEEKS_IN_ITERATION);
-
-  // assume there is at least one parseable key for this user key
-  ParsedInternalKey ikey;
-  FindParseableKey(&ikey, kForward);
-
-  if (ikey.type == kTypeValue || ikey.type == kTypeDeletion ||
-      ikey.type == kTypeSingleDeletion) {
-    if (ikey.type == kTypeValue) {
-      saved_value_ = iter_->value().ToString();
-      valid_ = true;
-      return true;
-    }
-    valid_ = false;
-    return false;
-  }
-
-  LOG(FATAL) << "Unsupported internal key type: " << ikey.type;
 }
 
 // Used in Next to change directions
@@ -1275,18 +1226,6 @@ void RegularDBIter::FindPrevUserKey() {
   while (iter_->Valid() && ((cmp = user_comparator_->Compare(
                                  ikey.user_key, saved_key_.GetKey())) == 0 ||
                             (cmp > 0 && ikey.sequence > sequence_))) {
-    if (cmp == 0) {
-      if (num_skipped >= max_skip_) {
-        num_skipped = 0;
-        IterKey last_key;
-        last_key.SetInternalKey(ParsedInternalKey(
-            saved_key_.GetKey(), kMaxSequenceNumber, kValueTypeForSeek));
-        iter_->Seek(last_key.GetKey());
-        RecordTick(statistics_, NUMBER_OF_RESEEKS_IN_ITERATION);
-      } else {
-        ++num_skipped;
-      }
-    }
     iter_->Prev();
     FindParseableKey(&ikey, kReverse);
   }
@@ -1340,7 +1279,7 @@ void RegularDBIter::SeekToFirst() {
 
   RecordTick(statistics_, NUMBER_DB_SEEK);
   if (iter_->Valid()) {
-    FindNextUserEntry(false /* not skipping */);
+    FindNextUserEntry();
     if (statistics_ != nullptr) {
       if (valid_) {
         RecordTick(statistics_, NUMBER_DB_SEEK_FOUND);
@@ -1381,8 +1320,7 @@ Iterator* NewDBIterator(Env* env, const ImmutableCFOptions& ioptions,
                         uint64_t max_sequential_skip_in_iterations,
                         uint64_t version_number,
                         const Slice* iterate_upper_bound,
-                        bool prefix_same_as_start,
-                        bool pin_data,
+                        bool prefix_same_as_start, bool pin_data,
                         bool use_yb_simplified_regular_db_iter) {
   if (use_yb_simplified_regular_db_iter) {
     if (iterate_upper_bound) {

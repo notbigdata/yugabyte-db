@@ -346,8 +346,8 @@ class IterKey {
 
   // Append "non_shared_data" to its back, from "shared_len"
   // This function is used in Block::Iter::ParseNextKey
-  // shared_len: bytes in [0, shard_len-1] would be remained
-  // non_shared_data: data to be append, its length must be >= non_shared_len
+  // shared_len: bytes in [0, shard_len-1] will remain
+  // non_shared_data: data to append, its length must be >= non_shared_len
   void TrimAppend(const size_t shared_len, const char* non_shared_data,
                   const size_t non_shared_len) {
     assert(shared_len <= key_size_);
