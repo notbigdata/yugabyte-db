@@ -865,9 +865,7 @@ class RegularDBIter : public Iterator {
 
   RegularDBIter(Env* env, const ImmutableCFOptions& ioptions, const Comparator* cmp,
          InternalIterator* iter, SequenceNumber s, bool arena_mode,
-         uint64_t max_sequential_skip_in_iterations, uint64_t version_number,
-         const Slice* iterate_upper_bound = nullptr,
-         bool prefix_same_as_start = false)
+         uint64_t max_sequential_skip_in_iterations, uint64_t version_number)
       : arena_mode_(arena_mode),
         env_(env),
         logger_(ioptions.info_log),
@@ -878,8 +876,6 @@ class RegularDBIter : public Iterator {
         valid_(false),
         statistics_(ioptions.statistics),
         version_number_(version_number),
-        iterate_upper_bound_(iterate_upper_bound),
-        prefix_same_as_start_(prefix_same_as_start),
         iter_pinned_(false) {
     RecordTick(statistics_, NO_ITERATORS);
     max_skip_ = max_sequential_skip_in_iterations;
@@ -1017,9 +1013,6 @@ class RegularDBIter : public Iterator {
   Statistics* statistics_;
   uint64_t max_skip_;
   uint64_t version_number_;
-  const Slice* iterate_upper_bound_;
-  IterKey prefix_start_;
-  bool prefix_same_as_start_;
   bool iter_pinned_;
 
   // No copying allowed
@@ -1093,10 +1086,6 @@ void RegularDBIter::FindNextUserEntryInternal(bool skipping) {
     ParsedInternalKey ikey;
 
     if (ParseKey(&ikey)) {
-      if (iterate_upper_bound_ != nullptr &&
-          user_comparator_->Compare(ikey.user_key, *iterate_upper_bound_) >= 0) {
-        break;
-      }
 
       if (ikey.sequence <= sequence_) {
         if (skipping &&
@@ -1117,21 +1106,7 @@ void RegularDBIter::FindNextUserEntryInternal(bool skipping) {
         }
       }
     }
-    // If we have sequentially iterated via numerous keys and still not
-    // found the next user-key, then it is better to seek so that we can
-    // avoid too many key comparisons. We seek to the last occurrence of
-    // our current key by looking for sequence number 0 and type deletion
-    // (the smallest type).
-    if (skipping && num_skipped > max_skip_) {
-      num_skipped = 0;
-      std::string last_key;
-      AppendInternalKey(&last_key, ParsedInternalKey(saved_key_.GetKey(), 0,
-                                                     kTypeDeletion));
-      iter_->Seek(last_key);
-      RecordTick(statistics_, NUMBER_OF_RESEEKS_IN_ITERATION);
-    } else {
-      iter_->Next();
-    }
+    iter_->Next();
   } while (iter_->Valid());
   valid_ = false;
 }
@@ -1342,7 +1317,7 @@ void RegularDBIter::Seek(const Slice& target) {
   if (iter_->Valid()) {
     direction_ = kForward;
     ClearSavedValue();
-    FindNextUserEntry(false /* not skipping */);
+    FindNextUserEntry();
     if (statistics_ != nullptr) {
       if (valid_) {
         RecordTick(statistics_, NUMBER_DB_SEEK_FOUND);
@@ -1385,28 +1360,6 @@ void RegularDBIter::SeekToLast() {
     PERF_TIMER_GUARD(seek_internal_seek_time);
     iter_->SeekToLast();
   }
-  // When the iterate_upper_bound is set to a value,
-  // it will seek to the last key before the
-  // ReadOptions.iterate_upper_bound
-  if (iter_->Valid() && iterate_upper_bound_ != nullptr) {
-    saved_key_.SetKey(*iterate_upper_bound_, false /* copy */);
-    std::string last_key;
-    AppendInternalKey(&last_key,
-                      ParsedInternalKey(saved_key_.GetKey(), kMaxSequenceNumber,
-                                        kValueTypeForSeek));
-
-    iter_->Seek(last_key);
-
-    if (!iter_->Valid()) {
-      iter_->SeekToLast();
-    } else {
-      iter_->Prev();
-      if (!iter_->Valid()) {
-        valid_ = false;
-        return;
-      }
-    }
-  }
   PrevInternal();
   if (statistics_ != nullptr) {
     RecordTick(statistics_, NUMBER_DB_SEEK);
@@ -1428,14 +1381,17 @@ Iterator* NewDBIterator(Env* env, const ImmutableCFOptions& ioptions,
                         uint64_t max_sequential_skip_in_iterations,
                         uint64_t version_number,
                         const Slice* iterate_upper_bound,
-                        bool prefix_same_as_start, bool pin_data,
+                        bool prefix_same_as_start,
+                        bool pin_data,
                         bool use_yb_simplified_regular_db_iter) {
   if (use_yb_simplified_regular_db_iter) {
+    if (iterate_upper_bound) {
+      LOG(FATAL) << "iterate_upper_bound is not supported for RegularDBIter";
+    }
     auto* regular_db_iter =
         new RegularDBIter(
             env, ioptions, user_key_comparator, internal_iter, sequence,
-            false, max_sequential_skip_in_iterations, version_number,
-            iterate_upper_bound, prefix_same_as_start);
+            false, max_sequential_skip_in_iterations, version_number);
     if (pin_data) {
       CHECK_OK(regular_db_iter->PinData());
     }
