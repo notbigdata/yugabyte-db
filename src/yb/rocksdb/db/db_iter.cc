@@ -872,12 +872,10 @@ class RegularDBIter : public Iterator {
         env_(env),
         logger_(ioptions.info_log),
         user_comparator_(cmp),
-        user_merge_operator_(ioptions.merge_operator),
         iter_(iter),
         sequence_(s),
         direction_(kForward),
         valid_(false),
-        current_entry_is_merged_(false),
         statistics_(ioptions.statistics),
         version_number_(version_number),
         iterate_upper_bound_(iterate_upper_bound),
@@ -908,8 +906,7 @@ class RegularDBIter : public Iterator {
   }
   Slice value() const override {
     assert(valid_);
-    return (direction_ == kForward && !current_entry_is_merged_) ?
-      iter_->value() : saved_value_;
+    return direction_ == kForward ? iter_->value() : saved_value_;
   }
   Status status() const override {
     if (status_.ok()) {
@@ -987,7 +984,6 @@ class RegularDBIter : public Iterator {
   inline void FindNextUserEntry(bool skipping);
   void FindNextUserEntryInternal(bool skipping);
   bool ParseKey(ParsedInternalKey* key);
-  void MergeValuesNewToOld();
 
   inline void ClearSavedValue() {
     if (saved_value_.capacity() > 1048576) {
@@ -1002,7 +998,6 @@ class RegularDBIter : public Iterator {
   Env* const env_;
   Logger* logger_;
   const Comparator* const user_comparator_;
-  const MergeOperator* const user_merge_operator_;
   InternalIterator* iter_;
   SequenceNumber const sequence_;
 
@@ -1011,7 +1006,6 @@ class RegularDBIter : public Iterator {
   std::string saved_value_;
   Direction direction_;
   bool valid_;
-  bool current_entry_is_merged_;
   Statistics* statistics_;
   uint64_t max_skip_;
   uint64_t version_number_;
@@ -1019,8 +1013,6 @@ class RegularDBIter : public Iterator {
   IterKey prefix_start_;
   bool prefix_same_as_start_;
   bool iter_pinned_;
-  // List of operands for merge operator.
-  std::deque<std::string> merge_operands_;
 
   // No copying allowed
   RegularDBIter(const RegularDBIter&);
@@ -1048,18 +1040,14 @@ void RegularDBIter::Next() {
     if (!iter_->Valid()) {
       iter_->SeekToFirst();
     }
-  } else if (iter_->Valid() && !current_entry_is_merged_) {
-    // If the current value is not a merge, the iter position is the
-    // current key, which is already returned. We can safely issue a
+  } else if (iter_->Valid()) {
+    // The iter position is the current key, which is already returned. We can safely issue a
     // Next() without checking the current key.
-    // If the current key is a merge, very likely iter already points
-    // to the next internal position.
     iter_->Next();
     PERF_COUNTER_ADD(internal_key_skipped_count, 1);
   }
 
-  // Now we point to the next internal position, for both of merge and
-  // not merge cases.
+  // Now we point to the next internal position.
   if (!iter_->Valid()) {
     valid_ = false;
     return;
@@ -1092,7 +1080,6 @@ void RegularDBIter::FindNextUserEntryInternal(bool skipping) {
   // Loop until we hit an acceptable entry to yield
   assert(iter_->Valid());
   assert(direction_ == kForward);
-  current_entry_is_merged_ = false;
   uint64_t num_skipped = 0;
   do {
     ParsedInternalKey ikey;
@@ -1110,31 +1097,13 @@ void RegularDBIter::FindNextUserEntryInternal(bool skipping) {
           PERF_COUNTER_ADD(internal_key_skipped_count, 1);
         } else {
           switch (ikey.type) {
-            case kTypeDeletion:
-            case kTypeSingleDeletion:
-              // Arrange to skip all upcoming entries for this key since
-              // they are hidden by this deletion.
-              saved_key_.SetKey(ikey.user_key,
-                                !iter_->IsKeyPinned() /* copy */);
-              skipping = true;
-              num_skipped = 0;
-              PERF_COUNTER_ADD(internal_delete_skipped_count, 1);
-              break;
             case kTypeValue:
               valid_ = true;
               saved_key_.SetKey(ikey.user_key,
                                 !iter_->IsKeyPinned() /* copy */);
               return;
-            case kTypeMerge:
-              // By now, we are sure the current ikey is going to yield a value
-              saved_key_.SetKey(ikey.user_key,
-                                !iter_->IsKeyPinned() /* copy */);
-              current_entry_is_merged_ = true;
-              valid_ = true;
-              MergeValuesNewToOld();  // Go to a different state machine
-              return;
             default:
-              assert(false);
+              LOG(FATAL) << "Unsupported internal key type: " << ikey.type;
               break;
           }
         }
@@ -1159,79 +1128,6 @@ void RegularDBIter::FindNextUserEntryInternal(bool skipping) {
   valid_ = false;
 }
 
-// Merge values of the same user key starting from the current iter_ position
-// Scan from the newer entries to older entries.
-// PRE: iter_->key() points to the first merge type entry
-//      saved_key_ stores the user key
-// POST: saved_value_ has the merged value for the user key
-//       iter_ points to the next entry (or invalid)
-void RegularDBIter::MergeValuesNewToOld() {
-  if (!user_merge_operator_) {
-    RLOG(InfoLogLevel::ERROR_LEVEL,
-        logger_, "Options::merge_operator is null.");
-    status_ = STATUS(InvalidArgument, "user_merge_operator_ must be set.");
-    valid_ = false;
-    return;
-  }
-
-  // Start the merge process by pushing the first operand
-  std::deque<std::string> operands;
-  operands.push_front(iter_->value().ToString());
-
-  ParsedInternalKey ikey;
-  for (iter_->Next(); iter_->Valid(); iter_->Next()) {
-    if (!ParseKey(&ikey)) {
-      // skip corrupted key
-      continue;
-    }
-
-    if (!user_comparator_->Equal(ikey.user_key, saved_key_.GetKey())) {
-      // hit the next user key, stop right here
-      break;
-    } else if (kTypeDeletion == ikey.type || kTypeSingleDeletion == ikey.type) {
-      // hit a delete with the same user key, stop right here
-      // iter_ is positioned after delete
-      iter_->Next();
-      break;
-    } else if (kTypeValue == ikey.type) {
-      // hit a put, merge the put value with operands and store the
-      // final result in saved_value_. We are done!
-      // ignore corruption if there is any.
-      const Slice val = iter_->value();
-      {
-        StopWatchNano timer(env_, statistics_ != nullptr);
-        PERF_TIMER_GUARD(merge_operator_time_nanos);
-        user_merge_operator_->FullMerge(ikey.user_key, &val, operands,
-                                        &saved_value_, logger_);
-        RecordTick(statistics_, MERGE_OPERATION_TOTAL_TIME,
-                   timer.ElapsedNanos());
-      }
-      // iter_ is positioned after put
-      iter_->Next();
-      return;
-    } else if (kTypeMerge == ikey.type) {
-      // hit a merge, add the value as an operand and run associative merge.
-      // when complete, add result to operands and continue.
-      const Slice& val = iter_->value();
-      operands.push_front(val.ToString());
-    } else {
-      assert(false);
-    }
-  }
-
-  {
-    StopWatchNano timer(env_, statistics_ != nullptr);
-    PERF_TIMER_GUARD(merge_operator_time_nanos);
-    // we either exhausted all internal keys under this user key, or hit
-    // a deletion marker.
-    // feed null as the existing value to the merge operator, such that
-    // client can differentiate this scenario and do things accordingly.
-    user_merge_operator_->FullMerge(saved_key_.GetKey(), nullptr, operands,
-                                    &saved_value_, logger_);
-    RecordTick(statistics_, MERGE_OPERATION_TOTAL_TIME, timer.ElapsedNanos());
-  }
-}
-
 void RegularDBIter::Prev() {
   assert(valid_);
   if (direction_ == kForward) {
@@ -1248,20 +1144,6 @@ void RegularDBIter::Prev() {
 }
 
 void RegularDBIter::ReverseToBackward() {
-  if (current_entry_is_merged_) {
-    // Not placed in the same key. Need to call Prev() until finding the
-    // previous key.
-    if (!iter_->Valid()) {
-      iter_->SeekToLast();
-    }
-    ParsedInternalKey ikey;
-    FindParseableKey(&ikey, kReverse);
-    while (iter_->Valid() &&
-           user_comparator_->Compare(ikey.user_key, saved_key_.GetKey()) > 0) {
-      iter_->Prev();
-      FindParseableKey(&ikey, kReverse);
-    }
-  }
 #ifndef NDEBUG
   if (iter_->Valid()) {
     ParsedInternalKey ikey;
@@ -1314,7 +1196,6 @@ void RegularDBIter::PrevInternal() {
 // saved_value_
 bool RegularDBIter::FindValueForCurrentKey() {
   assert(iter_->Valid());
-  merge_operands_.clear();
   // last entry before merge (could be kTypeDeletion, kTypeSingleDeletion or
   // kTypeValue)
   ValueType last_not_merge_type = kTypeDeletion;
@@ -1334,22 +1215,11 @@ bool RegularDBIter::FindValueForCurrentKey() {
     last_key_entry_type = ikey.type;
     switch (last_key_entry_type) {
       case kTypeValue:
-        merge_operands_.clear();
         saved_value_ = iter_->value().ToString();
         last_not_merge_type = kTypeValue;
         break;
-      case kTypeDeletion:
-      case kTypeSingleDeletion:
-        merge_operands_.clear();
-        last_not_merge_type = last_key_entry_type;
-        PERF_COUNTER_ADD(internal_delete_skipped_count, 1);
-        break;
-      case kTypeMerge:
-        assert(user_merge_operator_ != nullptr);
-        merge_operands_.push_back(iter_->value().ToString());
-        break;
       default:
-        assert(false);
+        LOG(INFO) << "Unsupported internal key type: " << last_key_entry_type;
     }
 
     PERF_COUNTER_ADD(internal_key_skipped_count, 1);
@@ -1360,40 +1230,11 @@ bool RegularDBIter::FindValueForCurrentKey() {
   }
 
   switch (last_key_entry_type) {
-    case kTypeDeletion:
-    case kTypeSingleDeletion:
-      valid_ = false;
-      return false;
-    case kTypeMerge:
-      if (last_not_merge_type == kTypeDeletion) {
-        StopWatchNano timer(env_, statistics_ != nullptr);
-        PERF_TIMER_GUARD(merge_operator_time_nanos);
-        user_merge_operator_->FullMerge(saved_key_.GetKey(), nullptr,
-                                        merge_operands_, &saved_value_,
-                                        logger_);
-        RecordTick(statistics_, MERGE_OPERATION_TOTAL_TIME,
-                   timer.ElapsedNanos());
-      } else {
-        assert(last_not_merge_type == kTypeValue);
-        std::string last_put_value = saved_value_;
-        Slice temp_slice(last_put_value);
-        {
-          StopWatchNano timer(env_, statistics_ != nullptr);
-          PERF_TIMER_GUARD(merge_operator_time_nanos);
-          user_merge_operator_->FullMerge(saved_key_.GetKey(), &temp_slice,
-                                          merge_operands_, &saved_value_,
-                                          logger_);
-          RecordTick(statistics_, MERGE_OPERATION_TOTAL_TIME,
-                     timer.ElapsedNanos());
-        }
-      }
-      break;
     case kTypeValue:
       // do nothing - we've already has value in saved_value_
       break;
     default:
-      assert(false);
-      break;
+      LOG(FATAL) << "Unsupported internal key type: " << last_key_entry_type;
   }
   valid_ = true;
   return true;
@@ -1423,47 +1264,7 @@ bool RegularDBIter::FindValueForCurrentKeyUsingSeek() {
     return false;
   }
 
-  // kTypeMerge. We need to collect all kTypeMerge values and save them
-  // in operands
-  std::deque<std::string> operands;
-  while (iter_->Valid() &&
-         user_comparator_->Equal(ikey.user_key, saved_key_.GetKey()) &&
-         ikey.type == kTypeMerge) {
-    operands.push_front(iter_->value().ToString());
-    iter_->Next();
-    FindParseableKey(&ikey, kForward);
-  }
-
-  if (!iter_->Valid() ||
-      !user_comparator_->Equal(ikey.user_key, saved_key_.GetKey()) ||
-      ikey.type == kTypeDeletion || ikey.type == kTypeSingleDeletion) {
-    {
-      StopWatchNano timer(env_, statistics_ != nullptr);
-      PERF_TIMER_GUARD(merge_operator_time_nanos);
-      user_merge_operator_->FullMerge(saved_key_.GetKey(), nullptr, operands,
-                                      &saved_value_, logger_);
-      RecordTick(statistics_, MERGE_OPERATION_TOTAL_TIME, timer.ElapsedNanos());
-    }
-    // Make iter_ valid and point to saved_key_
-    if (!iter_->Valid() ||
-        !user_comparator_->Equal(ikey.user_key, saved_key_.GetKey())) {
-      iter_->Seek(last_key);
-      RecordTick(statistics_, NUMBER_OF_RESEEKS_IN_ITERATION);
-    }
-    valid_ = true;
-    return true;
-  }
-
-  const Slice& val = iter_->value();
-  {
-    StopWatchNano timer(env_, statistics_ != nullptr);
-    PERF_TIMER_GUARD(merge_operator_time_nanos);
-    user_merge_operator_->FullMerge(saved_key_.GetKey(), &val, operands,
-                                    &saved_value_, logger_);
-    RecordTick(statistics_, MERGE_OPERATION_TOTAL_TIME, timer.ElapsedNanos());
-  }
-  valid_ = true;
-  return true;
+  LOG(FATAL) << "Unsupported internal key type: " << ikey.type;
 }
 
 // Used in Next to change directions
@@ -1549,7 +1350,7 @@ void RegularDBIter::Seek(const Slice& target) {
   }
 }
 
-void DBIter::SeekToFirst() {
+void RegularDBIter::SeekToFirst() {
   direction_ = kForward;
   ClearSavedValue();
 
