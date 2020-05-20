@@ -1350,6 +1350,8 @@ struct DBOptions {
   // Adds ability to modify iterator created for SST file.
   // For instance some additional filtering could be added.
   std::shared_ptr<IteratorReplacer> iterator_replacer;
+
+  bool use_yb_simplified_regular_db_iter = false;
 };
 
 // Options to control the behavior of a database (passed to DB::Open)

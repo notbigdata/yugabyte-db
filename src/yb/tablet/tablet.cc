@@ -640,6 +640,7 @@ Status Tablet::OpenKeyValueTablet() {
   rocksdb_options.disable_auto_compactions = true;
   rocksdb_options.level0_slowdown_writes_trigger = std::numeric_limits<int>::max();
   rocksdb_options.level0_stop_writes_trigger = std::numeric_limits<int>::max();
+  rocksdb_options.use_yb_simplified_regular_db_iter = true;
 
   const string db_dir = metadata()->rocksdb_dir();
   RETURN_NOT_OK(CreateTabletDirectories(db_dir, metadata()->fs_manager()));
@@ -680,6 +681,8 @@ Status Tablet::OpenKeyValueTablet() {
       rocksdb_options.block_based_table_mem_tracker->SetMetricEntity(metric_entity_,
         Format("$0_$1", "BlockBasedTable", kIntentsDB));
     }
+
+    rocksdb_options.use_yb_simplified_regular_db_iter = false;
 
     rocksdb::DB* intents_db = nullptr;
     RETURN_NOT_OK(rocksdb::DB::Open(rocksdb_options, db_dir + kIntentsDBSuffix, &intents_db));
