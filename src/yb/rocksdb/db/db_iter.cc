@@ -884,7 +884,6 @@ class RegularDBIter : public Iterator {
         prefix_same_as_start_(prefix_same_as_start),
         iter_pinned_(false) {
     RecordTick(statistics_, NO_ITERATORS);
-    prefix_extractor_ = ioptions.prefix_extractor;
     max_skip_ = max_sequential_skip_in_iterations;
   }
   virtual ~RegularDBIter() {
@@ -999,7 +998,6 @@ class RegularDBIter : public Iterator {
     }
   }
 
-  const SliceTransform* prefix_extractor_;
   bool arena_mode_;
   Env* const env_;
   Logger* logger_;
@@ -1073,11 +1071,6 @@ void RegularDBIter::Next() {
       RecordTick(statistics_, NUMBER_DB_NEXT_FOUND);
       RecordTick(statistics_, ITER_BYTES_READ, key().size() + value().size());
     }
-  }
-  if (valid_ && prefix_extractor_ && prefix_same_as_start_ &&
-      prefix_extractor_->Transform(saved_key_.GetKey())
-              .compare(prefix_start_.GetKey()) != 0) {
-    valid_ = false;
   }
 }
 
@@ -1251,11 +1244,6 @@ void RegularDBIter::Prev() {
       RecordTick(statistics_, NUMBER_DB_PREV_FOUND);
       RecordTick(statistics_, ITER_BYTES_READ, key().size() + value().size());
     }
-  }
-  if (valid_ && prefix_extractor_ && prefix_same_as_start_ &&
-      prefix_extractor_->Transform(saved_key_.GetKey())
-              .compare(prefix_start_.GetKey()) != 0) {
-    valid_ = false;
   }
 }
 
@@ -1559,17 +1547,9 @@ void RegularDBIter::Seek(const Slice& target) {
   } else {
     valid_ = false;
   }
-  if (valid_ && prefix_extractor_ && prefix_same_as_start_) {
-    prefix_start_.SetKey(prefix_extractor_->Transform(target));
-  }
 }
 
 void DBIter::SeekToFirst() {
-  // Don't use iter_::Seek() if we set a prefix extractor
-  // because prefix seek will be used.
-  if (prefix_extractor_ != nullptr) {
-    max_skip_ = std::numeric_limits<uint64_t>::max();
-  }
   direction_ = kForward;
   ClearSavedValue();
 
@@ -1590,17 +1570,9 @@ void DBIter::SeekToFirst() {
   } else {
     valid_ = false;
   }
-  if (valid_ && prefix_extractor_ && prefix_same_as_start_) {
-    prefix_start_.SetKey(prefix_extractor_->Transform(saved_key_.GetKey()));
-  }
 }
 
 void RegularDBIter::SeekToLast() {
-  // Don't use iter_::Seek() if we set a prefix extractor
-  // because prefix seek will be used.
-  if (prefix_extractor_ != nullptr) {
-    max_skip_ = std::numeric_limits<uint64_t>::max();
-  }
   direction_ = kReverse;
   ClearSavedValue();
 
@@ -1637,9 +1609,6 @@ void RegularDBIter::SeekToLast() {
       RecordTick(statistics_, NUMBER_DB_SEEK_FOUND);
       RecordTick(statistics_, ITER_BYTES_READ, key().size() + value().size());
     }
-  }
-  if (valid_ && prefix_extractor_ && prefix_same_as_start_) {
-    prefix_start_.SetKey(prefix_extractor_->Transform(saved_key_.GetKey()));
   }
 }
 
