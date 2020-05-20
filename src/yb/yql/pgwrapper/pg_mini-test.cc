@@ -1044,20 +1044,24 @@ class PgMiniBigPrefetchTest : public PgMiniSingleTServerTest {
       google::SetVLOGLevel("docdb", 4);
     }
 
+    double total_time_sec = 0;
     for (int i = 0; i != reads; ++i) {
       auto start = MonoTime::Now();
       auto fetched_rows = ASSERT_RESULT(conn.FetchValue<int64_t>("SELECT count(*) FROM t"));
       auto finish = MonoTime::Now();
       ASSERT_EQ(rows, fetched_rows);
       LOG(INFO) << i << ") Full Time: " << finish - start;
+      double elapsed_time_sec = (finish - start).ToSeconds();
+      total_time_sec += elapsed_time_sec;
     }
+    LOG(INFO) << "Average read time (sec): " << (total_time_sec / reads);
   }
 };
 
 TEST_F_EX(PgMiniTest, YB_DISABLE_TEST_IN_TSAN(BigRead), PgMiniBigPrefetchTest) {
   constexpr int kRows = RegularBuildVsSanitizers(1000000, 10000);
   constexpr int kBlockSize = 1000;
-  constexpr int kReads = 10;
+  constexpr int kReads = 20;
 
   Run(kRows, kBlockSize, kReads);
 }

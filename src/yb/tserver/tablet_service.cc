@@ -1810,7 +1810,7 @@ void TabletServiceImpl::CompleteRead(ReadContext* read_context) {
             << ", safe: " << read_context->safe_ht_to_read;
     Result<ReadHybridTime> result{ReadHybridTime()};
     {
-      LongOperationTracker long_operation_tracker("Read", 1s);
+      // LongOperationTracker long_operation_tracker("Read", 1s);
       result = DoRead(read_context);
     }
     if (!result.ok()) {

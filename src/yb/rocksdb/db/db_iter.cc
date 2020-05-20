@@ -255,7 +255,6 @@ void DBIter::Next() {
     // If the current key is a merge, very likely iter already points
     // to the next internal position.
     iter_->Next();
-    PERF_COUNTER_ADD(internal_key_skipped_count, 1);
   }
 
   // Now we point to the next internal position, for both of merge and
@@ -874,14 +873,11 @@ class RegularDBIter : public Iterator {
         sequence_(s),
         direction_(kForward),
         valid_(false),
-        statistics_(ioptions.statistics),
         version_number_(version_number),
         iter_pinned_(false) {
-    RecordTick(statistics_, NO_ITERATORS);
   }
 
   virtual ~RegularDBIter() {
-    RecordTick(statistics_, NO_ITERATORS, -1);
     if (!arena_mode_) {
       delete iter_;
     } else {
@@ -1008,7 +1004,6 @@ class RegularDBIter : public Iterator {
   std::string saved_value_;
   Direction direction_;
   bool valid_;
-  Statistics* statistics_;
   uint64_t version_number_;
   bool iter_pinned_;
 
@@ -1042,7 +1037,6 @@ void RegularDBIter::Next() {
     // The iter position is the current key, which is already returned. We can safely issue a
     // Next() without checking the current key.
     iter_->Next();
-    PERF_COUNTER_ADD(internal_key_skipped_count, 1);
   }
 
   // Now we point to the next internal position.
@@ -1051,13 +1045,6 @@ void RegularDBIter::Next() {
     return;
   }
   FindNextUserEntry();
-  if (statistics_ != nullptr) {
-    RecordTick(statistics_, NUMBER_DB_NEXT);
-    if (valid_) {
-      RecordTick(statistics_, NUMBER_DB_NEXT_FOUND);
-      RecordTick(statistics_, ITER_BYTES_READ, key().size() + value().size());
-    }
-  }
 }
 
 // POST: saved_key_ should have the next user key if valid_,
@@ -1068,7 +1055,6 @@ void RegularDBIter::Next() {
 // NOTE: In between, saved_key_ can point to a user key that has
 //       a delete marker
 inline void RegularDBIter::FindNextUserEntry() {
-  PERF_TIMER_GUARD(find_next_user_entry_time);
   FindNextUserEntryInternal();
 }
 
@@ -1102,13 +1088,6 @@ void RegularDBIter::Prev() {
     ReverseToBackward();
   }
   PrevInternal();
-  if (statistics_ != nullptr) {
-    RecordTick(statistics_, NUMBER_DB_PREV);
-    if (valid_) {
-      RecordTick(statistics_, NUMBER_DB_PREV_FOUND);
-      RecordTick(statistics_, ITER_BYTES_READ, key().size() + value().size());
-    }
-  }
 }
 
 void RegularDBIter::ReverseToBackward() {
@@ -1180,7 +1159,6 @@ bool RegularDBIter::FindValueForCurrentKey() {
         LOG(INFO) << "Unsupported internal key type: " << last_key_entry_type;
     }
 
-    PERF_COUNTER_ADD(internal_key_skipped_count, 1);
     assert(user_comparator_->Equal(ikey.user_key, saved_key_.GetKey()));
     iter_->Prev();
     FindParseableKey(&ikey, kReverse);
@@ -1247,22 +1225,12 @@ void RegularDBIter::Seek(const Slice& target) {
   // now saved_key is used to store internal key.
   saved_key_.SetInternalKey(target, sequence_);
 
-  {
-    PERF_TIMER_GUARD(seek_internal_seek_time);
-    iter_->Seek(saved_key_.GetKey());
-  }
+  iter_->Seek(saved_key_.GetKey());
 
-  RecordTick(statistics_, NUMBER_DB_SEEK);
   if (iter_->Valid()) {
     direction_ = kForward;
     ClearSavedValue();
     FindNextUserEntry();
-    if (statistics_ != nullptr) {
-      if (valid_) {
-        RecordTick(statistics_, NUMBER_DB_SEEK_FOUND);
-        RecordTick(statistics_, ITER_BYTES_READ, key().size() + value().size());
-      }
-    }
   } else {
     valid_ = false;
   }
@@ -1272,20 +1240,10 @@ void RegularDBIter::SeekToFirst() {
   direction_ = kForward;
   ClearSavedValue();
 
-  {
-    PERF_TIMER_GUARD(seek_internal_seek_time);
-    iter_->SeekToFirst();
-  }
+  iter_->SeekToFirst();
 
-  RecordTick(statistics_, NUMBER_DB_SEEK);
   if (iter_->Valid()) {
     FindNextUserEntry();
-    if (statistics_ != nullptr) {
-      if (valid_) {
-        RecordTick(statistics_, NUMBER_DB_SEEK_FOUND);
-        RecordTick(statistics_, ITER_BYTES_READ, key().size() + value().size());
-      }
-    }
   } else {
     valid_ = false;
   }
@@ -1295,18 +1253,8 @@ void RegularDBIter::SeekToLast() {
   direction_ = kReverse;
   ClearSavedValue();
 
-  {
-    PERF_TIMER_GUARD(seek_internal_seek_time);
-    iter_->SeekToLast();
-  }
+  iter_->SeekToLast();
   PrevInternal();
-  if (statistics_ != nullptr) {
-    RecordTick(statistics_, NUMBER_DB_SEEK);
-    if (valid_) {
-      RecordTick(statistics_, NUMBER_DB_SEEK_FOUND);
-      RecordTick(statistics_, ITER_BYTES_READ, key().size() + value().size());
-    }
-  }
 }
 
 // ------------------------------------------------------------------------------------------------

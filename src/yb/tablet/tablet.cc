@@ -206,6 +206,9 @@ DEFINE_test_flag(bool, docdb_log_write_batches, false,
 DECLARE_int32(rocksdb_level0_slowdown_writes_trigger);
 DECLARE_int32(rocksdb_level0_stop_writes_trigger);
 
+DEFINE_bool(use_yb_simplified_regular_db_iter, false,
+            "Use a simplified version of DBIter for regular DB for performance");
+
 using namespace std::placeholders;
 
 using std::shared_ptr;
@@ -640,7 +643,8 @@ Status Tablet::OpenKeyValueTablet() {
   rocksdb_options.disable_auto_compactions = true;
   rocksdb_options.level0_slowdown_writes_trigger = std::numeric_limits<int>::max();
   rocksdb_options.level0_stop_writes_trigger = std::numeric_limits<int>::max();
-  rocksdb_options.use_yb_simplified_regular_db_iter = true;
+
+  rocksdb_options.use_yb_simplified_regular_db_iter = FLAGS_use_yb_simplified_regular_db_iter;
 
   const string db_dir = metadata()->rocksdb_dir();
   RETURN_NOT_OK(CreateTabletDirectories(db_dir, metadata()->fs_manager()));
