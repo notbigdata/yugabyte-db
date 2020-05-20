@@ -884,6 +884,7 @@ class RegularDBIter : public Iterator {
     RecordTick(statistics_, NO_ITERATORS);
     max_skip_ = max_sequential_skip_in_iterations;
   }
+
   virtual ~RegularDBIter() {
     RecordTick(statistics_, NO_ITERATORS, -1);
     if (!arena_mode_) {
@@ -892,6 +893,7 @@ class RegularDBIter : public Iterator {
       iter_->~InternalIterator();
     }
   }
+
   virtual void SetIter(InternalIterator* iter) {
     assert(iter_ == nullptr);
     iter_ = iter;
@@ -899,15 +901,19 @@ class RegularDBIter : public Iterator {
       CHECK_OK(iter_->PinData());
     }
   }
+
   bool Valid() const override { return valid_; }
+
   Slice key() const override {
     assert(valid_);
     return saved_key_.GetKey();
   }
+
   Slice value() const override {
     assert(valid_);
     return direction_ == kForward ? iter_->value() : saved_value_;
   }
+
   Status status() const override {
     if (status_.ok()) {
       return iter_->status();
@@ -915,6 +921,7 @@ class RegularDBIter : public Iterator {
       return status_;
     }
   }
+
   virtual Status PinData() {
     Status s;
     if (iter_) {
@@ -927,6 +934,7 @@ class RegularDBIter : public Iterator {
     }
     return s;
   }
+
   virtual Status ReleasePinnedData() {
     Status s;
     if (iter_) {
@@ -1196,9 +1204,6 @@ void RegularDBIter::PrevInternal() {
 // saved_value_
 bool RegularDBIter::FindValueForCurrentKey() {
   assert(iter_->Valid());
-  // last entry before merge (could be kTypeDeletion, kTypeSingleDeletion or
-  // kTypeValue)
-  ValueType last_not_merge_type = kTypeDeletion;
   ValueType last_key_entry_type = kTypeDeletion;
 
   ParsedInternalKey ikey;
@@ -1216,7 +1221,6 @@ bool RegularDBIter::FindValueForCurrentKey() {
     switch (last_key_entry_type) {
       case kTypeValue:
         saved_value_ = iter_->value().ToString();
-        last_not_merge_type = kTypeValue;
         break;
       default:
         LOG(INFO) << "Unsupported internal key type: " << last_key_entry_type;
@@ -1326,7 +1330,7 @@ void RegularDBIter::FindParseableKey(ParsedInternalKey* ikey, Direction directio
 
 void RegularDBIter::Seek(const Slice& target) {
   saved_key_.Clear();
-  // now savved_key is used to store internal key.
+  // now saved_key is used to store internal key.
   saved_key_.SetInternalKey(target, sequence_);
 
   {
