@@ -16,8 +16,14 @@ get_property(yb_cmake_include_dirs DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         PROPERTY INCLUDE_DIRECTORIES)
 foreach(include_dir ${yb_cmake_include_dirs})
   set(POSTGRES_EXTRA_C_CXX_FLAGS "${POSTGRES_EXTRA_C_CXX_FLAGS} -I${include_dir}")
+  # Needed for OpenSSL 1.1.0 or greater.
+  # https://www.postgresql.org/message-id/bf2fa47e-3cce-37be-58f5-2243b77e13ab%40proxel.se
+  set(POSTGRES_EXTRA_C_CXX_FLAGS "${POSTGRES_EXTRA_C_CXX_FLAGS} -DHAVE_BIO_METH_NEW")
+  set(POSTGRES_EXTRA_C_CXX_FLAGS "${POSTGRES_EXTRA_C_CXX_FLAGS} -DHAVE_BIO_GET_DATA")
   if("${COMPILER_FAMILY}" STREQUAL "gcc8")
-    set(POSTGRES_EXTRA_C_CXX_FLAGS "${POSTGRES_EXTRA_C_CXX_FLAGS} -Wno-format-truncation -Wno-maybe-uninitialized -Wno-stringop-truncation")
+    set(POSTGRES_EXTRA_C_CXX_FLAGS "${POSTGRES_EXTRA_C_CXX_FLAGS} -Wno-format-truncation")
+    set(POSTGRES_EXTRA_C_CXX_FLAGS "${POSTGRES_EXTRA_C_CXX_FLAGS} -Wno-maybe-uninitialized")
+    set(POSTGRES_EXTRA_C_CXX_FLAGS "${POSTGRES_EXTRA_C_CXX_FLAGS} -Wno-stringop-truncation")
   endif()
 endforeach(include_dir)
 

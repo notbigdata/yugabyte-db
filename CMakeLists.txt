@@ -615,7 +615,6 @@ endif()
 ADD_CXX_FLAGS("-DYB_COMPILER_TYPE=$ENV{YB_COMPILER_TYPE}")
 ADD_CXX_FLAGS("-DYB_COMPILER_VERSION=${COMPILER_VERSION}")
 ADD_CXX_FLAGS("-DROCKSDB_LIB_IO_POSIX")
-ADD_CXX_FLAGS("-DBZIP2")
 ADD_CXX_FLAGS("-DSNAPPY")
 ADD_CXX_FLAGS("-DZLIB")
 if ($ENV{YB_COMPILER_TYPE} STREQUAL "zapcc")
@@ -840,8 +839,7 @@ else()
 endif()
 
 set(YB_PREFIX_COMMON "${YB_THIRDPARTY_DIR}/installed/common")
-
-# Flag to enable thread sanitizer (clang or gcc 4.8)
+# Flag to enable thread sanitizer (clang).
 if (${YB_USE_TSAN})
   YB_SETUP_SANITIZER("TSAN")
   ADD_CXX_FLAGS("-fsanitize=thread")
@@ -1310,6 +1308,7 @@ endfunction()
 
 # Look in thirdparty prefix paths before anywhere else for system dependencies.
 set(CMAKE_PREFIX_PATH ${YB_PREFIX_COMMON} ${CMAKE_PREFIX_PATH})
+ADD_LINKER_FLAGS("-L${YB_PREFIX_COMMON}/lib")
 
 set(YB_THIRDPARTY_INSTALLED_DEPS_DIR
     "${YB_THIRDPARTY_DIR}/installed/${THIRDPARTY_INSTRUMENTATION_TYPE}")
@@ -1727,7 +1726,6 @@ string (REPLACE "-Werror=non-virtual-dtor" "" CMAKE_C_FLAGS ${CMAKE_C_FLAGS})
 string (REPLACE "-Werror=reorder" "" CMAKE_C_FLAGS ${CMAKE_C_FLAGS})
 string (REPLACE "-Wnon-virtual-dtor" "" CMAKE_C_FLAGS ${CMAKE_C_FLAGS})
 string (REPLACE "-Woverloaded-virtual" "" CMAKE_C_FLAGS ${CMAKE_C_FLAGS})
-
 
 message("CMAKE_C_FLAGS ${CMAKE_C_FLAGS}")
 
