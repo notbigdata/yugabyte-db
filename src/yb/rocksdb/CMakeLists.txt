@@ -41,6 +41,8 @@ set(ROCKSDB_SRCS
     db/db_impl_experimental.cc
     db/db_info_dumper.cc
     db/db_iter.cc
+    db/arena_wrapped_db_iter.cc
+    db/simple_db_iter.cc
     db/experimental.cc
     db/event_helpers.cc
     db/file_indexer.cc

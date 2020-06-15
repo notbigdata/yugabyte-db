@@ -21,11 +21,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
-#include "yb/rocksdb/db/db_iter.h"
+#include "yb/rocksdb/db/arena_wrapped_db_iter.h"
+
 #include <stdexcept>
 #include <deque>
 #include <string>
 #include <limits>
+
+#include "yb/rocksdb/db/db_iter_impl.h"
 
 #include "yb/rocksdb/db/dbformat.h"
 #include "yb/rocksdb/db/filename.h"

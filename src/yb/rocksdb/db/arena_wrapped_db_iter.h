@@ -29,13 +29,14 @@
 #include <stdint.h>
 #include <string>
 
-#include "yb/rocksdb/db.h"
 #include "yb/rocksdb/iterator.h"
 #include "yb/rocksdb/db/dbformat.h"
 #include "yb/rocksdb/util/arena.h"
 #include "yb/rocksdb/util/autovector.h"
 
 namespace rocksdb {
+
+class DBIter;
 
 // A wrapper iterator which wraps DB Iterator and the arena, with which the DB
 // iterator is supposed be allocated. This class is used as an entry point of
@@ -81,11 +82,15 @@ class ArenaWrappedDBIter : public Iterator {
 
 // Generate the arena wrapped iterator class.
 extern ArenaWrappedDBIter* NewArenaWrappedDbIterator(
-    Env* env, const ImmutableCFOptions& options,
-    const Comparator* user_key_comparator, const SequenceNumber& sequence,
-    uint64_t max_sequential_skip_in_iterations, uint64_t version_number,
+    Env* env,
+    const ImmutableCFOptions& options,
+    const Comparator* user_key_comparator,
+    const SequenceNumber& sequence,
+    uint64_t max_sequential_skip_in_iterations,
+    uint64_t version_number,
     const Slice* iterate_upper_bound = nullptr,
-    bool prefix_same_as_start = false, bool pin_data = false);
+    bool prefix_same_as_start = false,
+    bool pin_data = false);
 
 }  // namespace rocksdb
 
