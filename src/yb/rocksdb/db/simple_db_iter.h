@@ -21,6 +21,7 @@
 #include "yb/rocksdb/db/dbformat.h"
 #include "yb/rocksdb/util/arena.h"
 #include "yb/rocksdb/util/autovector.h"
+#include "yb/rocksdb/table/internal_iterator.h"
 
 namespace rocksdb {
 
@@ -121,13 +122,8 @@ class SimpleDBIter : public Iterator {
     if (prop == nullptr) {
       return STATUS(InvalidArgument, "prop is nullptr");
     }
-    if (prop_name == "rocksdb.iterator.super-version-number") {
-      // First try to pass the value returned from inner iterator.
-      if (!iter_->GetProperty(prop_name, prop).ok()) {
-        *prop = ToString(version_number_);
-      }
-      return Status::OK();
-    } else if (prop_name == "rocksdb.iterator.is-key-pinned") {
+
+    if (prop_name == "rocksdb.iterator.is-key-pinned") {
       if (valid_) {
         *prop = (iter_pinned_ && saved_key_.IsKeyPinned()) ? "1" : "0";
       } else {

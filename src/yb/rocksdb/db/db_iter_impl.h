@@ -168,13 +168,7 @@ class DBIter : public Iterator {
   void Seek(const Slice& target) override;
   void SeekToFirst() override;
   void SeekToLast() override;
-
-  void RevalidateAfterUpperBoundChange() override {
-    if (iter_->Valid() && direction_ == kForward) {
-      valid_ = true;
-      FindNextUserEntry(/* skipping= */ false);
-    }
-  }
+  void RevalidateAfterUpperBoundChange() override;
 
  private:
   void ReverseToBackward();

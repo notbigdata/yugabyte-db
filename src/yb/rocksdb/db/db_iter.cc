@@ -660,6 +660,14 @@ void DBIter::SeekToLast() {
   }
 }
 
+void DBIter::RevalidateAfterUpperBoundChange() {
+  if (iter_->Valid() && direction_ == kForward) {
+    valid_ = true;
+    FindNextUserEntry(/* skipping= */ false);
+  }
+}
+
+
 // ------------------------------------------------------------------------------------------------
 // NewDBiterator factory function
 // ------------------------------------------------------------------------------------------------
