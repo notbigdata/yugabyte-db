@@ -84,6 +84,7 @@ set(DOCDB_SRCS
         subdocument.cc
         value.cc
         kv_debug.cc
+        docdb_visual_debug.cc
         )
 
 set(DOCDB_DEPS

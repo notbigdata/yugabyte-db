@@ -292,6 +292,10 @@ class IntentAwareIterator {
   void UpdatePlannedIntentSeekForward(
       const Slice& key, const Slice& suffix, bool use_suffix_for_prefix = true);
 
+  void VisualDebugCheckpointImpl(
+      const char* file_name, int line, const char* func, const char* pretty_func,
+      const std::string& stack_trace);
+  
   const ReadHybridTime read_time_;
   const string encoded_read_time_local_limit_;
   const string encoded_read_time_global_limit_;

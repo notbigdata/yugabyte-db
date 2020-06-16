@@ -1,0 +1,47 @@
+// Copyright (c) Yugabyte, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
+// in compliance with the License.  You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software distributed under the License
+// is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
+// or implied.  See the License for the specific language governing permissions and limitations
+
+#ifndef YB_DOCDB_DOCDB_VISUAL_DEBUGGER_H
+#define YB_DOCDB_DOCDB_VISUAL_DEBUGGER_H
+
+#include <string>
+#include <vector>
+
+#include "yb/util/format.h"
+
+namespace yb {
+namespace docdb {
+
+class VirtualScreen {
+ public: 
+  VirtualScreen(int width, int height);
+  void PutChar(int row, int column, char c);
+  void PutString(int row, int column, const std::string& s);
+
+  template <class... Args>
+  void PutFormat(int row, int column, const std::string& format, Args&&... args) {
+    PutString(row, column, Format(format, std::forward<Args>(args)...));
+  }
+
+ private:
+  std::vector<std::string> rows_; 
+  int width_;
+  int height_;
+};
+
+struct DocDbDebugSnapshot {
+  std::vector<std::pair<std::string, std::string>> regular_kvs_, intent_kvs_;
+};
+
+}  // namespace docdb
+}  // namespace yb
+
+#endif  // YB_DOCDB_DOCDB_VISUAL_DEBUGGER_H

@@ -33,6 +33,8 @@
 #include "yb/util/random_util.h"
 #include "yb/util/scope_exit.h"
 
+#include "yb/tserver/ts_tablet_manager.h"
+
 using namespace std::literals;
 
 DECLARE_bool(enable_ysql);
@@ -1280,6 +1282,38 @@ TEST_F(PgMiniTest, YB_DISABLE_TEST_IN_TSAN(CreateDatabase)) {
   const std::string kDatabaseName = "testdb";
   ASSERT_OK(conn.ExecuteFormat("CREATE DATABASE $0", kDatabaseName));
   ASSERT_OK(cluster_->RestartSync());
+}
+
+TEST_F_EX(PgMiniTest, YB_DISABLE_TEST_IN_SANITIZERS(IterateWithIntents), PgMiniSingleTServerTest) {
+  auto conn = ASSERT_RESULT(Connect());
+
+  ASSERT_OK(conn.Execute("CREATE TABLE t (k int, v int, PRIMARY KEY (k ASC))"));
+
+  auto conn1 = ASSERT_RESULT(Connect());
+  ASSERT_OK(conn1.Execute("BEGIN"));
+  ASSERT_OK(conn1.Execute("INSERT INTO t VALUES(1, 10)"));
+
+  auto conn2 = ASSERT_RESULT(Connect());
+  ASSERT_OK(conn2.Execute("BEGIN"));
+  ASSERT_OK(conn2.Execute("INSERT INTO t VALUES(2, 20)"));
+
+  auto result = ASSERT_RESULT(conn2.FetchMatrix("SELECT * FROM t", 1, 2));
+  ASSERT_EQ(2, ASSERT_RESULT(GetInt32(result.get(), 0, 0)));
+  ASSERT_EQ(20, ASSERT_RESULT(GetInt32(result.get(), 0, 1)));
+
+  std::vector<std::shared_ptr<tablet::TabletPeer>> tablet_peers;
+  auto* ts_tablet_manager = cluster_->mini_tablet_server(0)->server()->tablet_manager();
+  ts_tablet_manager->GetTabletPeers(&tablet_peers);
+  for (const auto& peer : tablet_peers) {
+    std::vector<std::string> lines;
+    ASSERT_OK(peer->tablet()->DebugDump(&lines));
+    for (const auto& line : lines) {
+      LOG(INFO) << "line: " << line;
+    }
+  }
+
+  ASSERT_OK(conn1.Execute("ROLLBACK"));
+  ASSERT_OK(conn2.Execute("ROLLBACK"));
 }
 
 } // namespace pgwrapper

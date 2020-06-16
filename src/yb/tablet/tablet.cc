@@ -2479,7 +2479,18 @@ Status Tablet::DebugDump(vector<string> *lines) {
 void Tablet::DocDBDebugDump(vector<string> *lines) {
   LOG_STRING(INFO, lines) << "Dumping tablet:";
   LOG_STRING(INFO, lines) << "---------------------------";
-  docdb::DocDBDebugDump(regular_db_.get(), LOG_STRING(INFO, lines), docdb::StorageDbType::kRegular);
+  if (regular_db_) {
+    LOG_STRING(INFO, lines) << "Regular RocksDB:";
+    docdb::DocDBDebugDump(
+        regular_db_.get(), LOG_STRING(INFO, lines), docdb::StorageDbType::kRegular);
+    LOG_STRING(INFO, lines) << "";
+  }
+  if (intents_db_) {
+    LOG_STRING(INFO, lines) << "Intents RocksDB:";
+    docdb::DocDBDebugDump(
+        intents_db_.get(), LOG_STRING(INFO, lines), docdb::StorageDbType::kIntents);
+    LOG_STRING(INFO, lines) << "";    
+  }
 }
 
 Status Tablet::TEST_SwitchMemtable() {
