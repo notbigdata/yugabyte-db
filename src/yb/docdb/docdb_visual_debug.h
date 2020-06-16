@@ -16,12 +16,13 @@
 #include <vector>
 
 #include "yb/util/format.h"
+#include "yb/util/status.h"
 
 namespace yb {
 namespace docdb {
 
 class VirtualScreen {
- public: 
+ public:
   VirtualScreen(int width, int height);
   void PutChar(int row, int column, char c);
   void PutString(int row, int column, const std::string& s);
@@ -31,10 +32,25 @@ class VirtualScreen {
     PutString(row, column, Format(format, std::forward<Args>(args)...));
   }
 
+  CHECKED_STATUS SaveToFile(const string& file_path) const;
+
  private:
-  std::vector<std::string> rows_; 
+  std::vector<std::string> rows_;
+  std::vector<int> actual_length_;
   int width_;
   int height_;
+  int actual_num_rows_ = 0;
+};
+
+class TextBasedAnimation {
+ public:
+  TextBasedAnimation(const std::string& base_dir);
+  CHECKED_STATUS AddFrame(const VirtualScreen& screen);
+
+ private:
+  std::string base_dir_;
+  bool dir_created_ = false;
+  int n_frames_ = 0;
 };
 
 struct DocDbDebugSnapshot {

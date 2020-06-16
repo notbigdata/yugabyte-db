@@ -337,6 +337,8 @@ IntentAwareIterator::IntentAwareIterator(
   iter_ = BoundedRocksDbIterator(doc_db.regular, read_opts, doc_db.key_bounds);
 }
 
+IntentAwareIterator::~IntentAwareIterator() = default;
+
 void IntentAwareIterator::Seek(const DocKey &doc_key) {
   VISUAL_DEBUG_CHECKPOINT_ENTER_LEAVE();
   Seek(doc_key.Encode());
@@ -1225,6 +1227,13 @@ void IntentAwareIterator::VisualDebugCheckpointImpl(
     const char* file_name, int line, const char* func, const char* pretty_func,
     const std::string& stack_trace) {
   VirtualScreen screen(340, 80);
+  screen.PutFormat(0, 0, "File: $0", file_name);
+  screen.PutFormat(1, 0, "Line: $0", line);
+  if (!visual_debug_animation_) {
+    visual_debug_animation_ = std::make_unique<TextBasedAnimation>(
+        StringPrintf("/tmp/intent_aware_iterator_%p", this));
+  }
+  CHECK_OK(visual_debug_animation_->AddFrame(screen));
 }
 
 

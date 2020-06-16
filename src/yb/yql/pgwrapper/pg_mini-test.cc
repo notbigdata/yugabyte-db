@@ -56,6 +56,7 @@ DECLARE_uint64(max_clock_skew_usec);
 DECLARE_int64(db_write_buffer_size);
 DECLARE_bool(ysql_enable_manual_sys_table_txn_ctl);
 DECLARE_bool(rocksdb_use_logging_iterator);
+DECLARE_bool(TEST_intent_aware_iterator_visual_debug);
 
 namespace yb {
 namespace pgwrapper {
@@ -1297,7 +1298,9 @@ TEST_F_EX(PgMiniTest, YB_DISABLE_TEST_IN_SANITIZERS(IterateWithIntents), PgMiniS
   ASSERT_OK(conn2.Execute("BEGIN"));
   ASSERT_OK(conn2.Execute("INSERT INTO t VALUES(2, 20)"));
 
+  SetAtomicFlag(true, &FLAGS_TEST_intent_aware_iterator_visual_debug);
   auto result = ASSERT_RESULT(conn2.FetchMatrix("SELECT * FROM t", 1, 2));
+  SetAtomicFlag(false, &FLAGS_TEST_intent_aware_iterator_visual_debug);
   ASSERT_EQ(2, ASSERT_RESULT(GetInt32(result.get(), 0, 0)));
   ASSERT_EQ(20, ASSERT_RESULT(GetInt32(result.get(), 0, 1)));
 

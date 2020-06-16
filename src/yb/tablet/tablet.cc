@@ -2489,7 +2489,7 @@ void Tablet::DocDBDebugDump(vector<string> *lines) {
     LOG_STRING(INFO, lines) << "Intents RocksDB:";
     docdb::DocDBDebugDump(
         intents_db_.get(), LOG_STRING(INFO, lines), docdb::StorageDbType::kIntents);
-    LOG_STRING(INFO, lines) << "";    
+    LOG_STRING(INFO, lines) << "";
   }
 }
 

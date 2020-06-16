@@ -35,6 +35,8 @@ namespace docdb {
 class Value;
 struct Expiration;
 
+class TextBasedAnimation;
+
 YB_DEFINE_ENUM(ResolvedIntentState, (kNoIntent)(kInvalidPrefix)(kValid));
 YB_DEFINE_ENUM(Direction, (kForward)(kBackward));
 YB_DEFINE_ENUM(SeekIntentIterNeeded, (kNoNeed)(kSeek)(kSeekForward));
@@ -94,6 +96,7 @@ class IntentAwareIterator {
       const TransactionOperationContextOpt& txn_op_context);
 
   IntentAwareIterator(const IntentAwareIterator& other) = delete;
+  ~IntentAwareIterator();
   void operator=(const IntentAwareIterator& other) = delete;
 
   // Seek to the smallest key which is greater or equal than doc_key.
@@ -295,7 +298,7 @@ class IntentAwareIterator {
   void VisualDebugCheckpointImpl(
       const char* file_name, int line, const char* func, const char* pretty_func,
       const std::string& stack_trace);
-  
+
   const ReadHybridTime read_time_;
   const string encoded_read_time_local_limit_;
   const string encoded_read_time_global_limit_;
@@ -336,6 +339,9 @@ class IntentAwareIterator {
   // Reusable buffer to prepare seek key to avoid reallocating temporary buffers in critical paths.
   KeyBytes seek_key_buffer_;
   Slice seek_key_prefix_;
+
+  std::unique_ptr<TextBasedAnimation> visual_debug_animation_;
+
 };
 
 // Utility class that controls stack of prefixes in IntentAwareIterator.
