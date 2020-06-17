@@ -26,7 +26,9 @@ class VirtualScreen {
   VirtualScreen(int width, int height);
   void PutChar(int row, int column, char c);
   void PutString(
-      int row, int column, const std::string& s, int max_width = -1);
+      int row, int column, const std::string& s,
+      int row_limit = std::numeric_limits<int>::max(),
+      int column_limit = std::numeric_limits<int>::max());
 
   template <class... Args>
   void PutFormat(int row, int column, const std::string& format, Args&&... args) {

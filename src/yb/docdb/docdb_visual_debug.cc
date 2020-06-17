@@ -43,18 +43,17 @@ void VirtualScreen::PutChar(int row, int column, char c) {
 }
 
 void VirtualScreen::PutString(
-    const int top_row, const int  left_column, const std::string& s, int max_width) {
+    const int top_row, const int  left_column, const std::string& s,
+    const int row_limit, const int column_limit) {
   int i = top_row;
   int j = left_column;
-  const int right_margin =
-      max_width > 0 ? std::min(width_, left_column + max_width) : width_;
   for (char c : s) {
     if (c == '\n') {
       i++;
       j = left_column;
       continue;
     }
-    if (j < right_margin) {
+    if (i < row_limit && j < column_limit) {
       PutChar(i, j, c);
     }
     j++;
