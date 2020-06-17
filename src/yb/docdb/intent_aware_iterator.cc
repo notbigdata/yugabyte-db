@@ -13,6 +13,8 @@
 
 #include "yb/docdb/intent_aware_iterator.h"
 
+#include <time.h>
+
 #include <future>
 #include <thread>
 #include <boost/optional/optional_io.hpp>
@@ -33,6 +35,7 @@
 #include "yb/server/hybrid_clock.h"
 #include "yb/util/backoff_waiter.h"
 #include "yb/util/bytes_formatter.h"
+#include "yb/util/path_util.h"
 #include "yb/util/tsan_util.h"
 #include "yb/util/scope_exit.h"
 
@@ -44,6 +47,10 @@ DEFINE_bool(TEST_transaction_allow_rerequest_status, true,
 DEFINE_bool(TEST_intent_aware_iterator_visual_debug, false,
             "Visual debugging of the intent-aware iterator");
 
+DEFINE_string(TEST_intent_aware_iterator_visual_debug_output_dir,
+              "/tmp/intent_aware_iterator_visual_debug",
+              "Visual debugging of the intent-aware iterator");
+
 #define VISUAL_DEBUG_CHECKPOINT() \
   do { \
     if (FLAGS_TEST_intent_aware_iterator_visual_debug) { \
@@ -54,8 +61,15 @@ DEFINE_bool(TEST_intent_aware_iterator_visual_debug, false,
 
 #define VISUAL_DEBUG_CHECKPOINT_ENTER_LEAVE() \
   VISUAL_DEBUG_CHECKPOINT(); \
-  auto _visual_debug_checkpoint_scope_exit = ScopeExit([this] { \
-    VISUAL_DEBUG_CHECKPOINT(); \
+  const char* _visual_debug_exiting_func = __func__; \
+  const char* _visual_debug_exiting_pretty_func__ = __PRETTY_FUNCTION__; \
+  auto _visual_debug_checkpoint_scope_exit = ScopeExit( \
+      [this, _visual_debug_exiting_func, _visual_debug_exiting_pretty_func__] { \
+    if (FLAGS_TEST_intent_aware_iterator_visual_debug) { \
+      VisualDebugCheckpointImpl( \
+          __FILE__,__LINE__, _visual_debug_exiting_func, _visual_debug_exiting_pretty_func__, \
+          GetStackTrace(), /* exiting_function */ true); \
+    } \
   })
 
 
@@ -1225,13 +1239,31 @@ void IntentAwareIterator::ResetIntentUpperbound() {
 
 void IntentAwareIterator::VisualDebugCheckpointImpl(
     const char* file_name, int line, const char* func, const char* pretty_func,
-    const std::string& stack_trace) {
+    const std::string& stack_trace, bool exiting_function) {
   VirtualScreen screen(340, 80);
-  screen.PutFormat(0, 0, "File: $0", file_name);
-  screen.PutFormat(1, 0, "Line: $0", line);
+
+  int row = 0;
+  screen.PutFormat(row++, 0, "File: $0", file_name);
+  screen.PutFormat(row++, 0, "Line: $0", line);
+  screen.PutFormat(row++, 0, "Function: $0$1", exiting_function ? "[Exiting] " : "", func);
+  screen.PutFormat(row++, 0, "Pretty function: $0", pretty_func);
+  screen.PutString(row++, 0, "Stack trace:");
+  screen.PutString(row++, 2, stack_trace);
+
   if (!visual_debug_animation_) {
+    time_t rawtime = time(nullptr);
+    struct tm timeinfo_buf;
+    struct tm *timeinfo = localtime_r(&rawtime, &timeinfo_buf);
+    CHECK_NOTNULL(timeinfo);
+
+    char time_buf[128];
+    int strftime_rv = strftime(time_buf, sizeof(time_buf) - 1, "%Y-%m-%dT%H-%M-%S", timeinfo);
+    CHECK_GT(strftime_rv, 0);
+
     visual_debug_animation_ = std::make_unique<TextBasedAnimation>(
-        StringPrintf("/tmp/intent_aware_iterator_%p", this));
+        JoinPathSegments(
+            FLAGS_TEST_intent_aware_iterator_visual_debug_output_dir,
+            StringPrintf("%s_%p", time_buf, this)));
   }
   CHECK_OK(visual_debug_animation_->AddFrame(screen));
 }

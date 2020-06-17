@@ -297,7 +297,7 @@ class IntentAwareIterator {
 
   void VisualDebugCheckpointImpl(
       const char* file_name, int line, const char* func, const char* pretty_func,
-      const std::string& stack_trace);
+      const std::string& stack_trace, bool exiting_function = false);
 
   const ReadHybridTime read_time_;
   const string encoded_read_time_local_limit_;

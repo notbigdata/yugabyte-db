@@ -43,16 +43,19 @@ void VirtualScreen::PutChar(int row, int column, char c) {
 }
 
 void VirtualScreen::PutString(
-    const int top_row, const int left_column, const std::string& s) {
+    const int top_row, const int  left_column, const std::string& s, int max_width) {
   int i = top_row;
   int j = left_column;
+  const int right_margin = std::min(width_, left_column + max_width);
   for (char c : s) {
     if (c == '\n') {
       i++;
       j = left_column;
       continue;
     }
-    PutChar(i, j, c);
+    if (j <= right_margin) {
+      PutChar(i, j, c);
+    }
     j++;
   }
 }
@@ -75,9 +78,7 @@ TextBasedAnimation::TextBasedAnimation(const std::string& base_dir)
 
 Status TextBasedAnimation::AddFrame(const VirtualScreen& screen) {
   if (!dir_created_) {
-    if (!Env::Default()->DirExists(base_dir_)) {
-      RETURN_NOT_OK(Env::Default()->CreateDir(base_dir_));
-    }
+    RETURN_NOT_OK(Env::Default()->CreateDirs(base_dir_));
     dir_created_ = true;
   }
   string file_name = JoinPathSegments(base_dir_, StringPrintf("frame_%05d", n_frames_));

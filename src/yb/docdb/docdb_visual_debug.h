@@ -25,12 +25,15 @@ class VirtualScreen {
  public:
   VirtualScreen(int width, int height);
   void PutChar(int row, int column, char c);
-  void PutString(int row, int column, const std::string& s);
+  void PutString(
+      int row, int column, const std::string& s, int max_width = std::numeric_limits<int>::max());
 
   template <class... Args>
   void PutFormat(int row, int column, const std::string& format, Args&&... args) {
     PutString(row, column, Format(format, std::forward<Args>(args)...));
   }
+
+  void PutLines(int row, int column, const std::vector<string>& lines);
 
   CHECKED_STATUS SaveToFile(const string& file_path) const;
 
