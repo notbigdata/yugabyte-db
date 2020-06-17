@@ -89,6 +89,7 @@ class LongOperationTrackerHelper {
 
  private:
   void Execute() {
+    return;  // TODO mbautin: revert this
     std::unique_lock<std::mutex> lock(mutex_);
     while (!stop_) {
       if (queue_.empty()) {
@@ -129,18 +130,19 @@ class LongOperationTrackerHelper {
 } // namespace
 
 LongOperationTracker::LongOperationTracker(const char* message, MonoDelta duration)
-    : tracked_operation_(LongOperationTrackerHelper::Instance().Register(message, duration)) {
+    : // tracked_operation_(LongOperationTrackerHelper::Instance().Register(message, duration)),
+      tracked_operation_(nullptr) {
 }
 
 LongOperationTracker::~LongOperationTracker() {
-  if (!tracked_operation_) {
-    return;
-  }
-  auto now = CoarseMonoClock::now();
-  if (now > tracked_operation_->time) {
-    LOG(WARNING) << tracked_operation_->message << " took a long time: "
-                 << MonoDelta(now - tracked_operation_->start);
-  }
+  // if (!tracked_operation_) {
+  //   return;
+  // }
+  // auto now = CoarseMonoClock::now();
+  // if (now > tracked_operation_->time) {
+  //   LOG(WARNING) << tracked_operation_->message << " took a long time: "
+  //                << MonoDelta(now - tracked_operation_->start);
+  // }
 }
 
 } // namespace yb

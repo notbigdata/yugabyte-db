@@ -28,6 +28,7 @@
 #include "yb/docdb/docdb_rocksdb_util.h"
 #include "yb/docdb/docdb-internal.h"
 #include "yb/docdb/intent.h"
+#include "yb/docdb/kv_debug.h"
 #include "yb/docdb/value.h"
 
 #include "yb/docdb/docdb_visual_debug.h"
@@ -72,9 +73,50 @@ DEFINE_string(TEST_intent_aware_iterator_visual_debug_output_dir,
     } \
   })
 
-
 namespace yb {
 namespace docdb {
+
+class VisualDebugLogSink : public google::LogSink {
+ public:
+  VisualDebugLogSink(
+      IntentAwareIterator* target,
+      const char* func,
+      const char* pretty_func,
+      std::string stack_trace) 
+      : target_(target),
+        func_(func),
+        pretty_func_(pretty_func),
+        stack_trace_(stack_trace) {
+  }
+  virtual ~VisualDebugLogSink() {}
+
+  void send(
+      google::LogSeverity severity, const char* full_filename, const char* base_filename, int line,
+      const struct ::tm* tm_time, const char* message, size_t message_len) override {
+    target_->VisualDebugCheckpointImpl(
+        full_filename, line, func_, pretty_func_, stack_trace_, /* exiting_function */ false);
+  }
+
+ private:
+  IntentAwareIterator* target_ = nullptr;
+  const char* func_ = nullptr;
+  const char* pretty_func_ = nullptr;
+  const std::string stack_trace_;
+};
+
+#define LOG_TO_SINK_BUT_NOT_TO_LOGFILE_IF(severity, condition, sink) \
+
+#define VDLOG() \
+    boost::optional<VisualDebugLogSink> BOOST_PP_CAT(_vdlog_sink_, __LINE__) = \
+        !FLAGS_TEST_intent_aware_iterator_visual_debug ? boost::none : \
+        boost::optional<VisualDebugLogSink>( \
+          VisualDebugLogSink(this, __func__, __PRETTY_FUNCTION__, GetStackTrace())); \
+    static_cast<void>(0), \
+    !(FLAGS_TEST_intent_aware_iterator_visual_debug) ? (void) 0 : \
+        google::LogMessageVoidify() & google::LogMessage( \
+            __FILE__, __LINE__, google::GLOG_INFO, \
+            &*BOOST_PP_CAT(_vdlog_sink_, __LINE__), false).stream()
+
 
 namespace {
 
@@ -327,7 +369,7 @@ IntentAwareIterator::IntentAwareIterator(
       transaction_status_cache_(
           txn_op_context ? &txn_op_context->txn_status_manager : nullptr, read_time, deadline) {
   VISUAL_DEBUG_CHECKPOINT_ENTER_LEAVE();
-  VLOG(4) << "IntentAwareIterator, read_time: " << read_time
+  VDLOG() << "IntentAwareIterator, read_time: " << read_time
           << ", txn_op_context: " << txn_op_context_;
 
   if (txn_op_context &&
@@ -339,6 +381,17 @@ IntentAwareIterator::IntentAwareIterator(
                                                 rocksdb::kDefaultQueryId,
                                                 nullptr /* file_filter */,
                                                 &intent_upperbound_);
+
+    if (FLAGS_TEST_intent_aware_iterator_visual_debug) {
+      visual_debug_intent_iter_ = docdb::CreateRocksDBIterator(
+          doc_db.intents,
+          doc_db.key_bounds,
+          docdb::BloomFilterMode::DONT_USE_BLOOM_FILTER,
+          boost::none,
+          rocksdb::kDefaultQueryId,
+          nullptr /* file_filter */,
+          nullptr /* upper bound */ );
+    }
   }
   // WARNING: Is is important for regular DB iterator to be created after intents DB iterator,
   // otherwise consistency could break, for example in following scenario:
@@ -849,6 +902,7 @@ void IntentAwareIterator::SeekToSuitableIntent() {
 
   // Find latest suitable intent for the first SubDocKey having suitable intents.
   while (intent_iter_.Valid()) {
+    VISUAL_DEBUG_CHECKPOINT();
     auto intent_key = intent_iter_.key();
     if (intent_key[0] == ValueTypeAsChar::kTransactionId) {
       // If the intent iterator ever enters the transaction metadata and reverse index region, skip
@@ -1245,10 +1299,45 @@ void IntentAwareIterator::VisualDebugCheckpointImpl(
   int row = 0;
   screen.PutFormat(row++, 0, "File: $0", file_name);
   screen.PutFormat(row++, 0, "Line: $0", line);
-  screen.PutFormat(row++, 0, "Function: $0$1", exiting_function ? "[Exiting] " : "", func);
+  screen.PutFormat(row++, 0, "Function: $0$1", exiting_function ? "Returning from " : "", func);
   screen.PutFormat(row++, 0, "Pretty function: $0", pretty_func);
   screen.PutString(row++, 0, "Stack trace:");
   screen.PutString(row++, 2, stack_trace);
+
+  if (visual_debug_intent_iter_) {
+    const int kFirstRowOfDocDbDump = 33;
+    row = kFirstRowOfDocDbDump;
+    const bool intent_iter_valid = intent_iter_.Valid();
+    int num_intent_kvs = 0;
+    visual_debug_intent_iter_->SeekToFirst();
+    static const auto kIntentIterCurKeyMarker = "Intent Iter ->"s;
+    const int kIntentKeyColumn = 15;
+    while (row < screen.height() && visual_debug_intent_iter_->Valid()) {
+      num_intent_kvs++;
+      auto key_as_str_result = DocDBKeyToDebugStr(
+          visual_debug_intent_iter_->key(), StorageDbType::kIntents);
+      string key_str;
+      if (key_as_str_result.ok()) {
+        key_str = *key_as_str_result;
+      } else {
+        key_str = Format(
+            "$0, status: $1",
+            FormatSliceAsStr(visual_debug_intent_iter_->key()), key_as_str_result.status());
+      }
+      if (intent_iter_valid && 
+          intent_iter_.key() == visual_debug_intent_iter_->key()) {
+        screen.PutString(row, 0, kIntentIterCurKeyMarker);
+      }
+      screen.PutString(row, kIntentKeyColumn, key_str);
+      row++;
+      visual_debug_intent_iter_->Next();
+    }
+    screen.PutFormat(
+        kFirstRowOfDocDbDump - 1, 0, "Examined $0 key/value records in intents RocksDB",
+        num_intent_kvs);
+  } else {
+    screen.PutString(40, 0, "visual_debug_intent_iter_ is not set");
+  }
 
   if (!visual_debug_animation_) {
     time_t rawtime = time(nullptr);

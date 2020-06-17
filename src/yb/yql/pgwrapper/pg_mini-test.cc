@@ -1298,6 +1298,11 @@ TEST_F_EX(PgMiniTest, YB_DISABLE_TEST_IN_SANITIZERS(IterateWithIntents), PgMiniS
   ASSERT_OK(conn2.Execute("BEGIN"));
   ASSERT_OK(conn2.Execute("INSERT INTO t VALUES(2, 20)"));
 
+  auto conn3 = ASSERT_RESULT(Connect());
+  ASSERT_OK(conn3.Execute("BEGIN"));
+  ASSERT_OK(conn3.Execute("INSERT INTO t VALUES(3, 30)"));
+  ASSERT_OK(conn3.Execute("INSERT INTO t VALUES(4, 40)"));
+
   SetAtomicFlag(true, &FLAGS_TEST_intent_aware_iterator_visual_debug);
   auto result = ASSERT_RESULT(conn2.FetchMatrix("SELECT * FROM t", 1, 2));
   SetAtomicFlag(false, &FLAGS_TEST_intent_aware_iterator_visual_debug);
@@ -1317,6 +1322,7 @@ TEST_F_EX(PgMiniTest, YB_DISABLE_TEST_IN_SANITIZERS(IterateWithIntents), PgMiniS
 
   ASSERT_OK(conn1.Execute("ROLLBACK"));
   ASSERT_OK(conn2.Execute("ROLLBACK"));
+  ASSERT_OK(conn3.Execute("ROLLBACK"));
 }
 
 } // namespace pgwrapper

@@ -186,6 +186,10 @@ class IntentAwareIterator {
 
   void DebugDump();
 
+  void VisualDebugCheckpointImpl(
+      const char* file_name, int line, const char* func, const char* pretty_func,
+      const std::string& stack_trace, bool exiting_function = false);
+
  private:
   // Seek forward on regular sub-iterator.
   void SeekForwardRegular(const Slice& slice);
@@ -295,15 +299,12 @@ class IntentAwareIterator {
   void UpdatePlannedIntentSeekForward(
       const Slice& key, const Slice& suffix, bool use_suffix_for_prefix = true);
 
-  void VisualDebugCheckpointImpl(
-      const char* file_name, int line, const char* func, const char* pretty_func,
-      const std::string& stack_trace, bool exiting_function = false);
-
   const ReadHybridTime read_time_;
   const string encoded_read_time_local_limit_;
   const string encoded_read_time_global_limit_;
   const TransactionOperationContextOpt txn_op_context_;
   docdb::BoundedRocksDbIterator intent_iter_;
+  boost::optional<docdb::BoundedRocksDbIterator> visual_debug_intent_iter_;
   docdb::BoundedRocksDbIterator iter_;
   // iter_valid_ is true if and only if iter_ is positioned at key which matches top prefix from
   // the stack and record time satisfies read_time_ criteria.
@@ -341,7 +342,7 @@ class IntentAwareIterator {
   Slice seek_key_prefix_;
 
   std::unique_ptr<TextBasedAnimation> visual_debug_animation_;
-
+  std::unique_ptr<google::LogSink> visual_debug_log_sink_;
 };
 
 // Utility class that controls stack of prefixes in IntentAwareIterator.
