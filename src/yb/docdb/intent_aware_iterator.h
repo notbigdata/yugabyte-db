@@ -304,7 +304,6 @@ class IntentAwareIterator {
   const string encoded_read_time_global_limit_;
   const TransactionOperationContextOpt txn_op_context_;
   docdb::BoundedRocksDbIterator intent_iter_;
-  boost::optional<docdb::BoundedRocksDbIterator> visual_debug_intent_iter_;
   docdb::BoundedRocksDbIterator iter_;
   // iter_valid_ is true if and only if iter_ is positioned at key which matches top prefix from
   // the stack and record time satisfies read_time_ criteria.
@@ -343,6 +342,9 @@ class IntentAwareIterator {
 
   std::unique_ptr<TextBasedAnimation> visual_debug_animation_;
   std::unique_ptr<google::LogSink> visual_debug_log_sink_;
+  boost::optional<docdb::BoundedRocksDbIterator> visual_debug_regular_iter_;
+  boost::optional<docdb::BoundedRocksDbIterator> visual_debug_intent_iter_;
+  bool visual_debug_;
 };
 
 // Utility class that controls stack of prefixes in IntentAwareIterator.

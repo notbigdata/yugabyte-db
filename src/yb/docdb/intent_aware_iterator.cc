@@ -83,7 +83,7 @@ class VisualDebugLogSink : public google::LogSink {
       IntentAwareIterator* target,
       const char* func,
       const char* pretty_func,
-      std::string stack_trace) 
+      std::string stack_trace)
       : target_(target),
         func_(func),
         pretty_func_(pretty_func),
@@ -110,7 +110,7 @@ class VisualDebugLogSink : public google::LogSink {
 
 #define VDLOG() \
     boost::optional<VisualDebugLogSink> BOOST_PP_CAT(_vdlog_sink_, __LINE__) = \
-        !FLAGS_TEST_intent_aware_iterator_visual_debug ? boost::none : \
+        !visual_debug_ ? boost::none : \
         boost::optional<VisualDebugLogSink>( \
           VisualDebugLogSink(this, __func__, __PRETTY_FUNCTION__, GetStackTrace())); \
     static_cast<void>(0), \
@@ -118,7 +118,6 @@ class VisualDebugLogSink : public google::LogSink {
         google::LogMessageVoidify() & google::LogMessage( \
             __FILE__, __LINE__, google::GLOG_INFO, \
             &*BOOST_PP_CAT(_vdlog_sink_, __LINE__), /* log as usual? */ false).stream()
-
 
 namespace {
 
@@ -369,7 +368,8 @@ IntentAwareIterator::IntentAwareIterator(
           DocHybridTime(read_time_.global_limit, kMaxWriteId).EncodedInDocDbFormat()),
       txn_op_context_(txn_op_context),
       transaction_status_cache_(
-          txn_op_context ? &txn_op_context->txn_status_manager : nullptr, read_time, deadline) {
+          txn_op_context ? &txn_op_context->txn_status_manager : nullptr, read_time, deadline),
+      visual_debug_(FLAGS_TEST_intent_aware_iterator_visual_debug) {
   VISUAL_DEBUG_CHECKPOINT_ENTER_LEAVE();
   VDLOG() << "IntentAwareIterator, read_time: " << read_time
           << ", txn_op_context: " << txn_op_context_;
@@ -384,7 +384,7 @@ IntentAwareIterator::IntentAwareIterator(
                                                 nullptr /* file_filter */,
                                                 &intent_upperbound_);
 
-    if (FLAGS_TEST_intent_aware_iterator_visual_debug) {
+    if (visual_debug_) {
       visual_debug_intent_iter_ = docdb::CreateRocksDBIterator(
           doc_db.intents,
           doc_db.key_bounds,
@@ -404,6 +404,10 @@ IntentAwareIterator::IntentAwareIterator(
   // 5) Intents DB iterator is created on an intents DB snapshot containing no intents for k1.
   // 6) Client reads no values for k1.
   iter_ = BoundedRocksDbIterator(doc_db.regular, read_opts, doc_db.key_bounds);
+  if (visual_debug_) {
+    visual_debug_regular_iter_ =
+        BoundedRocksDbIterator(doc_db.regular, read_opts, doc_db.key_bounds);
+  }
 }
 
 IntentAwareIterator::~IntentAwareIterator() = default;
@@ -1315,36 +1319,50 @@ std::string TrimStackTraceForVisualDebug(const std::string& stack_trace) {
   return out_string_stream.str();
 }
 
+// void DumpRocksDbToVirtualScreen(
+//     VirtualScreenIf* out,
+//     rocksdb::Iterator* main_iter,
+//     rocksdb::Iterator* iter_for_debug,
+//     StorageDbType storage_db_type) {
+// }
+
 }  // namespace
 
 void IntentAwareIterator::VisualDebugCheckpointImpl(
     const char* file_name, int line, const char* func, const char* pretty_func,
     const Slice& message, const std::string& stack_trace, bool exiting_function) {
-  VirtualScreen screen(340, 80);
+  VirtualScreen screen(80, 340);
 
-  int row = 0;
-  screen.PutFormat(row++, 0, "File: $0", file_name);
-  screen.PutFormat(row++, 0, "Line: $0", line);
-  screen.PutFormat(row++, 0, "Function: $0$1", exiting_function ? "Returning from " : "", func);
-  screen.PutFormat(row++, 0, "Pretty function: $0", pretty_func);
-  if (!message.empty()) {
-    screen.PutFormat(row++, 0, "Message: $0", message);
-  } else {
+  const int kTopSectionRows = 33;
+
+  {
+    VirtualWindow top_section = screen.TopSection(kTopSectionRows);
+    int row = 0;
+    top_section.PutFormat(row++, 0, "File: $0", file_name);
+    top_section.PutFormat(row++, 0, "Line: $0", line);
+    top_section.PutFormat(row++, 0, "Function: $0$1", exiting_function ? "Returning from " : "", func);
+    top_section.PutFormat(row++, 0, "Pretty function: $0", pretty_func);
+    if (!message.empty()) {
+      top_section.PutFormat(row++, 0, "Message: $0", message);
+    } else {
+      row++;
+    }
     row++;
+    top_section.PutString(row++, 0, "Stack trace:");
+    top_section.PutString(row++, 2, TrimStackTraceForVisualDebug(stack_trace));
   }
-  row++;
-  screen.PutString(row++, 0, "Stack trace:");
-  const int kFirstRowOfDocDbDump = 33;
-  screen.PutString(row++, 2, TrimStackTraceForVisualDebug(stack_trace), kFirstRowOfDocDbDump);
 
+  VirtualWindow bottom_section = screen.BottomSection(screen.height() - kTopSectionRows);
+  auto window = bottom_section.LeftHalf();
   if (visual_debug_intent_iter_) {
-    row = kFirstRowOfDocDbDump;
+
+    int row = 1;
     const bool intent_iter_valid = intent_iter_.Valid();
     int num_intent_kvs = 0;
     visual_debug_intent_iter_->SeekToFirst();
     static const auto kIntentIterCurKeyMarker = "Intent Iter ->"s;
     const int kIntentKeyColumn = 15;
-    while (row < screen.height() && visual_debug_intent_iter_->Valid()) {
+    while (row < window.height() && visual_debug_intent_iter_->Valid()) {
       num_intent_kvs++;
       auto key_as_str_result = DocDBKeyToDebugStr(
           visual_debug_intent_iter_->key(), StorageDbType::kIntents);
@@ -1356,19 +1374,17 @@ void IntentAwareIterator::VisualDebugCheckpointImpl(
             "$0, status: $1",
             FormatSliceAsStr(visual_debug_intent_iter_->key()), key_as_str_result.status());
       }
-      if (intent_iter_valid && 
+      if (intent_iter_valid &&
           intent_iter_.key() == visual_debug_intent_iter_->key()) {
-        screen.PutString(row, 0, kIntentIterCurKeyMarker);
+        window.PutString(row, 0, kIntentIterCurKeyMarker);
       }
-      screen.PutString(row, kIntentKeyColumn, key_str);
+      window.PutString(row, kIntentKeyColumn, key_str);
       row++;
       visual_debug_intent_iter_->Next();
     }
-    screen.PutFormat(
-        kFirstRowOfDocDbDump - 1, 0, "Examined $0 key/value records in intents RocksDB",
-        num_intent_kvs);
+    window.PutFormat(0, 0, "$0 key/value records in intents RocksDB", num_intent_kvs);
   } else {
-    screen.PutString(40, 0, "visual_debug_intent_iter_ is not set");
+    window.PutString(0, 0, "visual_debug_intent_iter_ is not set");
   }
 
   if (!visual_debug_animation_) {

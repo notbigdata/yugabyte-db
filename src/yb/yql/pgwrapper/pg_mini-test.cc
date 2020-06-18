@@ -673,7 +673,7 @@ TEST_F_EX(PgMiniTest, YB_DISABLE_TEST_IN_TSAN(BulkCopyWithRestart), PgMiniSmallW
   ASSERT_OK(cluster_->RestartSync());
 
   ASSERT_OK(WaitFor([this, &conn, &key, &kTableName] {
-    auto intents_count = CountIntents(cluster_.get());
+    auto intents_count = CountIntents(cluster_.get()).first;
     LOG(INFO) << "Intents count: " << intents_count;
 
     if (intents_count <= 5000) {
@@ -721,7 +721,7 @@ void PgMiniTest::TestForeignKey(IsolationLevel isolation_level) {
   }
 
   ASSERT_OK(WaitFor([this] {
-    return CountIntents(cluster_.get()) == 0;
+    return CountIntents(cluster_.get()).first == 0;
   }, 15s, "Intents cleanup"));
 }
 
@@ -1288,26 +1288,34 @@ TEST_F(PgMiniTest, YB_DISABLE_TEST_IN_TSAN(CreateDatabase)) {
 TEST_F_EX(PgMiniTest, YB_DISABLE_TEST_IN_SANITIZERS(IterateWithIntents), PgMiniSingleTServerTest) {
   auto conn = ASSERT_RESULT(Connect());
 
-  ASSERT_OK(conn.Execute("CREATE TABLE t (k int, v int, PRIMARY KEY (k ASC))"));
+  ASSERT_OK(conn.Execute("CREATE TABLE t (k int, v text, PRIMARY KEY (k ASC))"));
 
   auto conn1 = ASSERT_RESULT(Connect());
   ASSERT_OK(conn1.Execute("BEGIN"));
-  ASSERT_OK(conn1.Execute("INSERT INTO t VALUES(1, 10)"));
+  ASSERT_OK(conn1.Execute("INSERT INTO t VALUES(1, 'ten')"));
 
   auto conn2 = ASSERT_RESULT(Connect());
   ASSERT_OK(conn2.Execute("BEGIN"));
-  ASSERT_OK(conn2.Execute("INSERT INTO t VALUES(2, 20)"));
+  ASSERT_OK(conn2.Execute("INSERT INTO t VALUES(2, 'twenty')"));
 
   auto conn3 = ASSERT_RESULT(Connect());
   ASSERT_OK(conn3.Execute("BEGIN"));
-  ASSERT_OK(conn3.Execute("INSERT INTO t VALUES(3, 30)"));
-  ASSERT_OK(conn3.Execute("INSERT INTO t VALUES(4, 40)"));
+  ASSERT_OK(conn3.Execute("INSERT INTO t VALUES(3, 'thirty')"));
+  ASSERT_OK(conn3.Execute("INSERT INTO t VALUES(4, 'forty')"));
+  ASSERT_OK(conn3.Execute("COMMIT"));
+
+  ASSERT_OK(WaitFor(
+      [this] { return CountIntents(cluster_.get()).second <= 2; },
+      5s, "Intents cleanup", 200ms));
 
   SetAtomicFlag(true, &FLAGS_TEST_intent_aware_iterator_visual_debug);
+
+  // Transaction in connection 2 will not see the rows from connection 3.  
   auto result = ASSERT_RESULT(conn2.FetchMatrix("SELECT * FROM t", 1, 2));
   SetAtomicFlag(false, &FLAGS_TEST_intent_aware_iterator_visual_debug);
+
   ASSERT_EQ(2, ASSERT_RESULT(GetInt32(result.get(), 0, 0)));
-  ASSERT_EQ(20, ASSERT_RESULT(GetInt32(result.get(), 0, 1)));
+  ASSERT_EQ("twenty", ASSERT_RESULT(GetString(result.get(), 0, 1)));
 
   std::vector<std::shared_ptr<tablet::TabletPeer>> tablet_peers;
   auto* ts_tablet_manager = cluster_->mini_tablet_server(0)->server()->tablet_manager();

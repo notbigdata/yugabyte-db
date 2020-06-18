@@ -21,32 +21,67 @@
 namespace yb {
 namespace docdb {
 
-class VirtualScreen {
+class VirtualWindow;
+class VirtualScreenIf {
  public:
-  VirtualScreen(int width, int height);
-  void PutChar(int row, int column, char c);
-  void PutString(
-      int row, int column, const std::string& s,
-      int row_limit = std::numeric_limits<int>::max(),
-      int column_limit = std::numeric_limits<int>::max());
+  VirtualScreenIf(int height, int width) : height_(height), width_(width) {};
+
+  virtual ~VirtualScreenIf() {}
+  virtual void PutChar(int row, int column, char c) = 0;
+
+  void PutString(int top_row, int left_col, const std::string& s);
 
   template <class... Args>
   void PutFormat(int row, int column, const std::string& format, Args&&... args) {
     PutString(row, column, Format(format, std::forward<Args>(args)...));
   }
 
-  void PutLines(int row, int column, const std::vector<string>& lines);
+  int height() const { return height_; }
+  int width() const { return width_; }
+
+  virtual VirtualWindow SubWindow(int top_row, int left_col, int height, int width);
+
+  VirtualWindow TopSection(int num_rows);
+  VirtualWindow BottomSection(int num_rows);
+  VirtualWindow LeftHalf();
+  VirtualWindow RightHalf();
+
+ protected:
+  int height_, width_;
+};
+
+class VirtualWindow : public VirtualScreenIf {
+ public:
+  VirtualWindow(
+      VirtualScreenIf* parent,
+      int top_row,
+      int left_col,
+      int height,
+      int width)
+      : VirtualScreenIf(height, width),
+        parent_(parent),
+        top_row_(top_row),
+        left_col_(left_col) {}
+  VirtualWindow(const VirtualWindow& other) = default;
+  VirtualWindow& operator= (const VirtualWindow& other) = default;
+
+  void PutChar(int row, int column, char c) override;
+  VirtualWindow SubWindow(int top_row, int left_col, int height, int width) override;
+ private:
+  VirtualScreenIf* parent_;
+  int top_row_, left_col_;
+};
+
+class VirtualScreen : public VirtualScreenIf {
+ public:
+  VirtualScreen(int height, int width);
+  void PutChar(int row, int column, char c) override;
 
   CHECKED_STATUS SaveToFile(const string& file_path) const;
-
-  int width() const { return width_; }
-  int height() const { return height_; }
 
  private:
   std::vector<std::string> rows_;
   std::vector<int> actual_length_;
-  int width_;
-  int height_;
   int actual_num_rows_ = 0;
 };
 

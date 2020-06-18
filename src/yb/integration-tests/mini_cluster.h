@@ -294,7 +294,8 @@ Result<scoped_refptr<master::TableInfo>> FindTable(
 CHECKED_STATUS WaitForInitDb(MiniCluster* cluster);
 
 using TabletPeerFilter = std::function<bool(const tablet::TabletPeer*)>;
-size_t CountIntents(MiniCluster* cluster, const TabletPeerFilter& filter = TabletPeerFilter());
+std::pair<size_t, size_t> CountIntents(
+    MiniCluster* cluster, const TabletPeerFilter& filter = TabletPeerFilter());
 
 tserver::MiniTabletServer* FindTabletLeader(MiniCluster* cluster, const TabletId& tablet_id);
 

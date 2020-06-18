@@ -766,8 +766,10 @@ Status WaitForInitDb(MiniCluster* cluster) {
   return STATUS_FORMAT(TimedOut, "Unable to init db in $0", kTimeout);
 }
 
-size_t CountIntents(MiniCluster* cluster, const TabletPeerFilter& filter) {
-  size_t result = 0;
+std::pair<size_t, size_t> CountIntents(MiniCluster* cluster, const TabletPeerFilter& filter) {
+  size_t total_intents = 0;
+  size_t total_txns = 0;
+
   auto peers = ListTabletPeers(cluster, ListPeersFilter::kAll);
   for (const auto &peer : peers) {
     auto participant = peer->tablet() ? peer->tablet()->transaction_participant() : nullptr;
@@ -779,12 +781,13 @@ size_t CountIntents(MiniCluster* cluster, const TabletPeerFilter& filter) {
     }
     auto intents_count = participant->TEST_CountIntents();
     if (intents_count.first) {
-      result += intents_count.first;
+      total_intents += intents_count.first;
+      total_txns += intents_count.second;
       LOG(INFO) << Format("T $0 P $1: Intents present: $2, transactions: $3", peer->tablet_id(),
                           peer->permanent_uuid(), intents_count.first, intents_count.second);
     }
   }
-  return result;
+  return {total_intents, total_txns};
 }
 
 MiniTabletServer* FindTabletLeader(MiniCluster* cluster, const TabletId& tablet_id) {

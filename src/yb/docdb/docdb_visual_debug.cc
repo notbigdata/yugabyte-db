@@ -18,14 +18,76 @@ namespace yb {
 namespace docdb {
 
 // ------------------------------------------------------------------------------------------------
+// VirtualScreenIf
+// ------------------------------------------------------------------------------------------------
+
+void VirtualScreenIf::PutString(int top_row, int left_col, const std::string& s) {
+  int i = top_row;
+  int j = left_col;
+  for (char c : s) {
+    if (c == '\n') {
+      i++;
+      j = left_col;
+      continue;
+    }
+    PutChar(i, j, c);
+    j++;
+  }
+}
+
+VirtualWindow VirtualScreenIf::SubWindow(int top_row, int left_col, int height, int width) {
+  return VirtualWindow(this, top_row, left_col, height, width);
+}
+
+VirtualWindow VirtualScreenIf::TopSection(int num_rows) {
+  return SubWindow(0, 0, num_rows, width_);
+}
+
+VirtualWindow VirtualScreenIf::BottomSection(int num_rows) {
+  return SubWindow(num_rows, 0, height_ - num_rows, width_);
+}
+
+VirtualWindow VirtualScreenIf::LeftHalf() {
+  return SubWindow(0, 0, height_, width_ / 2);
+}
+
+VirtualWindow VirtualScreenIf::RightHalf() {
+  return SubWindow(0, width_ / 2, height_, width_ - width_ / 2);
+}
+
+// ------------------------------------------------------------------------------------------------
+// VirtualWindow
+// ------------------------------------------------------------------------------------------------
+
+void VirtualWindow::PutChar(int row, int col, char c) {
+  if (0 <= row && row < height_ && 0 <= col && col < width_) {
+    parent_->PutChar(top_row_ + row, left_col_ + col, c);
+  }
+}
+
+VirtualWindow VirtualWindow::SubWindow(int top_row, int left_col, int height, int width) {
+  CHECK_GE(top_row, 0);
+  CHECK_GE(left_col, 0);
+  CHECK_LT(top_row, height_);
+  CHECK_LT(left_col, width_);
+  CHECK_LE(top_row + height, height_);
+  CHECK_LE(left_col + width, width_);
+  return VirtualWindow(
+      parent_,
+      top_row_ + top_row,
+      left_col_ + left_col,
+      height,
+      width);
+}
+
+// ------------------------------------------------------------------------------------------------
 // VirtualScreen
 // ------------------------------------------------------------------------------------------------
 
-VirtualScreen::VirtualScreen(int width, int height)
-    : rows_(height),
-      actual_length_(height),
-      width_(width),
-      height_(height) {
+VirtualScreen::VirtualScreen(int height, int width)
+    : VirtualScreenIf(height, width),
+      rows_(height),
+      actual_length_(height) {
   for (auto& s : rows_) {
     s.reserve(width_);
     for (int i = 0; i < width_; ++i) {
@@ -34,29 +96,11 @@ VirtualScreen::VirtualScreen(int width, int height)
   }
 }
 
-void VirtualScreen::PutChar(int row, int column, char c) {
-  if (0 <= row && row < height_ && 0 <= column && column < width_) {
-    rows_[row][column] = c;
+void VirtualScreen::PutChar(int row, int col, char c) {
+  if (0 <= row && row < height_ && 0 <= col && col < width_) {
+    rows_[row][col] = c;
     actual_num_rows_ = std::max(actual_num_rows_, row + 1);
-    actual_length_[row] = std::max(actual_length_[row], column + 1);
-  }
-}
-
-void VirtualScreen::PutString(
-    const int top_row, const int  left_column, const std::string& s,
-    const int row_limit, const int column_limit) {
-  int i = top_row;
-  int j = left_column;
-  for (char c : s) {
-    if (c == '\n') {
-      i++;
-      j = left_column;
-      continue;
-    }
-    if (i < row_limit && j < column_limit) {
-      PutChar(i, j, c);
-    }
-    j++;
+    actual_length_[row] = std::max(actual_length_[row], col + 1);
   }
 }
 
