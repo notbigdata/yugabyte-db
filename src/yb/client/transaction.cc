@@ -196,9 +196,10 @@ class YBTransaction::Impl final {
                         << initial << ")";
 
     bool has_tablets_without_metadata = false;
+    bool defer = false;
     {
-      std::unique_lock<std::mutex> lock(mutex_);
-      const bool defer = !ready_;
+      std::lock_guard<std::mutex> lock(mutex_);
+      defer = !ready_;
 
       int num_tablets = 0;
       if (!defer || initial) {
@@ -234,17 +235,19 @@ class YBTransaction::Impl final {
         if (waiter) {
           waiters_.push_back(std::move(waiter));
         }
-        lock.unlock();
-        VLOG_WITH_PREFIX(2) << "Prepare, rejected (not ready, requesting status tablet)";
-        RequestStatusTablet(deadline);
-        return false;
+      } else {
+        // For serializable isolation we never choose read time, since it always reads latest
+        // snapshot.
+        //
+        // For snapshot isolation, if read time was not yet picked, we have to choose it now, if
+        // there are multiple tablets that will process the first request.
+        SetReadTimeIfNeeded(num_tablets > 1 || force_consistent_read);
       }
-
-      // For serializable isolation we never choose read time, since it always reads latest
-      // snapshot.
-      // For snapshot isolation, if read time was not yet picked, we have to choose it now, if there
-      // multiple tablets that will process first request.
-      SetReadTimeIfNeeded(num_tablets > 1 || force_consistent_read);
+    }
+    if (defer) {
+      VLOG_WITH_PREFIX(2) << "Prepare, rejected (not ready, requesting status tablet)";
+      RequestStatusTablet(deadline);
+      return false;
     }
 
     VLOG_WITH_PREFIX(3) << "Prepare, has_tablets_without_metadata: "
@@ -565,6 +568,17 @@ class YBTransaction::Impl final {
         metadata_.isolation == IsolationLevel::SNAPSHOT_ISOLATION) {
       read_point_.SetCurrentReadTime();
     }
+  }
+
+  CHECKED_STATUS CheckRunning() REQUIRES(mutex_) {
+    if (state_.load(std::memory_order_acquire) != TransactionState::kRunning) {
+      auto status = status_;
+      if (status.ok()) {
+        status = STATUS(IllegalState, "Transaction already completed");
+      }
+      return status;
+    }
+    return Status::OK();
   }
 
   CHECKED_STATUS CheckRunning(std::unique_lock<std::mutex>* lock) {
