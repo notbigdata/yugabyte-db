@@ -384,12 +384,18 @@ class YBTransaction::Impl final {
     DoCommit(deadline, seal_only, Status::OK(), transaction);
   }
 
-  void Abort(CoarseTimePoint deadline) {
+  void Abort(CoarseTimePoint deadline) EXCLUDES(mutex_) {
     VLOG_WITH_PREFIX(2) << "Abort";
 
     auto transaction = transaction_->shared_from_this();
+
+    // These variables are used to handle the case when the transaction is not ready yet.
+    // In that case we will just notify the waiters with the status.
+    bool ready = false;
+    std::vector<Waiter> waiters;
+
     {
-      std::unique_lock<std::mutex> lock(mutex_);
+      std::lock_guard<std::mutex> lock(mutex_);
       auto state = state_.load(std::memory_order_acquire);
       if (state != TransactionState::kRunning) {
         LOG_IF_WITH_PREFIX(DFATAL, state != TransactionState::kAborted)
@@ -401,16 +407,18 @@ class YBTransaction::Impl final {
         return;
       }
       state_.store(TransactionState::kAborted, std::memory_order_release);
-      if (!ready_) {
-        std::vector<Waiter> waiters;
+      ready = ready_;
+      if (!ready) {
         waiters_.swap(waiters);
-        lock.unlock();
-        const auto aborted_status = STATUS(Aborted, "Transaction aborted");
-        for(const auto& waiter : waiters) {
-          waiter(aborted_status);
-        }
-        return;
+        // Will continue cleanup after relesing the lock.
       }
+    }
+    if (!ready) {
+      const auto aborted_status = STATUS(Aborted, "Transaction aborted");
+      for (const auto& waiter : waiters) {
+        waiter(aborted_status);
+      }
+      return;
     }
     DoAbort(deadline, transaction);
   }
