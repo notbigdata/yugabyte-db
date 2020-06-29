@@ -477,8 +477,8 @@ class YBTransaction::Impl final {
   }
 
   Result<ChildTransactionResultPB> FinishChild() {
-    std::unique_lock<std::mutex> lock(mutex_);
-    RETURN_NOT_OK(CheckRunning(&lock));
+    std::lock_guard<std::mutex> lock(mutex_);
+    RETURN_NOT_OK(CheckRunning());
     if (!child_) {
       return STATUS(IllegalState, "Finish child of non child transaction");
     }
@@ -499,8 +499,8 @@ class YBTransaction::Impl final {
   }
 
   Status ApplyChildResult(const ChildTransactionResultPB& result) {
-    std::unique_lock<std::mutex> lock(mutex_);
-    RETURN_NOT_OK(CheckRunning(&lock));
+    std::lock_guard<std::mutex> lock(mutex_);
+    RETURN_NOT_OK(CheckRunning());
     if (child_) {
       return STATUS(IllegalState, "Apply child result of child transaction");
     }
@@ -535,28 +535,36 @@ class YBTransaction::Impl final {
   }
 
   Result<TransactionMetadata> Release() {
-    std::unique_lock<std::mutex> lock(mutex_);
-    auto state = state_.load(std::memory_order_acquire);
-    if (state != TransactionState::kRunning) {
-      return STATUS_FORMAT(IllegalState, "Attempt to release transaction in the wrong state $0: $1",
-                           metadata_.transaction_id, AsString(state));
-    }
-    state_.store(TransactionState::kReleased, std::memory_order_release);
+    bool ready = false;
+    boost::optional<CountDownLatch> latch;
+    Status pick_status;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      auto state = state_.load(std::memory_order_acquire);
+      if (state != TransactionState::kRunning) {
+        return STATUS_FORMAT(
+            IllegalState, "Attempt to release transaction in the wrong state $0: $1",
+            metadata_.transaction_id, AsString(state));
+      }
+      state_.store(TransactionState::kReleased, std::memory_order_release);
+      ready = ready_;
+      if (ready) {
+        return metadata_;
+      }
 
-    if (!ready_) {
-      CountDownLatch latch(1);
-      Status pick_status;
+      latch.emplace(1);
       auto transaction = transaction_->shared_from_this();
       waiters_.push_back([&latch, &pick_status](const Status& status) {
         pick_status = status;
-        latch.CountDown();
+        latch->CountDown();
       });
-      lock.unlock();
-      RequestStatusTablet(TransactionRpcDeadline());
-      latch.Wait();
-      RETURN_NOT_OK(pick_status);
-      lock.lock();
     }
+
+    RequestStatusTablet(TransactionRpcDeadline());
+    latch->Wait();
+    RETURN_NOT_OK(pick_status);
+
+    std::lock_guard<std::mutex> lock(mutex_);
     return metadata_;
   }
 
