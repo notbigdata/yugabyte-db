@@ -339,37 +339,48 @@ class YBTransaction::Impl final {
     }
   }
 
-  void Commit(CoarseTimePoint deadline, SealOnly seal_only, CommitCallback callback) {
+  void Commit(CoarseTimePoint deadline, SealOnly seal_only, CommitCallback callback)
+      EXCLUDES(mutex_) {
     auto transaction = transaction_->shared_from_this();
+
+    Status commit_check_status;
+    bool ready = false;
     {
-      std::unique_lock<std::mutex> lock(mutex_);
-      auto status = CheckCouldCommit(seal_only, &lock);
-      if (!status.ok()) {
-        callback(status);
-        return;
-      }
-      state_.store(seal_only ? TransactionState::kSealed : TransactionState::kCommitted,
-                   std::memory_order_release);
-      commit_callback_ = std::move(callback);
-      if (!ready_) {
-        // If we have not written any intents and do not even have a transaction status tablet,
-        // just report the transaction as committed.
-        //
-        // See https://github.com/yugabyte/yugabyte-db/issues/3105 for details -- we might be able
-        // to remove this special case if it turns out there is a bug elsewhere.
-        if (tablets_.empty() && running_requests_ == 0) {
-          VLOG_WITH_PREFIX(4) << "Committed empty transaction";
-          commit_callback_(Status::OK());
+      std::lock_guard<std::mutex> lock(mutex_);
+      commit_check_status = CheckCouldCommit(seal_only);
+      if (commit_check_status.ok()) {
+        state_.store(seal_only ? TransactionState::kSealed : TransactionState::kCommitted,
+                    std::memory_order_release);
+        commit_callback_ = std::move(callback);
+        ready = ready_;
+        if (!ready) {
+          // If we have not written any intents and do not even have a transaction status tablet,
+          // just report the transaction as committed.
+          //
+          // See https://github.com/yugabyte/yugabyte-db/issues/3105 for details -- we might be able
+          // to remove this special case if it turns out there is a bug elsewhere.
+          if (tablets_.empty() && running_requests_ == 0) {
+            VLOG_WITH_PREFIX(4) << "Committed empty transaction";
+            commit_callback_(Status::OK());
+            return;
+          }
+
+          waiters_.emplace_back(std::bind(
+              &Impl::DoCommit, this, deadline, seal_only, _1, transaction));
           return;
         }
-
-        waiters_.emplace_back(std::bind(
-            &Impl::DoCommit, this, deadline, seal_only, _1, transaction));
-        lock.unlock();
-        RequestStatusTablet(deadline);
-        return;
       }
     }
+
+    if (!commit_check_status.ok()) {
+      callback(commit_check_status);
+      return;
+    }
+
+    if (!ready) {
+      RequestStatusTablet(deadline);
+    }
+
     DoCommit(deadline, seal_only, Status::OK(), transaction);
   }
 
@@ -940,8 +951,8 @@ class YBTransaction::Impl final {
     callback(data);
   }
 
-  CHECKED_STATUS CheckCouldCommit(SealOnly seal_only, std::unique_lock<std::mutex>* lock) {
-    RETURN_NOT_OK(CheckRunning(lock));
+  CHECKED_STATUS CheckCouldCommit(SealOnly seal_only) REQUIRES(mutex_) {
+    RETURN_NOT_OK(CheckRunning());
     if (child_) {
       return STATUS(IllegalState, "Commit of child transaction is not allowed");
     }
