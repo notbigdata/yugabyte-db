@@ -427,24 +427,31 @@ class YBTransaction::Impl final {
     return read_point_.IsRestartRequired();
   }
 
-  std::shared_future<TransactionMetadata> TEST_GetMetadata() {
-    std::unique_lock<std::mutex> lock(mutex_);
-    if (metadata_future_.valid()) {
-      return metadata_future_;
-    }
-    metadata_future_ = std::shared_future<TransactionMetadata>(metadata_promise_.get_future());
-    if (!ready_) {
+  std::shared_future<TransactionMetadata> TEST_GetMetadata() EXCLUDES(mutex_) {
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (metadata_future_.valid()) {
+        return metadata_future_;
+      }
+      metadata_future_ = std::shared_future<TransactionMetadata>(metadata_promise_.get_future());
+      if (ready_) {
+        metadata_promise_.set_value(metadata_);
+        return metadata_future_;
+      }
       auto transaction = transaction_->shared_from_this();
       waiters_.push_back([this, transaction](const Status& status) {
         // OK to crash here, because we are in test
         CHECK_OK(status);
         metadata_promise_.set_value(metadata_);
       });
-      lock.unlock();
-      RequestStatusTablet(TransactionRpcDeadline());
     }
-    metadata_promise_.set_value(metadata_);
-    return metadata_future_;
+
+    RequestStatusTablet(TransactionRpcDeadline());
+
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      return metadata_future_;
+    }
   }
 
   void PrepareChild(
