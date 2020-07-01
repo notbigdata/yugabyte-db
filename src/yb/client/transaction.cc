@@ -155,7 +155,7 @@ class YBTransaction::Impl final {
   }
 
   // This transaction is a restarted transaction, so we set it up with data from original one.
-  CHECKED_STATUS FillRestartedTransaction(Impl* other) {
+  CHECKED_STATUS FillRestartedTransaction(Impl* other) EXCLUDES(mutex_) {
     VLOG_WITH_PREFIX(1) << "Setup restart to " << other->ToString();
     auto transaction = transaction_->shared_from_this();
     {
@@ -191,7 +191,7 @@ class YBTransaction::Impl final {
                CoarseTimePoint deadline,
                Initial initial,
                Waiter waiter,
-               TransactionMetadata* metadata) {
+               TransactionMetadata* metadata) EXCLUDES(mutex_) {
     VLOG_WITH_PREFIX(2) << "Prepare(" << AsString(ops) << ", " << force_consistent_read << ", "
                         << initial << ")";
 
@@ -263,14 +263,14 @@ class YBTransaction::Impl final {
     return true;
   }
 
-  void ExpectOperations(size_t count) {
+  void ExpectOperations(size_t count) EXCLUDES(mutex_) {
     std::lock_guard<std::mutex> lock(mutex_);
     running_requests_ += count;
   }
 
   void Flushed(
       const internal::InFlightOps& ops, const ReadHybridTime& used_read_time,
-      const Status& status) {
+      const Status& status) EXCLUDES(mutex_) {
     VLOG_WITH_PREFIX(5)
         << "Flushed: " << yb::ToString(ops) << ", used_read_time: " << used_read_time
         << ", status: " << status;
@@ -456,7 +456,7 @@ class YBTransaction::Impl final {
 
   void PrepareChild(
       ForceConsistentRead force_consistent_read, CoarseTimePoint deadline,
-      PrepareChildCallback callback) {
+      PrepareChildCallback callback) EXCLUDES(mutex_) {
     auto transaction = transaction_->shared_from_this();
     bool restart_required = false;
     boost::optional<ChildTransactionDataPB> child_txn_data_pb;
@@ -495,7 +495,7 @@ class YBTransaction::Impl final {
     callback(*child_txn_data_pb);
   }
 
-  Result<ChildTransactionResultPB> FinishChild() {
+  Result<ChildTransactionResultPB> FinishChild() EXCLUDES(mutex_) {
     std::lock_guard<std::mutex> lock(mutex_);
     RETURN_NOT_OK(CheckRunning());
     if (!child_) {
@@ -517,7 +517,7 @@ class YBTransaction::Impl final {
     return result;
   }
 
-  Status ApplyChildResult(const ChildTransactionResultPB& result) {
+  Status ApplyChildResult(const ChildTransactionResultPB& result) EXCLUDES(mutex_) {
     std::lock_guard<std::mutex> lock(mutex_);
     RETURN_NOT_OK(CheckRunning());
     if (child_) {
@@ -540,7 +540,7 @@ class YBTransaction::Impl final {
     return log_prefix_;
   }
 
-  std::string ToString() {
+  std::string ToString() EXCLUDES(mutex_) {
     std::lock_guard<std::mutex> lock(mutex_);
     return Format("{ metadata: $0 state: $1 }", metadata_, state_.load(std::memory_order_acquire));
   }
@@ -553,7 +553,7 @@ class YBTransaction::Impl final {
     return read_point_;
   }
 
-  Result<TransactionMetadata> Release() {
+  Result<TransactionMetadata> Release() EXCLUDES(mutex_) {
     bool ready = false;
     boost::optional<CountDownLatch> latch;
     Status pick_status;
@@ -587,7 +587,7 @@ class YBTransaction::Impl final {
     return metadata_;
   }
 
-  void StartHeartbeat() {
+  void StartHeartbeat() EXCLUDES(mutex_) {
     VLOG_WITH_PREFIX(2) << __PRETTY_FUNCTION__;
     RequestStatusTablet(TransactionRpcDeadline());
   }
@@ -609,7 +609,7 @@ class YBTransaction::Impl final {
     }
   }
 
-  void SetReadTimeIfNeeded(bool do_it) {
+  void SetReadTimeIfNeeded(bool do_it) REQUIRES(mutex_) {
     if (!read_point_.GetReadTime() && do_it &&
         metadata_.isolation == IsolationLevel::SNAPSHOT_ISOLATION) {
       read_point_.SetCurrentReadTime();
@@ -629,7 +629,7 @@ class YBTransaction::Impl final {
 
   void DoCommit(
       CoarseTimePoint deadline, SealOnly seal_only, const Status& status,
-      const YBTransactionPtr& transaction) {
+      const YBTransactionPtr& transaction) EXCLUDES(mutex_) {
     VLOG_WITH_PREFIX(1)
         << Format("Commit, seal_only: $0, tablets: $1, status: $2",
                   seal_only, tablets_, status);
@@ -673,7 +673,7 @@ class YBTransaction::Impl final {
         &commit_handle_);
   }
 
-  void DoAbort(CoarseTimePoint deadline, const YBTransactionPtr& transaction) {
+  void DoAbort(CoarseTimePoint deadline, const YBTransactionPtr& transaction) EXCLUDES(mutex_) {
     VLOG_WITH_PREFIX(1) << "Abort";
 
     tserver::AbortTransactionRequestPB req;
@@ -693,7 +693,7 @@ class YBTransaction::Impl final {
     DoAbortCleanup(transaction);
   }
 
-  void DoAbortCleanup(const YBTransactionPtr& transaction) {
+  void DoAbortCleanup(const YBTransactionPtr& transaction) EXCLUDES(mutex_) {
     if (FLAGS_transaction_disable_proactive_cleanup_in_tests) {
       return;
     }
@@ -718,7 +718,7 @@ class YBTransaction::Impl final {
 
   void CommitDone(const Status& status,
                   const tserver::UpdateTransactionResponsePB& response,
-                  const YBTransactionPtr& transaction) {
+                  const YBTransactionPtr& transaction) EXCLUDES(mutex_) {
     VLOG_WITH_PREFIX(1) << "Committed: " << status;
 
     UpdateClock(response, manager_);
@@ -739,7 +739,7 @@ class YBTransaction::Impl final {
 
   void AbortDone(const Status& status,
                  const tserver::AbortTransactionResponsePB& response,
-                 const YBTransactionPtr& transaction) {
+                 const YBTransactionPtr& transaction) EXCLUDES(mutex_) {
     VLOG_WITH_PREFIX(1) << "Aborted: " << status;
 
     if (response.has_propagated_hybrid_time()) {
@@ -748,7 +748,7 @@ class YBTransaction::Impl final {
     manager_->rpcs().Unregister(&abort_handle_);
   }
 
-  void RequestStatusTablet(const CoarseTimePoint& deadline) {
+  void RequestStatusTablet(const CoarseTimePoint& deadline) EXCLUDES(mutex_) {
     bool expected = false;
     if (!requested_status_tablet_.compare_exchange_strong(
         expected, true, std::memory_order_acq_rel)) {
@@ -766,7 +766,7 @@ class YBTransaction::Impl final {
 
   void StatusTabletPicked(const Result<std::string>& tablet,
                           const CoarseTimePoint& deadline,
-                          const YBTransactionPtr& transaction) {
+                          const YBTransactionPtr& transaction) EXCLUDES(mutex_) {
     VLOG_WITH_PREFIX(2) << "Picked status tablet: " << tablet;
 
     if (!tablet.ok()) {
@@ -779,7 +779,7 @@ class YBTransaction::Impl final {
 
   void LookupStatusTablet(const std::string& tablet_id,
                           const CoarseTimePoint& deadline,
-                          const YBTransactionPtr& transaction) {
+                          const YBTransactionPtr& transaction) EXCLUDES(mutex_) {
     manager_->client()->LookupTabletById(
         tablet_id,
         deadline,
@@ -788,7 +788,7 @@ class YBTransaction::Impl final {
   }
 
   void LookupTabletDone(const Result<client::internal::RemoteTabletPtr>& result,
-                        const YBTransactionPtr& transaction) {
+                        const YBTransactionPtr& transaction) EXCLUDES(mutex_) {
     VLOG_WITH_PREFIX(1) << "Lookup tablet done: " << yb::ToString(result);
 
     if (!result.ok()) {
@@ -819,7 +819,7 @@ class YBTransaction::Impl final {
                   metadata_.transaction_id, transaction_->shared_from_this());
   }
 
-  void NotifyWaiters(const Status& status) {
+  void NotifyWaiters(const Status& status) EXCLUDES(mutex_) {
     std::vector<Waiter> waiters;
     {
       std::lock_guard<std::mutex> lock(mutex_);
@@ -838,7 +838,7 @@ class YBTransaction::Impl final {
 
   void SendHeartbeat(TransactionStatus status,
                      const TransactionId& id,
-                     const std::weak_ptr<YBTransaction>& weak_transaction) {
+                     const std::weak_ptr<YBTransaction>& weak_transaction) EXCLUDES(mutex_) {
     auto transaction = weak_transaction.lock();
     if (!transaction) {
       // Cannot use LOG_WITH_PREFIX here, since this was actually destroyed.
@@ -899,7 +899,7 @@ class YBTransaction::Impl final {
   void HeartbeatDone(const Status& status,
                      const tserver::UpdateTransactionResponsePB& response,
                      TransactionStatus transaction_status,
-                     const YBTransactionPtr& transaction) {
+                     const YBTransactionPtr& transaction) EXCLUDES(mutex_) {
     UpdateClock(response, manager_);
     manager_->rpcs().Unregister(&heartbeat_handle_);
 
