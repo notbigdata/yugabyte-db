@@ -458,29 +458,41 @@ class YBTransaction::Impl final {
       ForceConsistentRead force_consistent_read, CoarseTimePoint deadline,
       PrepareChildCallback callback) {
     auto transaction = transaction_->shared_from_this();
-    std::unique_lock<std::mutex> lock(mutex_);
-    auto status = CheckRunning(&lock);
-    if (!status.ok()) {
-      callback(status);
-      return;
+    bool restart_required = false;
+    boost::optional<ChildTransactionDataPB> child_txn_data_pb;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      auto status = CheckRunning();
+      if (!status.ok()) {
+        callback(status);
+        return;
+      }
+      restart_required = IsRestartRequired();
+      if (!restart_required) {
+        SetReadTimeIfNeeded(force_consistent_read);
+
+        if (ready_) {
+          child_txn_data_pb = PrepareChildTransactionData();
+          // Will call the callback after releasing the lock.
+        } else {
+          waiters_.emplace_back(std::bind(
+              &Impl::DoPrepareChild, this, _1, transaction, std::move(callback)));
+          // Will request status tablet after releasing the lock.
+        }
+      }
     }
-    if (IsRestartRequired()) {
-      lock.unlock();
+
+    if (restart_required) {
       callback(STATUS(IllegalState, "Restart required"));
       return;
     }
 
-    SetReadTimeIfNeeded(force_consistent_read);
-
-    if (!ready_) {
-      waiters_.emplace_back(std::bind(
-          &Impl::DoPrepareChild, this, _1, transaction, std::move(callback), nullptr /* lock */));
-      lock.unlock();
+    if (!child_txn_data_pb.is_initialized()) {
       RequestStatusTablet(deadline);
       return;
     }
 
-    DoPrepareChild(Status::OK(), transaction, std::move(callback), &lock);
+    callback(*child_txn_data_pb);
   }
 
   Result<ChildTransactionResultPB> FinishChild() {
@@ -607,18 +619,6 @@ class YBTransaction::Impl final {
   CHECKED_STATUS CheckRunning() REQUIRES(mutex_) {
     if (state_.load(std::memory_order_acquire) != TransactionState::kRunning) {
       auto status = status_;
-      if (status.ok()) {
-        status = STATUS(IllegalState, "Transaction already completed");
-      }
-      return status;
-    }
-    return Status::OK();
-  }
-
-  CHECKED_STATUS CheckRunning(std::unique_lock<std::mutex>* lock) {
-    if (state_.load(std::memory_order_acquire) != TransactionState::kRunning) {
-      auto status = status_;
-      lock->unlock();
       if (status.ok()) {
         status = STATUS(IllegalState, "Transaction already completed");
       }
@@ -955,23 +955,28 @@ class YBTransaction::Impl final {
     }
   }
 
-  void DoPrepareChild(const Status& status,
-                      const YBTransactionPtr& transaction,
-                      PrepareChildCallback callback,
-                      std::unique_lock<std::mutex>* parent_lock) {
+  void DoPrepareChild(
+      const Status& status,
+      const YBTransactionPtr& transaction,
+      PrepareChildCallback callback) EXCLUDES(mutex_) {
     if (!status.ok()) {
       callback(status);
       return;
     }
 
-    std::unique_lock<std::mutex> lock(mutex_, std::defer_lock);
-    if (!parent_lock) {
-      lock.lock();
+    ChildTransactionDataPB prepare_child_txn_data;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      prepare_child_txn_data = PrepareChildTransactionData();
     }
+    callback(prepare_child_txn_data);
+  }
+
+  ChildTransactionDataPB PrepareChildTransactionData() REQUIRES(mutex_) {
     ChildTransactionDataPB data;
     metadata_.ToPB(data.mutable_metadata());
     read_point_.PrepareChildTransactionData(&data);
-    callback(data);
+    return data;
   }
 
   CHECKED_STATUS CheckCouldCommit(SealOnly seal_only) REQUIRES(mutex_) {
