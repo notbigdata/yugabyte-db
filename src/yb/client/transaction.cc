@@ -29,6 +29,7 @@
 
 #include "yb/common/transaction.h"
 
+#include "yb/gutil/thread_annotations.h"
 #include "yb/rpc/messenger.h"
 #include "yb/rpc/rpc.h"
 #include "yb/rpc/scheduler.h"
@@ -456,7 +457,7 @@ class YBTransaction::Impl final {
 
   void PrepareChild(
       ForceConsistentRead force_consistent_read, CoarseTimePoint deadline,
-      PrepareChildCallback callback) EXCLUDES(mutex_) {
+      PrepareChildCallback callback) NO_THREAD_SAFETY_ANALYSIS {
     auto transaction = transaction_->shared_from_this();
     std::unique_lock<std::mutex> lock(mutex_);
     auto status = CheckRunning(&lock);
@@ -955,10 +956,32 @@ class YBTransaction::Impl final {
     }
   }
 
+  void DoPrepareChildNoMutex(const Status& status,
+                      const YBTransactionPtr& transaction,
+                      PrepareChildCallback callback) EXCLUDES(mutex_) {
+    if (!status.ok()) {
+      callback(status);
+      return;
+    }
+
+    ChildTransactionDataPB data;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      data = PrepareChildTransactionData();
+    }
+    callback(data);
+  }
+
   void DoPrepareChild(const Status& status,
                       const YBTransactionPtr& transaction,
                       PrepareChildCallback callback,
                       std::unique_lock<std::mutex>* parent_lock) {
+    if (parent_lock == nullptr) {
+      DoPrepareChildNoMutex(status, transaction, callback);
+      return;
+    }
+
+    // TODO refator this away.
     if (!status.ok()) {
       callback(status);
       return;
@@ -972,6 +995,13 @@ class YBTransaction::Impl final {
     metadata_.ToPB(data.mutable_metadata());
     read_point_.PrepareChildTransactionData(&data);
     callback(data);
+  }
+
+  ChildTransactionDataPB PrepareChildTransactionData() REQUIRES(mutex_) {
+    ChildTransactionDataPB data;
+    metadata_.ToPB(data.mutable_metadata());
+    read_point_.PrepareChildTransactionData(&data);
+    return data;
   }
 
   CHECKED_STATUS CheckCouldCommit(SealOnly seal_only) REQUIRES(mutex_) {
