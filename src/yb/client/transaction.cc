@@ -1022,7 +1022,7 @@ class YBTransaction::Impl final {
     if (child_) {
       return STATUS(IllegalState, "Commit of child transaction is not allowed");
     }
-    if (IsRestartRequired()) {
+    if (read_point_.IsRestartRequired()) {
       return STATUS(
           IllegalState, "Commit of transaction that requires restart is not allowed");
     }
