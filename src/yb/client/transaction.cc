@@ -478,7 +478,7 @@ class YBTransaction::Impl final {
             // Will call the callback after releasing the lock;
           } else {
             waiters_.emplace_back(std::bind(
-                &Impl::DoPrepareChildNoMutex, this, _1, transaction, std::move(callback)));
+                &Impl::DoPrepareChild, this, _1, transaction, std::move(callback)));
             // Will request status tablet after releasing the lock.
           }
         }
@@ -975,9 +975,10 @@ class YBTransaction::Impl final {
     }
   }
 
-  void DoPrepareChildNoMutex(const Status& status,
-                      const YBTransactionPtr& transaction,
-                      PrepareChildCallback callback) EXCLUDES(mutex_) {
+  void DoPrepareChild(
+      const Status& status,
+      const YBTransactionPtr& transaction,
+      PrepareChildCallback callback) EXCLUDES(mutex_) {
     if (!status.ok()) {
       callback(status);
       return;
@@ -988,31 +989,6 @@ class YBTransaction::Impl final {
       std::lock_guard<std::mutex> lock(mutex_);
       data = PrepareChildTransactionData();
     }
-    callback(data);
-  }
-
-  void DoPrepareChild(const Status& status,
-                      const YBTransactionPtr& transaction,
-                      PrepareChildCallback callback,
-                      std::unique_lock<std::mutex>* parent_lock) {
-    if (parent_lock == nullptr) {
-      DoPrepareChildNoMutex(status, transaction, callback);
-      return;
-    }
-
-    // TODO refator this away.
-    if (!status.ok()) {
-      callback(status);
-      return;
-    }
-
-    std::unique_lock<std::mutex> lock(mutex_, std::defer_lock);
-    if (!parent_lock) {
-      lock.lock();
-    }
-    ChildTransactionDataPB data;
-    metadata_.ToPB(data.mutable_metadata());
-    read_point_.PrepareChildTransactionData(&data);
     callback(data);
   }
 
