@@ -322,7 +322,7 @@ class YBTransaction::Impl final {
             // State will be changed to aborted in SetError
           }
         }
-        SetError(status, &lock);
+        SetErrorMutexAlreadyHeld(status);
       }
 
       if (running_requests_ == 0 && commit_replicated_) {
@@ -847,7 +847,7 @@ class YBTransaction::Impl final {
         DCHECK(!ready_);
         ready_ = true;
       } else {
-        SetError(status, &lock);
+        SetErrorMutexAlreadyHeld(status);
       }
       waiters_.swap(waiters);
     }
@@ -945,7 +945,9 @@ class YBTransaction::Impl final {
           NotifyWaiters(status);
         }
         return;
-      } else if (status.IsExpired()) {
+      }
+
+      if (status.IsExpired()) {
         SetError(status);
         // If state is committed, then we should not cleanup.
         if (state_.load(std::memory_order_acquire) == TransactionState::kRunning) {
@@ -962,13 +964,19 @@ class YBTransaction::Impl final {
     }
   }
 
-  void SetError(const Status& status, std::lock_guard<std::mutex>* lock = nullptr) {
+  void SetErrorMutexAlreadyHeld(const Status& status) {
+    LOG_IF(DFATAL, status.ok()) << "OK status not expected in SetError";
     VLOG_WITH_PREFIX(1) << "Failed: " << status;
-    if (!lock) {
-      std::lock_guard<std::mutex> new_lock(mutex_);
-      SetError(status, &new_lock);
-      return;
+    if (status_.ok()) {
+      status_ = status;
+      state_.store(TransactionState::kAborted, std::memory_order_release);
     }
+  }
+
+  void SetError(const Status& status) EXCLUDES(mutex_) {
+    LOG_IF(DFATAL, status.ok()) << "OK status not expected in SetError";
+    VLOG_WITH_PREFIX(1) << "Failed: " << status;
+    std::lock_guard<std::mutex> lock(mutex_);
     if (status_.ok()) {
       status_ = status;
       state_.store(TransactionState::kAborted, std::memory_order_release);
