@@ -660,27 +660,36 @@ class YBTransaction::Impl final {
       return;
     }
 
-    // If we don't have any tablets that have intents written to them, just abort it.
-    // But notify caller that commit was successful, so it is transparent for him.
-    if (tablets_.empty()) {
-      VLOG_WITH_PREFIX(4) << "Committed empty";
+    tserver::UpdateTransactionRequestPB req;
+    bool committed_empty_transaction = false;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+
+      committed_empty_transaction = tablets_.empty();
+      if (committed_empty_transaction) {
+        // If we don't have any tablets that have intents written to them, just abort it.
+        // But notify caller that commit was successful, so it is transparent for the caller.
+        VLOG_WITH_PREFIX(4) << "Committed empty";
+      } else {
+        req.set_tablet_id(status_tablet_->tablet_id());
+        req.set_propagated_hybrid_time(manager_->Now().ToUint64());
+        auto& state = *req.mutable_state();
+        state.set_transaction_id(metadata_.transaction_id.data(), metadata_.transaction_id.size());
+        state.set_status(seal_only ? TransactionStatus::SEALED : TransactionStatus::COMMITTED);
+        state.mutable_tablets()->Reserve(tablets_.size());
+        for (const auto& tablet : tablets_) {
+          state.add_tablets(tablet.first);
+          if (seal_only) {
+            state.add_tablet_batches(tablet.second.num_batches);
+          }
+        }
+      }
+    }
+
+    if (committed_empty_transaction) {
       DoAbort(deadline, transaction);
       commit_callback_(Status::OK());
       return;
-    }
-
-    tserver::UpdateTransactionRequestPB req;
-    req.set_tablet_id(status_tablet_->tablet_id());
-    req.set_propagated_hybrid_time(manager_->Now().ToUint64());
-    auto& state = *req.mutable_state();
-    state.set_transaction_id(metadata_.transaction_id.data(), metadata_.transaction_id.size());
-    state.set_status(seal_only ? TransactionStatus::SEALED : TransactionStatus::COMMITTED);
-    state.mutable_tablets()->Reserve(tablets_.size());
-    for (const auto& tablet : tablets_) {
-      state.add_tablets(tablet.first);
-      if (seal_only) {
-        state.add_tablet_batches(tablet.second.num_batches);
-      }
     }
 
     manager_->rpcs().RegisterAndStart(
@@ -964,8 +973,8 @@ class YBTransaction::Impl final {
     }
   }
 
-  void SetErrorMutexAlreadyHeld(const Status& status) {
-    LOG_IF(DFATAL, status.ok()) << "OK status not expected in SetError";
+  void SetErrorMutexAlreadyHeld(const Status& status) REQUIRES(mutex_) {
+    LOG_IF(DFATAL, status.ok()) << "OK status not expected in " << __func__;
     VLOG_WITH_PREFIX(1) << "Failed: " << status;
     if (status_.ok()) {
       status_ = status;
@@ -974,7 +983,7 @@ class YBTransaction::Impl final {
   }
 
   void SetError(const Status& status) EXCLUDES(mutex_) {
-    LOG_IF(DFATAL, status.ok()) << "OK status not expected in SetError";
+    LOG_IF(DFATAL, status.ok()) << "OK status not expected in " << __func__;
     VLOG_WITH_PREFIX(1) << "Failed: " << status;
     std::lock_guard<std::mutex> lock(mutex_);
     if (status_.ok()) {
@@ -1058,10 +1067,10 @@ class YBTransaction::Impl final {
   typedef std::unordered_map<TabletId, TabletState> TabletStates;
 
   std::mutex mutex_;
-  TabletStates tablets_;
+  TabletStates tablets_ GUARDED_BY(mutex_);
   std::vector<Waiter> waiters_;
   std::promise<TransactionMetadata> metadata_promise_;
-  std::shared_future<TransactionMetadata> metadata_future_;
+  std::shared_future<TransactionMetadata> metadata_future_ GUARDED_BY(mutex_);
   size_t running_requests_ = 0;
   // Set to true after commit record is replicated. Used only during transaction sealing.
   bool commit_replicated_ = false;
