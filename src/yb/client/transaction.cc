@@ -84,7 +84,8 @@ class YBTransaction::Impl final {
       : manager_(manager),
         transaction_(transaction),
         read_point_(manager->clock()),
-        child_(Child::kFalse) {
+        child_(Child::kFalse),
+        child_had_read_time_(false) {
     metadata_.transaction_id = TransactionId::GenerateRandom();
     metadata_.priority = RandomUniformInt<uint64_t>();
     CompleteConstruction();
@@ -96,7 +97,8 @@ class YBTransaction::Impl final {
         transaction_(transaction),
         metadata_(metadata),
         read_point_(manager->clock()),
-        child_(Child::kFalse) {
+        child_(Child::kFalse),
+        child_had_read_time_(false) {
     CompleteConstruction();
     VLOG_WITH_PREFIX(2) << "Taken, metadata: " << metadata_;
   }
@@ -635,18 +637,6 @@ class YBTransaction::Impl final {
     return Status::OK();
   }
 
-  CHECKED_STATUS CheckRunning(std::unique_lock<std::mutex>* lock) {
-    if (state_.load(std::memory_order_acquire) != TransactionState::kRunning) {
-      auto status = status_;
-      lock->unlock();
-      if (status.ok()) {
-        status = STATUS(IllegalState, "Transaction already completed");
-      }
-      return status;
-    }
-    return Status::OK();
-  }
-
   void DoCommit(
       CoarseTimePoint deadline, SealOnly seal_only, const Status& status,
       const YBTransactionPtr& transaction) EXCLUDES(mutex_) {
@@ -692,10 +682,11 @@ class YBTransaction::Impl final {
       return;
     }
 
+    auto* status_tablet = status_tablet_atomic_ptr_.load(std::memory_order_acquire);
     manager_->rpcs().RegisterAndStart(
         UpdateTransaction(
             deadline,
-            status_tablet_.get(),
+            status_tablet,
             manager_->client(),
             &req,
             std::bind(&Impl::CommitDone, this, _1, _2, transaction)),
@@ -706,14 +697,15 @@ class YBTransaction::Impl final {
     VLOG_WITH_PREFIX(1) << "Abort";
 
     tserver::AbortTransactionRequestPB req;
-    req.set_tablet_id(status_tablet_->tablet_id());
+    auto* status_tablet = status_tablet_atomic_ptr_.load(std::memory_order_acquire);
+    req.set_tablet_id(status_tablet->tablet_id());
     req.set_propagated_hybrid_time(manager_->Now().ToUint64());
     req.set_transaction_id(metadata_.transaction_id.data(), metadata_.transaction_id.size());
 
     manager_->rpcs().RegisterAndStart(
         AbortTransaction(
             deadline,
-            status_tablet_.get(),
+            status_tablet,
             manager_->client(),
             &req,
             std::bind(&Impl::AbortDone, this, _1, _2, transaction)),
@@ -830,6 +822,7 @@ class YBTransaction::Impl final {
     {
       std::lock_guard<std::mutex> lock(mutex_);
       status_tablet_ = std::move(*result);
+      status_tablet_atomic_ptr_.store(status_tablet_.get(), std::memory_order_release);
       if (metadata_.status_tablet.empty()) {
         metadata_.status_tablet = status_tablet_->tablet_id();
         precreated = false;
@@ -896,7 +889,8 @@ class YBTransaction::Impl final {
     }
 
     tserver::UpdateTransactionRequestPB req;
-    req.set_tablet_id(status_tablet_->tablet_id());
+    auto* status_tablet = status_tablet_atomic_ptr_.load(std::memory_order_acquire);
+    req.set_tablet_id(status_tablet->tablet_id());
     req.set_propagated_hybrid_time(manager_->Now().ToUint64());
     auto& state = *req.mutable_state();
     state.set_transaction_id(metadata_.transaction_id.data(), metadata_.transaction_id.size());
@@ -904,7 +898,7 @@ class YBTransaction::Impl final {
     manager_->rpcs().RegisterAndStart(
         UpdateTransaction(
             CoarseMonoClock::now() + timeout,
-            status_tablet_.get(),
+            status_tablet,
             manager_->client(),
             &req,
             std::bind(&Impl::HeartbeatDone, this, _1, _2, status, transaction)),
@@ -1043,14 +1037,20 @@ class YBTransaction::Impl final {
 
   std::string log_prefix_;
   std::atomic<bool> requested_status_tablet_{false};
-  internal::RemoteTabletPtr status_tablet_;
+
+  internal::RemoteTabletPtr status_tablet_ GUARDED_BY(mutex_);
+  // After we set the status tablet, it remains set, so we use this atomic pointer to avoid locking.
+  std::atomic<internal::RemoteTablet*> status_tablet_atomic_ptr_{nullptr};
+
   std::atomic<TransactionState> state_{TransactionState::kRunning};
-  // Transaction is successfully initialized and ready to process intents.
   const bool child_;
-  bool child_had_read_time_ = false;
-  bool ready_ = false;
+  const bool child_had_read_time_;
+
+  // Transaction is successfully initialized and ready to process intents.
+  bool ready_ GUARDED_BY(mutex_) = false;
+
   CommitCallback commit_callback_;
-  Status status_;
+  Status status_ GUARDED_BY(mutex_);
   rpc::Rpcs::Handle heartbeat_handle_;
   rpc::Rpcs::Handle commit_handle_;
   rpc::Rpcs::Handle abort_handle_;
