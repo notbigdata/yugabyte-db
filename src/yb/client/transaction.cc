@@ -459,29 +459,48 @@ class YBTransaction::Impl final {
       ForceConsistentRead force_consistent_read, CoarseTimePoint deadline,
       PrepareChildCallback callback) NO_THREAD_SAFETY_ANALYSIS {
     auto transaction = transaction_->shared_from_this();
-    std::unique_lock<std::mutex> lock(mutex_);
-    auto status = CheckRunning(&lock);
-    if (!status.ok()) {
-      callback(status);
+
+    Status running_status;
+    bool restart_required = false;
+    boost::optional<ChildTransactionDataPB> child_txn_data_pb;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      running_status = CheckRunning();
+
+      // If running_status is not OK, we will call the callback after we release the lock.
+      if (running_status.ok()) {
+        restart_required = IsRestartRequired();
+        if (!restart_required) {
+          SetReadTimeIfNeeded(force_consistent_read);
+
+          if (ready_) {
+            child_txn_data_pb = PrepareChildTransactionData();
+            // Will call the callback after releasing the lock;
+          } else {
+            waiters_.emplace_back(std::bind(
+                &Impl::DoPrepareChildNoMutex, this, _1, transaction, std::move(callback)));
+            // Will request status tablet after releasing the lock.
+          }
+        }
+      }
+    }
+
+    if (!running_status.ok()) {
+      callback(running_status);
       return;
     }
-    if (IsRestartRequired()) {
-      lock.unlock();
+
+    if (restart_required) {
       callback(STATUS(IllegalState, "Restart required"));
       return;
     }
 
-    SetReadTimeIfNeeded(force_consistent_read);
-
-    if (!ready_) {
-      waiters_.emplace_back(std::bind(
-          &Impl::DoPrepareChild, this, _1, transaction, std::move(callback), nullptr /* lock */));
-      lock.unlock();
+    if (!child_txn_data_pb.is_initialized()) {
       RequestStatusTablet(deadline);
       return;
     }
 
-    DoPrepareChild(Status::OK(), transaction, std::move(callback), &lock);
+    callback(*child_txn_data_pb);
   }
 
   Result<ChildTransactionResultPB> FinishChild() EXCLUDES(mutex_) {
