@@ -135,7 +135,10 @@ class YBTransaction::Impl final {
     return std::make_shared<YBTransaction>(manager_);
   }
 
-  CHECKED_STATUS Init(IsolationLevel isolation, const ReadHybridTime& read_time) {
+  // Disabling thread safety analysis because we are still initializing the object.
+  CHECKED_STATUS Init(
+      IsolationLevel isolation, const ReadHybridTime& read_time)
+      NO_THREAD_SAFETY_ANALYSIS {
     if (read_point_.GetReadTime().read.is_valid()) {
       return STATUS_FORMAT(IllegalState, "Read point already specified: $0",
                            read_point_.GetReadTime());
@@ -148,7 +151,9 @@ class YBTransaction::Impl final {
     return Status::OK();
   }
 
-  void InitWithReadPoint(IsolationLevel isolation, ConsistentReadPoint&& read_point) {
+  // Disabling thread safety analysis because we are still initializing the object.
+  void InitWithReadPoint(IsolationLevel isolation, ConsistentReadPoint&& read_point)
+      NO_THREAD_SAFETY_ANALYSIS {
     read_point_ = std::move(read_point);
     CompleteInit(isolation);
   }
@@ -426,7 +431,8 @@ class YBTransaction::Impl final {
     DoAbort(deadline, transaction);
   }
 
-  bool IsRestartRequired() const {
+  bool IsRestartRequired() const EXCLUDES(mutex_) {
+    std::lock_guard<std::mutex> lock(mutex_);
     return read_point_.IsRestartRequired();
   }
 
@@ -471,7 +477,7 @@ class YBTransaction::Impl final {
 
       // If running_status is not OK, we will call the callback after we release the lock.
       if (running_status.ok()) {
-        restart_required = IsRestartRequired();
+        restart_required = read_point_.IsRestartRequired();
         if (!restart_required) {
           SetReadTimeIfNeeded(force_consistent_read);
 
@@ -610,7 +616,8 @@ class YBTransaction::Impl final {
     abort_handle_ = manager_->rpcs().InvalidHandle();
   }
 
-  void CompleteInit(IsolationLevel isolation) {
+  // Disabling thread safety analysis because this is an initilization function.
+  void CompleteInit(IsolationLevel isolation) NO_THREAD_SAFETY_ANALYSIS {
     metadata_.isolation = isolation;
     if (read_point_.GetReadTime()) {
       metadata_.start_time = read_point_.GetReadTime().read;
@@ -1033,7 +1040,7 @@ class YBTransaction::Impl final {
   YBTransaction* const transaction_;
 
   TransactionMetadata metadata_;
-  ConsistentReadPoint read_point_;
+  ConsistentReadPoint read_point_ GUARDED_BY(mutex_);
 
   std::string log_prefix_;
   std::atomic<bool> requested_status_tablet_{false};
@@ -1066,7 +1073,7 @@ class YBTransaction::Impl final {
 
   typedef std::unordered_map<TabletId, TabletState> TabletStates;
 
-  std::mutex mutex_;
+  mutable std::mutex mutex_;
   TabletStates tablets_ GUARDED_BY(mutex_);
   std::vector<Waiter> waiters_;
   std::promise<TransactionMetadata> metadata_promise_;
