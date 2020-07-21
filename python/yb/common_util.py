@@ -9,6 +9,7 @@ import logging
 import os
 import re
 import sys
+import shlex
 
 
 MODULE_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -166,3 +167,17 @@ def get_yb_src_root_from_build_root(build_dir, verbose=False, must_succeed=False
 
 def is_macos():
     return sys.platform == 'darwin'
+
+
+def ensure_file_exists(file_path: str) -> None:
+    if not os.path.exists(file_path):
+        raise IOError("File does not exist or is not a file: %s" % file_path)
+
+
+def ensure_directory_exists(dir_path: str) -> None:
+    if not os.path.isdir(dir_path):
+        raise IOError("Directory does not exist or is not a directory: %s" % dir_path)
+
+
+def format_bash_command(args: List[str]) -> str:
+    return ' '.join(shlex.quote(arg) for arg in args)

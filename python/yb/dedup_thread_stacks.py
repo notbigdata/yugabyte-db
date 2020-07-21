@@ -7,6 +7,8 @@ Deduplicates similar stack frames. Used for post-processing thread stacks dumped
 import re
 import sys
 
+from typing import Iterator
+
 
 THREAD_HEADER_RE = re.compile('^Thread (\d+) \(LWP (\d+)\):$')
 HEX_NUMBER_RE_STR = r'\b0x[0-9a-fA-f]+\b'
@@ -38,7 +40,7 @@ class StackTrace:
         return "\n".join(self.frames)
 
 
-class Collector:
+class ThreadStackCollector:
 
     def __init__(self):
         self.stacks = []
@@ -81,7 +83,7 @@ class Collector:
         self.stack_finished()
         return False
 
-    def print_grouped_stacks(self):
+    def grouped_lines_iterator(self):
         groups = {}
         for stack in self.stacks:
             key = stack.frames_key()
@@ -108,15 +110,24 @@ class Collector:
         # Sort stack trace groups by the minimum thread id in the group.
         line_groups.sort(key=lambda t: t[0])
         for _, lines in line_groups:
-            print("\n".join(lines))
+            for line in lines:
+                yield line
+            # An empty line separator.
+            yield ""
 
 
-if __name__ == '__main__':
-    collector = Collector()
+def transform_line_iterator(line_iterator: Iterator[str]) -> Iterator[str]:
+    collector = ThreadStackCollector()
 
     for line in sys.stdin:
         line = line.rstrip()
         if not collector.process_line(line):
-            print(line)
+            yield line
 
-    collector.print_grouped_stacks()
+    for line in collector.grouped_stacks_iterator():
+        yield line
+
+
+if __name__ == '__main__':
+    for line in transform_line_iterator(sys.stdin):
+        print(line)

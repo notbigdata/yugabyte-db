@@ -45,6 +45,9 @@ class StringUtilTest : public YBTest {
 };
 
 TEST_F(StringUtilTest, MatchPatternTest) {
+  char* p = nullptr;
+  *p = 5;
+
   EXPECT_TRUE(MatchPattern("www.google.com", "*.com"));
   EXPECT_TRUE(MatchPattern("www.google.com", "*"));
   EXPECT_FALSE(MatchPattern("www.google.com", "www*.g*.org"));

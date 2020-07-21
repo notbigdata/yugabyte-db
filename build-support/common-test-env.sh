@@ -661,7 +661,7 @@ process_core_file() {
   if [[ -f $core_path ]]; then
     local core_binary_path=$abs_test_binary_path
     analyze_existing_core_file "$core_path" "$core_binary_path"
-    rm -f "$core_path"  # to save disk space
+    # rm -f "$core_path"  # to save disk space
   fi
 }
 
