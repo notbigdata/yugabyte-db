@@ -97,11 +97,17 @@ class Worker {
     while (!stop_requested_) {
       ThreadPoolTask* task = nullptr;
       if (PopTask(&task)) {
-        task->Run();
+        try {
+          task->Run();
+        } catch (std::exception& exception) {
+          LOG(FATAL) << "Unhandled exception: " << exception.what();
+        } catch (...) {
+          LOG(FATAL) << "Unhandled unknown exception";
+        }
         task->Done(Status::OK());
       }
     }
-  }
+}
 
   bool PopTask(ThreadPoolTask** task) {
     // First of all we try to get already queued task, w/o locking.

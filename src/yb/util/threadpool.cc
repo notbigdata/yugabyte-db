@@ -605,7 +605,13 @@ void ThreadPool::DispatchThread(bool permanent) {
     // Execute the task
     {
       MicrosecondsInt64 start_wall_us = GetMonoTimeMicros();
-      task.runnable->Run();
+      try {
+        task.runnable->Run();
+      } catch (std::exception& exception) {
+        LOG(FATAL) << "Unhandled exception: " << exception.what();
+      } catch (...) {
+        LOG(FATAL) << "Unhandled unknown exception";
+      }
       int64_t wall_us = GetMonoTimeMicros() - start_wall_us;
 
       if (metrics_.run_time_us_histogram) {
