@@ -796,9 +796,9 @@ class TabletBootstrap {
       replay_state_->pending_replicates.erase(iter, replay_state_->pending_replicates.end());
     }
 
-    SCHECK(entry_metadata.entry_time != RestartSafeCoarseTimePoint(),
-           Corruption,
-           "Entry metadata must have a restart-safe time");
+    DCHECK(entry_metadata.entry_time != RestartSafeCoarseTimePoint())
+        << LogPrefix() << "Entry metadata must have a restart-safe time. Op id: " << op_id;
+
     CHECK(replay_state_->pending_replicates.emplace(
         op_id.index(), Entry{std::move(*replicate_entry_ptr), entry_metadata.entry_time}).second);
 
