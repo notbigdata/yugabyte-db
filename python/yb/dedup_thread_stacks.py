@@ -83,7 +83,7 @@ class ThreadStackCollector:
         self.stack_finished()
         return False
 
-    def grouped_lines_iterator(self):
+    def grouped_stacks_line_iterator(self):
         groups = {}
         for stack in self.stacks:
             key = stack.frames_key()
@@ -116,18 +116,18 @@ class ThreadStackCollector:
             yield ""
 
 
-def transform_line_iterator(line_iterator: Iterator[str]) -> Iterator[str]:
+def dedup_thread_stack_line_iterator(line_iterator: Iterator[str]) -> Iterator[str]:
     collector = ThreadStackCollector()
 
-    for line in sys.stdin:
+    for line in line_iterator:
         line = line.rstrip()
         if not collector.process_line(line):
             yield line
 
-    for line in collector.grouped_stacks_iterator():
+    for line in collector.grouped_stacks_line_iterator():
         yield line
 
 
 if __name__ == '__main__':
-    for line in transform_line_iterator(sys.stdin):
+    for line in dedup_thread_stack_line_iterator(sys.stdin):
         print(line)

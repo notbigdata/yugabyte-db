@@ -5,11 +5,17 @@ import logging
 import subprocess
 import argparse
 import re
+import sys
+import atexit
 
 from typing import List
 
-from yb.common_util import ensure_file_exists, ensure_directory_exists, is_macos
-
+from yb.common_util import \
+    ensure_file_exists, \
+    ensure_directory_exists, \
+    is_macos, \
+    format_bash_command
+from yb.dedup_thread_stacks import dedup_thread_stack_line_iterator
 
 # Example message on macOS:
 # *** SIGILL (@0x10bfd4c14) received by PID 8848 (TID 0x10f1335c0) stack trace: ***
@@ -19,6 +25,103 @@ from yb.common_util import ensure_file_exists, ensure_directory_exists, is_macos
 
 # Regex passed to grep -E
 GREP_E_REGEX = 'SIG[A-Z]+ .* received by PID [0-9]+ '
+
+# Characters allowed in a Linux core pattern:
+#
+# %%  A single % character.
+# %c  Core file size soft resource limit of crashing process (since
+#     Linux 2.6.24).
+# %d  Dump mode—same as value returned by prctl(2) PR_GET_DUMPABLE
+#     (since Linux 3.7).
+# %e  The process or thread's comm value, which typically is the
+#     same as the executable filename (without path prefix, and
+#     truncated to a maximum of 15 characters), but may have been
+#     modified to be something different; see the discussion of
+#     /proc/[pid]/comm and /proc/[pid]/task/[tid]/comm in proc(5).
+# %E  Pathname of executable, with slashes ('/') replaced by
+#     exclamation marks ('!') (since Linux 3.0).
+# %g  Numeric real GID of dumped process.
+# %h  Hostname (same as nodename returned by uname(2)).
+# %i  TID of thread that triggered core dump, as seen in the PID
+#     namespace in which the thread resides (since Linux 3.18).
+# %I  TID of thread that triggered core dump, as seen in the
+#     initial PID namespace (since Linux 3.18).
+# %p  PID of dumped process, as seen in the PID namespace in which
+#     the process resides.
+# %P  PID of dumped process, as seen in the initial PID namespace
+#     (since Linux 3.12).
+# %s  Number of signal causing dump.
+# %t  Time of dump, expressed as seconds since the Epoch,
+#     1970-01-01 00:00:00 +0000 (UTC).
+# %u  Numeric real UID of dumped process.
+
+# We replace everything except %p with *, and then replace %p with the pid we're looking for.
+LINUX_CORE_PATTERN_PARTS_TO_REPLACE_WITH_ASTERISK_RE = re.compile(r'%[cdeEghiIPstu]')
+
+g_files_to_delete_at_exit = []
+
+
+def delete_files_at_exit_callback():
+    """
+    This runs at the end of the script to delete the files that we decided to delete.
+    """
+    for file_path in g_files_to_delete_at_exit:
+        logging.info("Deleting file: %s", file_path)
+        try:
+            os.remove(file_path)
+        except IOError as ex:
+            logging.info("Failed deleting file %s: %s", file_path, ex)
+
+
+def defer_file_deletion(file_path):
+    global g_files_to_delete_at_exit
+    g_files_to_delete_at_exit.append(file_path)
+
+
+g_linux_core_pattern = None
+
+
+def get_linux_core_pattern():
+    global g_linux_core_pattern
+    if g_linux_core_pattern is not None:
+        return g_linux_core_pattern
+
+    sysctl_path = '/sbin/sysctl'
+    core_pattern_file_path = '/proc/sys/kernel/core_pattern'
+
+    core_pattern = None
+    if os.path.exists(sysctl_path):
+        get_core_pattern_cmd = [sysctl_path, '--values', 'kernel.core_pattern']
+        try:
+            core_pattern = subprocess.check_output(get_core_pattern_args)
+        except Exception as ex:
+            logging.info(
+                "Failed to get core pattern using command: %s",
+                format_bash_command(get_core_pattern_cmd))
+
+    if not core_pattern and os.path.exists(core_pattern_file_path):
+        with open(core_pattern_file_path) as core_pattern_file:
+            core_pattern = core_pattern_file.read().strip()
+
+    if not core_pattern:
+        raise IOError(
+            "Failed to determine core pattern, either by running sysctl or reading from %s",
+            core_pattern_file_path)
+
+    g_linux_core_pattern = core_pattern
+
+
+def get_core_file_glob(pid: int) -> str:
+    """
+    Transforming core pattern to a glob-style wildcard so we can search for core files generated
+    by a specific pid.
+
+    """
+    core_pattern = get_linux_core_pattern()
+    default_core_dir = os.environ.get('TEST_TMPDIR', os.getcwd())
+    return LINUX_CORE_PATTERN_PARTS_TO_REPLACE_WITH_ASTERISK_RE.sub(
+        '*', core_pattern
+    ).replace('%%', '%').replace('%p', str(pid))
 
 
 class DebuggerInvocation:
@@ -31,7 +134,7 @@ class DebuggerInvocation:
         self.executable_path = executable_path
 
         if is_macos():
-            self.debugger_cmd = [
+            self.debugger_cmd_args = [
                 'lldb',
                 self.executable_path,
                 '-c',
@@ -39,7 +142,7 @@ class DebuggerInvocation:
             ]
             self.debugger_input = 'thread backtrace all'
         else:
-            self.debugger_cmd = [
+            self.debugger_cmd_args = [
                 'gdb', '-q', '-n',
                 '-ex', 'bt',
                 '-ex', 'thread apply all bt',
@@ -48,10 +151,9 @@ class DebuggerInvocation:
 
             self.debugger_input = ''
 
-    def invoke(self):
+    def invoke(self, file_path_to_append_to=None):
         ensure_file_exists(self.core_path)
         ensure_file_exists(self.executable_path)
-        # message = "Found a core file at '%s', backtrace:\n" % core_path
 
         # The core might have been generated by yb-master or yb-tserver launched as part of an
         # ExternalMiniCluster.
@@ -59,8 +161,13 @@ class DebuggerInvocation:
         # TODO(mbautin): don't run gdb/lldb the second time in case we get the binary name right the
         #                first time around.
 
+        output_lines = [
+            "",
+            "Found a core file at '%s'." % self.core_path,
+            "Analyzing using the command: %s" % format_bash_command(self.debugger_cmd_args)]
+
         debugger_process = subprocess.Popen(
-            self.debugger_cmd,
+            self.debugger_cmd_args,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE)
@@ -69,6 +176,21 @@ class DebuggerInvocation:
         stdout_str = stdout_bytes.decode('utf-8').rstrip()
         stderr_str = stderr_bytes.decode('utf-8').rstrip()
 
+        if debugger_process.returncode != 0:
+            output_lines.append("Debugger exited with code %d", debugger_process.returncode)
+
+        if stderr_str.strip():
+            output_lines.append("Standard error output from the debugger:")
+            output_lines.extend(stderr_str.split("\n"))
+
+        output_lines.append("Standard output from the debugger (deduplicated stacks):")
+        output_lines.extend(dedup_thread_stack_line_iterator(stdout_str.split("\n")))
+        output_lines.append("")
+        all_lines_str = "\n".join(output_lines)
+        if file_path_to_append_to is not None:
+            with open(file_path_to_append_to, 'a') as file_to_append:
+                file_to_append.write(all_lines_str)
+        sys.stdout.write(all_lines_str)
 
 
 class CoreFileAnalyzer:
@@ -303,12 +425,13 @@ process_core_file() {
                     core_pid_str,  line, int_parsing_ex)
                 continue
 
-            core_path = os.path.join('/cores', 'core.%d' % core_pid)
-            if os.path.exists(core_path):
-                debugger_invocations.append(DebuggerInvocation(
-                    core_path=core_path,
-                    executable_path=abs_test_binary_path
-                ))
+            core_path = get_core_path(core_pid):
+                if os.path.exists(core_path):
+                    defer_file_deletion(core_path)
+                    debugger_invocations.append(DebuggerInvocation(
+                        core_path=core_path,
+                        executable_path=abs_test_binary_path
+                    ))
 
         for debugger_invocation in debugger_invocations:
             debugger_invocation.invoke()
@@ -316,6 +439,7 @@ process_core_file() {
 
 
 def main():
+    atexit.register(delete_files_at_exit_callback)
     logging.basicConfig(
         level=logging.INFO,
         format="[%(filename)s:%(lineno)d] %(asctime)s %(levelname)s: %(message)s")

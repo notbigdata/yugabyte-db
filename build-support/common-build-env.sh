@@ -1972,6 +1972,13 @@ VIRTUALENV DEBUGGING
   fi
 
   export VIRTUAL_ENV
+
+  local new_python_path_entry=$YB_SRC_ROOT/python
+  if [[ -n ${PYTHONPATH:-} ]]; then
+    export PYTHONPATH=$new_python_path_entry:$PYTHONPATH
+  else
+    export PYTHONPATH=$new_python_path_entry
+  fi
 }
 
 log_file_existence() {

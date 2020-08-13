@@ -11,6 +11,8 @@ import re
 import sys
 import shlex
 
+from typing import List
+
 
 MODULE_DIR = os.path.dirname(os.path.realpath(__file__))
 YB_SRC_ROOT = os.path.realpath(os.path.join(MODULE_DIR, '..', '..'))

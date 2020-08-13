@@ -479,6 +479,7 @@ def initialize_remote_task():
 
     from pyspark import SparkFiles
     archive_name = os.path.basename(SparkFiles.get(global_conf.archive_for_workers))
+
     expected_archive_sha256sum = global_conf.archive_sha256sum
     assert expected_archive_sha256sum is not None
 
@@ -490,6 +491,7 @@ def initialize_remote_task():
     # slave or dev server), but put it in as separate variable to have flexibility to change it
     # later.
     remote_yb_src_root = global_conf.yb_src_root
+
 
     subprocess.check_call([
         'mkdir',
