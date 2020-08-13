@@ -166,8 +166,8 @@ struct ReplayState {
       const OpIdPB& regular_op_id,
       const OpIdPB& intents_op_id,
       const std::string& log_prefix_)
-      : regular_stored_op_id(regular_op_id),
-        intents_stored_op_id(intents_op_id),
+      : regular_flushed_op_id(regular_op_id),
+        intents_flushed_op_id(intents_op_id),
         log_prefix(log_prefix_) {
   }
 
@@ -193,7 +193,7 @@ struct ReplayState {
 
   const std::string& LogPrefix() const { return log_prefix; }
 
-  void UpdateCommittedFromStored();
+  void UpdateCommittedOpIdFromFlushed();
 
   // The last replicate message's ID.
   OpIdPB prev_op_id = consensus::MinimumOpId();
@@ -213,31 +213,26 @@ struct ReplayState {
   // The key in this map is the Raft index.
   OpIndexToEntryMap pending_replicates;
 
-  // ----------------------------------------------------------------------------------------------
-  // State specific to RocksDB-backed tables
+  // OpIds flushed to RocksDB.
+  const OpIdPB regular_flushed_op_id;
+  const OpIdPB intents_flushed_op_id;
 
-  const OpIdPB regular_stored_op_id;
-  const OpIdPB intents_stored_op_id;
+  int64_t num_replayed_entries = 0;
 
-  // Total number of log entries applied to RocksDB.
-  int64_t num_entries_applied_to_rocksdb = 0;
-
-  // If we encounter the last entry flushed to a RocksDB SSTable (as identified by the max
-  // persistent sequence number), we remember the hybrid time of that entry in this field.
-  // We guarantee that we'll either see that entry or a latter entry we know is committed into Raft
-  // during log replay. This is crucial for properly setting safe time at bootstrap.
+  // Hybrid time of the last committed entry, based on the flushed frontier metadata in RocksDB and
+  // the WAL. This is crucial for properly setting safe time at bootstrap.
   HybridTime max_committed_hybrid_time = HybridTime::kMin;
 
   const std::string log_prefix;
 };
 
-void ReplayState::UpdateCommittedFromStored() {
-  if (consensus::OpIdBiggerThan(regular_stored_op_id, committed_op_id)) {
-    committed_op_id = regular_stored_op_id;
+void ReplayState::UpdateCommittedOpIdFromFlushed() {
+  if (consensus::OpIdBiggerThan(regular_flushed_op_id, committed_op_id)) {
+    committed_op_id = regular_flushed_op_id;
   }
 
-  if (consensus::OpIdBiggerThan(intents_stored_op_id, committed_op_id)) {
-    committed_op_id = intents_stored_op_id;
+  if (consensus::OpIdBiggerThan(intents_flushed_op_id, committed_op_id)) {
+    committed_op_id = intents_flushed_op_id;
   }
 }
 
@@ -333,11 +328,11 @@ void ReplayState::DumpReplayStateToStrings(std::vector<std::string>* strings)  c
       OpIdToString(prev_op_id),
       OpIdToString(committed_op_id),
       pending_replicates.size(),
-      OpIdToString(regular_stored_op_id),
-      OpIdToString(intents_stored_op_id)));
-  if (num_entries_applied_to_rocksdb > 0) {
+      OpIdToString(regular_flushed_op_id),
+      OpIdToString(intents_flushed_op_id)));
+  if (num_replayed_entries > 0) {
     strings->push_back(Substitute("Log entries applied to RocksDB: $0",
-                                  num_entries_applied_to_rocksdb));
+                                  num_replayed_entries));
   }
   if (!pending_replicates.empty()) {
     strings->push_back(Substitute("Dumping REPLICATES ($0 items):", pending_replicates.size()));
@@ -933,8 +928,8 @@ class TabletBootstrap {
     const auto decision = ShouldReplayOperation(
         op_type,
         replicate->id().index(),
-        replay_state_->regular_stored_op_id.index(),
-        replay_state_->intents_stored_op_id.index(),
+        replay_state_->regular_flushed_op_id.index(),
+        replay_state_->intents_flushed_op_id.index(),
         // txn_status
         replicate->has_transaction_state()
             ? replicate->transaction_state().status()
@@ -1048,8 +1043,8 @@ class TabletBootstrap {
     // Lower bound on op IDs that need to be replayed. This is the "flushed OpId" that this
     // function's comment mentions.
     const auto op_id_replay_lowest = [this]() -> OpId {
-      const yb::OpId regular_op_id = yb::OpId::FromPB(replay_state_->regular_stored_op_id);
-      const yb::OpId intents_op_id = yb::OpId::FromPB(replay_state_->intents_stored_op_id);
+      const yb::OpId regular_op_id = yb::OpId::FromPB(replay_state_->regular_flushed_op_id);
+      const yb::OpId intents_op_id = yb::OpId::FromPB(replay_state_->intents_flushed_op_id);
       const bool has_intents_db =
           tablet_->doc_db().intents || (test_hooks_ && test_hooks_->HasIntentsDB());
       const auto op_id_replay_lowest =
@@ -1180,9 +1175,9 @@ class TabletBootstrap {
     } else {
       LOG_WITH_PREFIX(INFO) << "Max persistent index in RocksDB's SSTables before bootstrap: "
                             << "regular RocksDB: "
-                            << replay_state_->regular_stored_op_id.ShortDebugString() << "; "
+                            << replay_state_->regular_flushed_op_id.ShortDebugString() << "; "
                             << "intents RocksDB: "
-                            << replay_state_->intents_stored_op_id.ShortDebugString();
+                            << replay_state_->intents_flushed_op_id.ShortDebugString();
     }
 
     // Open the log.
@@ -1226,7 +1221,10 @@ class TabletBootstrap {
         }
       }
       if (!read_result.entry_metadata.empty()) {
-        last_entry_time = read_result.entry_metadata.back().entry_time;
+        auto entry_time = read_result.entry_metadata.back().entry_time;
+        if (entry_time.has_value()) {
+          last_entry_time = entry_time;
+        }
       }
 
       // If the LogReader failed to read for some reason, we'll still try to replay as many entries
@@ -1258,7 +1256,7 @@ class TabletBootstrap {
       listener_->StatusMessage(status);
     }
 
-    replay_state_->UpdateCommittedFromStored();
+    replay_state_->UpdateCommittedOpIdFromFlushed();
     RETURN_NOT_OK(ApplyCommittedPendingReplicates());
 
     if (last_committed_op_id.index > replay_state_->committed_op_id.index()) {
@@ -1540,7 +1538,7 @@ class TabletBootstrap {
       auto op_id = iter->second.entry->replicate().id();
       RETURN_NOT_OK(MaybeReplayCommittedEntry(iter->second.entry.get(), iter->second.entry_time));
       iter = pending_replicates.erase(iter);  // erase and advance the iterator (C++11)
-      ++replay_state_->num_entries_applied_to_rocksdb;
+      ++replay_state_->num_replayed_entries;
     }
     return Status::OK();
   }

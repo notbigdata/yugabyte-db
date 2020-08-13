@@ -492,3 +492,5 @@ target_link_libraries(encrypted_env-test encryption_test_util)
 
 ADD_YB_TEST(ctr_cipher_stream-test)
 target_link_libraries(ctr_cipher_stream-test encryption_test_util)
+
+ADD_YB_TEST(restart_safe_clock-test)

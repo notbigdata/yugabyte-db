@@ -42,6 +42,14 @@ class RestartSafeCoarseTimePoint {
     return yb::ToString(value_);
   }
 
+  bool has_value() const {
+    return value_ != CoarseTimePoint();
+  }
+
+  explicit operator bool() const {
+    return has_value();
+  }
+
  private:
   friend class RestartSafeCoarseMonoClock;
 

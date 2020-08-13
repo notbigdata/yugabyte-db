@@ -37,6 +37,10 @@ struct OpId {
     return OpId(kUnknownTerm, -1);
   }
 
+  static OpId Min() {
+    return OpId();
+  }
+
   static OpId Max() {
     return OpId(std::numeric_limits<int64_t>::max(), std::numeric_limits<int64_t>::max());
   }

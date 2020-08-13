@@ -344,6 +344,12 @@ class RetryableRequests::Impl {
       return;
     }
 
+    if (!entry_time.has_value()) {
+      LOG_WITH_PREFIX(DFATAL) << "Entry does not have a restart-safe monotonic time: "
+                              << replicate_msg.id();
+      return;
+    }
+
     auto& client_retryable_requests = clients_[data.client_id()];
     auto& running_indexed_by_request_id = client_retryable_requests.running.get<RequestIdIndex>();
     if (running_indexed_by_request_id.count(data.request_id()) != 0) {
