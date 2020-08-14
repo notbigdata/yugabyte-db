@@ -1121,6 +1121,7 @@ download_thirdparty() {
 # -------------------------------------------------------------------------------------------------
 
 detect_brew() {
+  return
   if is_ubuntu; then
     return
   fi
@@ -2188,6 +2189,14 @@ if [[ ! -d $YB_BUILD_SUPPORT_DIR ]]; then
   fatal "Could not determine YB source directory from '${BASH_SOURCE[0]}':" \
         "$YB_BUILD_SUPPORT_DIR does not exist."
 fi
+
+asdfasdf=(
+  "-DThreads_DEBUG=ON"
+  "-DBoost_DEBUG=ON"
+  "--trace-source=FindThreads.cmake"
+  "--trace-source=CheckIncludeFile.cmake"
+  --debug-try-compile
+)
 
 readonly -a YB_DEFAULT_CMAKE_OPTS=(
   "-DCMAKE_C_COMPILER=$YB_COMPILER_WRAPPER_CC"

@@ -188,7 +188,8 @@ function(VALIDATE_COMPILER_TYPE)
               "Compiler type is zapcc but the compiler family is '${COMPILER_FAMILY}' "
               "(expected to be clang)")
     endif()
-  elseif (NOT "$ENV{YB_COMPILER_TYPE}" STREQUAL "${COMPILER_FAMILY}")
+  elseif (NOT "$ENV{YB_COMPILER_TYPE}" STREQUAL "${COMPILER_FAMILY}" AND
+          NOT ("$ENV{YB_COMPILER_TYPE}" STREQUAL "gcc" AND "${COMPILER_FAMILY}" STREQUAL "gcc8"))
     message(FATAL_ERROR
             "YB_COMPILER_TYPE environment variable ($ENV{YB_COMPILER_TYPE}) does not match the "
             "compiler family detected by CMake (${COMPILER_FAMILY}")
@@ -415,6 +416,13 @@ endfunction()
 
 # ------------------------------------------------------------------------------------------------
 # Main build
+
+if ("$ENV{YB_DO_NOT_BUILD_TESTS}" STREQUAL "1")
+  message("Skipping building tests (YB_DO_NOT_BUILD_TESTS environment variable is set to 1)")
+  set(BUILD_TESTS OFF)
+else()
+  set(BUILD_TESTS ON)
+endif()
 
 get_filename_component(YB_BUILD_ROOT_BASENAME "${CMAKE_CURRENT_BINARY_DIR}" NAME)
 string(REPLACE "-" ";" YB_BUILD_ROOT_BASENAME_COMPONENTS ${YB_BUILD_ROOT_BASENAME})
@@ -1143,7 +1151,7 @@ endfunction()
 function(ADD_YB_TEST REL_TEST_NAME)
   math(EXPR NEW_YB_NUM_TESTS "${YB_NUM_TESTS} + 1")
   set(YB_NUM_TESTS "${NEW_YB_NUM_TESTS}" CACHE INTERNAL "Number of tests" FORCE)
-  if(NO_TESTS)
+  if(NOT ${BUILD_TESTS})
     return()
   endif()
   if(NOT "${YB_TEST_FILTER_RE}" STREQUAL "")
@@ -1223,15 +1231,43 @@ function(ADD_YB_TESTS TESTS)
   endforeach(TEST)
 endfunction()
 
-# A wrapper for add_dependencies() that is compatible with NO_TESTS.
+# A wrapper for add_dependencies() that takes BUILD_TESTS into account.
 function(ADD_YB_TEST_DEPENDENCIES REL_TEST_NAME)
-  if(NO_TESTS)
+  if(NOT ${BUILD_TESTS})
     return()
   endif()
   GET_TEST_PREFIX_AND_BINARY_NAME(CTEST_PREFIX TEST_BINARY_NAME ${REL_TEST_NAME})
 
   add_dependencies(${TEST_BINARY_NAME} ${ARGN})
 endfunction()
+
+function(YB_TEST_TARGET_LINK_LIBRARIES REL_TEST_NAME)
+  if(NOT ${BUILD_TESTS})
+    return()
+  endif()
+  GET_TEST_PREFIX_AND_BINARY_NAME(CTEST_PREFIX TEST_BINARY_NAME ${REL_TEST_NAME})
+
+  target_link_libraries(${TEST_BINARY_NAME} ${ARGN})
+endfunction()
+
+function(YB_TEST_TARGET_INCLUDE_DIRECTORIES REL_TEST_NAME)
+  if(NOT ${BUILD_TESTS})
+    return()
+  endif()
+  GET_TEST_PREFIX_AND_BINARY_NAME(CTEST_PREFIX TEST_BINARY_NAME ${REL_TEST_NAME})
+
+  target_include_directories(${TEST_BINARY_NAME} ${ARGN})
+endfunction()
+
+function(YB_TEST_TARGET_COMPILE_OPTIONS REL_TEST_NAME)
+  if(NOT ${BUILD_TESTS})
+    return()
+  endif()
+  GET_TEST_PREFIX_AND_BINARY_NAME(CTEST_PREFIX TEST_BINARY_NAME ${REL_TEST_NAME})
+
+  target_compile_options(${TEST_BINARY_NAME} ${ARGN})
+endfunction()
+
 
 # Adds dependencies common to all tests, both main YB tests added using ADD_YB_TESTS,
 # and RocksDB tests, which are added in rocksdb/CMakeLists.txt using add_test directly.
@@ -1349,7 +1385,7 @@ if (NOT "${OPENSSL_SSL_LIBRARY}" MATCHES "^${YB_THIRDPARTY_DIR}/.*")
 endif()
 
 ## GLog
-find_package(GLog REQUIRED)
+find_package(GLOG REQUIRED)
 include_directories(SYSTEM ${GLOG_INCLUDE_DIR})
 ADD_THIRDPARTY_LIB(glog
   STATIC_LIB "${GLOG_STATIC_LIB}"
@@ -1383,7 +1419,7 @@ if (NOT APPLE)
 endif()
 
 ## GFlags
-find_package(GFlags REQUIRED)
+find_package(GFLAGS REQUIRED)
 include_directories(SYSTEM ${GFLAGS_INCLUDE_DIR})
 ADD_THIRDPARTY_LIB(gflags
   STATIC_LIB "${GFLAGS_STATIC_LIB}"
@@ -1391,7 +1427,7 @@ ADD_THIRDPARTY_LIB(gflags
 list(APPEND YB_BASE_LIBS gflags)
 
 ## GMock
-find_package(GMock REQUIRED)
+find_package(GMOCK REQUIRED)
 include_directories(SYSTEM ${GMOCK_INCLUDE_DIR} ${GTEST_INCLUDE_DIR})
 ADD_THIRDPARTY_LIB(gmock
   STATIC_LIB ${GMOCK_STATIC_LIBRARY}
@@ -1399,7 +1435,7 @@ ADD_THIRDPARTY_LIB(gmock
 
 ## Protobuf
 add_custom_target(gen_proto)
-find_package(Protobuf REQUIRED)
+find_package(PROTOBUF REQUIRED)
 include_directories(SYSTEM ${PROTOBUF_INCLUDE_DIR})
 ADD_THIRDPARTY_LIB(protobuf
   STATIC_LIB "${PROTOBUF_STATIC_LIBRARY}"
@@ -1411,14 +1447,14 @@ ADD_THIRDPARTY_LIB(protoc
 find_package(YRPC REQUIRED)
 
 ## Snappy
-find_package(Snappy REQUIRED)
+find_package(SNAPPY REQUIRED)
 include_directories(SYSTEM ${SNAPPY_INCLUDE_DIR})
 ADD_THIRDPARTY_LIB(snappy
   STATIC_LIB "${SNAPPY_STATIC_LIB}"
   SHARED_LIB "${SNAPPY_SHARED_LIB}")
 
 ## Libev
-find_package(LibEv REQUIRED)
+find_package(LIBEV REQUIRED)
 include_directories(SYSTEM ${LIBEV_INCLUDE_DIR})
 ADD_THIRDPARTY_LIB(libev
   STATIC_LIB "${LIBEV_STATIC_LIB}"
@@ -1434,25 +1470,25 @@ ADD_THIRDPARTY_LIB(libbacktrace
 endif()
 
 ## LZ4
-find_package(Lz4 REQUIRED)
+find_package(LZ4 REQUIRED)
 include_directories(SYSTEM ${LZ4_INCLUDE_DIR})
 ADD_THIRDPARTY_LIB(lz4 STATIC_LIB "${LZ4_STATIC_LIB}")
 
 ## ZLib
-find_package(Zlib REQUIRED)
+find_package(ZLIB REQUIRED)
 include_directories(SYSTEM ${ZLIB_INCLUDE_DIR})
 ADD_THIRDPARTY_LIB(zlib
   STATIC_LIB "${ZLIB_STATIC_LIB}"
   SHARED_LIB "${ZLIB_SHARED_LIB}")
 
 ## Squeasel
-find_package(Squeasel REQUIRED)
+find_package(SQUEASEL REQUIRED)
 include_directories(SYSTEM ${SQUEASEL_INCLUDE_DIR})
 ADD_THIRDPARTY_LIB(squeasel
   STATIC_LIB "${SQUEASEL_STATIC_LIB}")
 
 ## Hiredis
-find_package(Hiredis REQUIRED)
+find_package(HIREDIS REQUIRED)
 include_directories(SYSTEM ${HIREDIS_INCLUDE_DIR})
 ADD_THIRDPARTY_LIB(hiredis STATIC_LIB "${HIREDIS_STATIC_LIB}")
 
@@ -1463,7 +1499,7 @@ if (NOT "${YB_USE_ASAN}" AND
   ##
   ## Disabled with TSAN/ASAN as well as with gold (see comment
   ## near definition of YB_USING_GOLD).
-  find_package(GPerf REQUIRED)
+  find_package(GOOGLE_PERFTOOLS REQUIRED)
   message("Deciding whether to use tcmalloc based on:\
           YB_TCMALLOC_AVAILABLE=${YB_TCMALLOC_AVAILABLE}")
 else()
@@ -1491,7 +1527,7 @@ include_directories(SYSTEM ${CURL_INCLUDE_DIRS})
 ADD_THIRDPARTY_LIB(curl STATIC_LIB "${CURL_LIBRARIES}")
 
 ## crcutil
-find_package(Crcutil REQUIRED)
+find_package(CRCUTIL REQUIRED)
 include_directories(SYSTEM ${CRCUTIL_INCLUDE_DIR})
 ADD_THIRDPARTY_LIB(crcutil
   STATIC_LIB "${CRCUTIL_STATIC_LIB}"
@@ -1521,6 +1557,8 @@ set(BOOST_ROOT "${YB_THIRDPARTY_INSTALLED_DEPS_DIR}")
 ### Workaround for http://stackoverflow.com/questions/9948375/cmake-find-package-succeeds-but-returns-wrong-path
 set(Boost_NO_BOOST_CMAKE ON)
 set(Boost_NO_SYSTEM_PATHS ON)
+
+find_package(Threads)  # Needed by Boost.
 
 # Find Boost static libraries.
 set(Boost_USE_STATIC_LIBS ON)
@@ -1579,14 +1617,14 @@ message("ICU_I18N_LIBRARIES=${ICU_I18N_LIBRARIES}")
 message("ICU_UC_LIBRARIES=${ICU_UC_LIBRARIES}")
 
 ## Libuv
-find_package(LibUv REQUIRED)
+find_package(LIBUV REQUIRED)
 include_directories(SYSTEM ${LIBUV_INCLUDE_DIR})
 ADD_THIRDPARTY_LIB(libuv
   STATIC_LIB "${LIBUV_STATIC_LIB}"
   SHARED_LIB "${LIBUV_SHARED_LIB}")
 
 ## C++ Cassandra driver
-find_package(Cassandra REQUIRED)
+find_package(CASSANDRA REQUIRED)
 include_directories(SYSTEM ${LIBCASSANDRA_INCLUDE_DIR})
 ADD_THIRDPARTY_LIB(cassandra SHARED_LIB "${LIBCASSANDRA_SHARED_LIB}")
 
@@ -1702,7 +1740,7 @@ message("Linker flags: ${CMAKE_EXE_LINKER_FLAGS}")
 
 set(PQ_SHARED_LIB
     "${YB_BUILD_ROOT}/postgres/lib/libpq${YB_SHARED_LIBRARY_SUFFIX}")
-set(YB_PGBACKEND_SHARED_LIB 
+set(YB_PGBACKEND_SHARED_LIB
     "${YB_BUILD_ROOT}/postgres/lib/libyb_pgbackend${YB_SHARED_LIBRARY_SUFFIX}")
 
 # -------------------------------------------------------------------------------------------------
@@ -1752,6 +1790,9 @@ math(EXPR YB_NUM_EXCLUDED_TESTS "${YB_NUM_TESTS} - ${YB_NUM_INCLUDED_TESTS}")
 message("Total tests: ${YB_NUM_TESTS}, "
         "included: ${YB_NUM_INCLUDED_TESTS}, "
         "excluded: ${YB_NUM_EXCLUDED_TESTS}")
+if(NOT ${BUILD_TESTS} AND NOT ${YB_NUM_INCLUDED_TESTS} STREQUAL "0")
+  message(FATAL_ERROR "BUILD_TESTS is not set, but we still added ${YB_NUM_INCLUDED_TESTS} tests")
+endif()
 
 math(EXPR YB_NUM_EXCLUDED_EXECUTABLES "${YB_NUM_EXECUTABLES} - ${YB_NUM_INCLUDED_EXECUTABLES}")
 message("Total non-test executables: ${YB_NUM_EXECUTABLES}, "

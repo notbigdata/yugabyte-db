@@ -190,6 +190,8 @@ Options:
     Force Maven to download all Java dependencies to the local repository
   --super-bash-debug
     Log the location of every command executed in this script
+  --no-tests
+    Do not build tests
   --
     Pass all arguments after -- to repeat_unit_test.
 
@@ -1001,6 +1003,9 @@ while [[ $# -gt 0 ]]; do
     --resolve-java-dependencies)
       resolve_java_dependencies=true
     ;;
+    --no-tests)
+      export YB_DO_NOT_BUILD_TESTS=1
+    ;;
     *)
       if [[ $1 =~ ^(YB_[A-Z0-9_]+|postgres_FLAGS_[a-zA-Z0-9_]+)=(.*)$ ]]; then
         env_var_name=${BASH_REMATCH[1]}
@@ -1298,10 +1303,6 @@ if [[ ${#make_targets[@]} -eq 0 && -n $java_test_name ]]; then
 fi
 
 if [[ $build_type == "compilecmds" ]]; then
-  if [[ ${#make_targets[@]} -gt 0 ]]; then
-    fatal "Cannot specify custom Make targets for the 'compilecmds' build type, got: " \
-          "${make_targets[*]}"
-  fi
   # We need to add anything that generates header files:
   # - Protobuf
   # - Built-in functions for YSQL and YCQL

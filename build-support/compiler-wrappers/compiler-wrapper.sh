@@ -861,6 +861,9 @@ if is_clang &&
   # TODO: the output redirection here does not quite work. clang might be doing something unusual
   # with the tty. As of 01/2019 all stderr output might still go to the terminal/log.
   set +e
+  echo "$compiler_executable" "${compiler_args_no_output[@]}" --analyze \
+    -Xanalyzer -analyzer-output=html -fno-color-diagnostics -o "$html_output_dir" >>/tmp/compiler_cmds.txt 2>&1
+
   "$compiler_executable" "${compiler_args_no_output[@]}" --analyze \
     -Xanalyzer -analyzer-output=html -fno-color-diagnostics -o "$html_output_dir" \
     2>"$stderr_path"
