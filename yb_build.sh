@@ -1303,6 +1303,10 @@ if [[ ${#make_targets[@]} -eq 0 && -n $java_test_name ]]; then
 fi
 
 if [[ $build_type == "compilecmds" ]]; then
+  if [[ ${#make_targets[@]} -gt 0 ]]; then
+    fatal "Cannot specify custom Make targets for the 'compilecmds' build type, got: " \
+          "${make_targets[*]}"
+  fi
   # We need to add anything that generates header files:
   # - Protobuf
   # - Built-in functions for YSQL and YCQL
