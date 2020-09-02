@@ -98,7 +98,8 @@ struct MutableCFOptions {
         max_subcompactions(1),
         max_sequential_skip_in_iterations(0),
         paranoid_file_checks(false),
-        compaction_measure_io_stats(false) {}
+        compaction_measure_io_stats(false),
+        max_file_size_for_compaction(std::numeric_limits<uint64_t>::max()) {}
 
   // Must be called after any change to MutableCFOptions
   void RefreshDerivedOptions(const ImmutableCFOptions& ioptions);
