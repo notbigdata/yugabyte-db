@@ -546,6 +546,7 @@ set_cmake_build_type_and_compiler_type() {
       export YB_PVS_STUDIO_ENABLED=1
       export YB_DO_NOT_BUILD_TESTS=1
       export YB_SKIP_INITIAL_SYS_CATALOG_SNAPSHOT=1
+      export YB_REMOTE_COMPILATION=0
     ;;
     idebug|ifastdebug|irelease)
       cmake_build_type=${build_type:1}
