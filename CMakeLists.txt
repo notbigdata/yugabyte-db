@@ -574,7 +574,7 @@ endif()
 # Generate a Clang compile_commands.json "compilation database" file for use
 # with various development tools, such as Vim's YouCompleteMe plugin.
 # See http://clang.llvm.org/docs/JSONCompilationDatabase.html
-if ("$ENV{CMAKE_EXPORT_COMPILE_COMMANDS}" STREQUAL "1" OR
+if ("$ENV{YB_EXPORT_COMPILE_COMMANDS}" STREQUAL "1" OR
     "$ENV{YB_RUN_AFFECTED_TESTS_ONLY}" STREQUAL "1")
   set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 endif()
