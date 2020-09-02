@@ -189,8 +189,6 @@ Options:
     Log the location of every command executed in this script
   --no-tests
     Do not build tests
-  --pvs-studio-analyzer
-    Run the PVS Studio static analyzer.
   --
     Pass all arguments after -- to repeat_unit_test.
 
@@ -1005,10 +1003,8 @@ while [[ $# -gt 0 ]]; do
     --no-tests)
       export YB_DO_NOT_BUILD_TESTS=1
     ;;
-    --pvs-studio-analyzer)
-      export YB_RUN_PVS_STUDIO_ANALYZER=1
-      export YB_EXPORT_COMPILE_COMMANDS=1
     *)
+
       if [[ $1 =~ ^(YB_[A-Z0-9_]+|postgres_FLAGS_[a-zA-Z0-9_]+)=(.*)$ ]]; then
         env_var_name=${BASH_REMATCH[1]}
         # Use "the ultimate fix" from http://bit.ly/setenvvar to set a variable with the name stored
@@ -1136,11 +1132,6 @@ fi
 
 if ! "$build_java" && "$resolve_java_dependencies"; then
   fatal "--resolve-java-dependencies is not allowed if not building Java code"
-fi
-
-if [[ ${YB_RUN_PVS_STUDIO_ANALYZER:-0} == "1" ]]; then
-  force_run_cmake=true
-  exoprt YB_RUN_PVS_STUDIO_ANALYZER=1
 fi
 
 # End of post-processing and validating command-line arguments.
