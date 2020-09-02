@@ -159,9 +159,6 @@ Options:
     Do a clean build of the PostgreSQL subtree.
   --no-postgres, --skip-postgres, --np, --sp
     Skip PostgreSQL build
-  --gen-compilation-db, --gcdb
-    Generate the "compilation database" file, compile_commands.json, that can be used by editors
-    to provide better code assistance.
   --make-ninja-extra-args <extra_args>
     Extra arguments for the build tool such as Unix Make or Ninja.
   --run-java-test-methods-separately, --rjtms
@@ -192,6 +189,8 @@ Options:
     Log the location of every command executed in this script
   --no-tests
     Do not build tests
+  --pvs-studio-analyzer
+    Run the PVS Studio static analyzer.
   --
     Pass all arguments after -- to repeat_unit_test.
 
@@ -1006,6 +1005,9 @@ while [[ $# -gt 0 ]]; do
     --no-tests)
       export YB_DO_NOT_BUILD_TESTS=1
     ;;
+    --pvs-studio-analyzer)
+      export YB_RUN_PVS_STUDIO_ANALYZER=1
+      export YB_EXPORT_COMPILE_COMMANDS=1
     *)
       if [[ $1 =~ ^(YB_[A-Z0-9_]+|postgres_FLAGS_[a-zA-Z0-9_]+)=(.*)$ ]]; then
         env_var_name=${BASH_REMATCH[1]}
@@ -1134,6 +1136,11 @@ fi
 
 if ! "$build_java" && "$resolve_java_dependencies"; then
   fatal "--resolve-java-dependencies is not allowed if not building Java code"
+fi
+
+if [[ ${YB_RUN_PVS_STUDIO_ANALYZER:-0} == "1" ]]; then
+  force_run_cmake=true
+  exoprt YB_RUN_PVS_STUDIO_ANALYZER=1
 fi
 
 # End of post-processing and validating command-line arguments.
