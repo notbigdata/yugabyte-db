@@ -809,8 +809,7 @@ struct RedisServiceImplData : public RedisServiceData {
   MonoTime redis_cached_password_validity_expiry_;
   vector<string> redis_cached_passwords_;
 
-  RedisServer* server_ = ;
-
+  RedisServer* server_ = nullptr;
 };
 
 class BatchContextImpl : public BatchContext {
