@@ -19,6 +19,7 @@ class YbBuildToolBase(EnforceOverrides):
 
     def __init__(self):
         self.arg_parser = None
+        self.args = None
 
         # Whether to add "standard" arguments needed by most build tools.
         self.add_standard_build_args = True
@@ -34,12 +35,13 @@ class YbBuildToolBase(EnforceOverrides):
         """
         The overridable internal implementation of running the tool.
         """
-        pass
+        raise NotImplementedError()
 
     def create_arg_parser(self):
+        # Don't allow to run this function multiple times.
         assert self.arg_parser is None
-        self.arg_parser = argparse.ArgumentParser(
-            **self.get_arg_parser_kwargs())
+
+        self.arg_parser = argparse.ArgumentParser(**self.get_arg_parser_kwargs())
         if self.add_standard_build_args:
             self.add_build_root_arg()
             self.add_compiler_type_arg()
