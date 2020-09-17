@@ -73,8 +73,11 @@ set(TABLET_SRCS
   preparer.cc
   ${TABLET_SRCS_EXTENSIONS})
 
+# Make sure we build libpq first. It is built as part of the postgres target. The "pq" library
+# we defined above only points to the libpq shared library file but does not know how to build it.
 set(TABLET_DEPS
-  pq)
+  pq
+  postgres)
 
 PROTOBUF_GENERATE_CPP(
   TABLET_PROTO_SRCS TABLET_PROTO_HDRS TABLET_PROTO_TGTS
