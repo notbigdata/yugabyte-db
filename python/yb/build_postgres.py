@@ -155,7 +155,8 @@ class PostgresBuilder(YbBuildToolBase):
     def get_description(self):
         return __doc__
 
-    def parse_args(self):
+    @overrides
+    def add_command_line_args(self):
         parser = self.arg_parser
         parser.add_argument('--cflags', help='C compiler flags')
         parser.add_argument('--clean',
@@ -173,7 +174,8 @@ class PostgresBuilder(YbBuildToolBase):
                             choices=BUILD_STEPS,
                             help='Run a specific step of the build process')
 
-        self.args = parser.parse_args()
+    @overrides
+    def validate_and_process_args(self):
         if not self.args.build_root:
             raise RuntimeError("Neither BUILD_ROOT or --build-root specified")
 

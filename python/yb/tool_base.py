@@ -30,13 +30,29 @@ class YbBuildToolBase(EnforceOverrides):
         """
         self.create_arg_parser()
         self.parse_args()
+        self.validate_and_process_args()
         self.run_impl()
+
+    def parse_args(self):
+        self.args = self.arg_parser.parse_args()
+
+    def validate_and_process_args(self):
+        if hasattr(self.args, 'build_root'):
+            build_root = self.args.build_root
+            if build_root is None:
+                raise ValueError('--build_root (or BUILD_ROOT environment variable) not specified')
 
     def run_impl(self):
         """
         The overridable internal implementation of running the tool.
         """
         raise NotImplementedError()
+
+    def add_command_line_args(self):
+        """
+        Can be overridden to add more command-line arguments to the parser.
+        """
+        pass
 
     def create_arg_parser(self):
         # Don't allow to run this function multiple times.
@@ -47,6 +63,8 @@ class YbBuildToolBase(EnforceOverrides):
             self.add_build_root_arg()
             self.add_compiler_type_arg()
             self.add_thirdparty_dir_arg()
+
+        self.add_command_line_args()
 
     # ---------------------------------------------------------------------------------------------
     # Functions to add various standard arguments

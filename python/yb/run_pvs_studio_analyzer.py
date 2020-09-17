@@ -19,23 +19,19 @@ Runs the PVS Studio static analyzer on YugabyteDB's C/C++ code.
 import argparse
 import os
 import subprocess
+from overrides import overrides
 
 from yugabyte_pycommon import init_logging, mkdir_p
 from yb.common_util import YB_SRC_ROOT
 from yb.tool_base import YbBuildToolBase
 
 
-class PvsStudioAnalyzerTool(YbBuildtoolBase):
+class PvsStudioAnalyzerTool(YbBuildToolBase):
     def __init__(self):
-        pass
+        super().__init__()
 
-    def parse_args(self):
-        parser = argparse.ArgumentParser(
-            description=__doc__)
-        self.args = parser.parse_args()
-
-    def run(self):
-        self.parse_args()
+    @overrides
+    def run_impl(self):
         self.run_pvs_analyzer()
 
     @overrides
@@ -65,18 +61,18 @@ class PvsStudioAnalyzerTool(YbBuildtoolBase):
         pvs_output_dir = os.path.join(self.args.build_root, 'pvs_output')
         mkdir_p(pvs_output_dir)
         pvs_log_path = os.path.join(pvs_output_dir, 'pvs_results.log')
-        subprocess.check_call(
-            [
-                'pvs-studio-analyzer',
-                'analyze',
-                '--cfg',
-                pvs_config_path,
-                '--file',
-                compile_commands_path,
-                '--output-file',
-                pvs_log_path
-            ]
-        )
+        analyzer_cmd_line = [
+            'pvs-studio-analyzer',
+            'analyze',
+            '--cfg',
+            pvs_config_path,
+            '--file',
+            compile_commands_path,
+            '--output-file',
+            pvs_log_path
+        ]
+        logging.info("Running command: %s", analyzer_cmd_line)
+        subprocess.check_call(analyzer_cmd_line)
 
 
 def main():
