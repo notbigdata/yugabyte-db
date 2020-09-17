@@ -715,13 +715,6 @@ class PostgresBuilder(YbBuildToolBase):
         }
 
     @overrides
-    def run(self):
-        if get_bool_env_var('YB_SKIP_POSTGRES_BUILD'):
-            logging.info("Skipping PostgreSQL build (YB_SKIP_POSTGRES_BUILD is set)")
-            return
-        super.run()
-
-    @overrides
     def run_impl(self):
         self.build_postgres()
 
@@ -785,6 +778,9 @@ class PostgresBuilder(YbBuildToolBase):
 
 def main():
     init_logging()
+    if get_bool_env_var('YB_SKIP_POSTGRES_BUILD'):
+        logging.info("Skipping PostgreSQL build (YB_SKIP_POSTGRES_BUILD is set)")
+        return
     PostgresBuilder().run()
 
 
