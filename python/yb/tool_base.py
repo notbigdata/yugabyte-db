@@ -30,6 +30,7 @@ class YbBuildToolBase(EnforceOverrides):
         """
         self.create_arg_parser()
         self.parse_args()
+        self.run_impl()
 
     def run_impl(self):
         """

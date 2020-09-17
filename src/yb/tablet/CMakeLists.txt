@@ -33,9 +33,7 @@
 include_directories(${YB_BUILD_ROOT}/postgres/include)
 link_directories(${YB_BUILD_ROOT}/postgres/lib)
 
-add_library(pq SHARED IMPORTED)
-set_target_properties(pq PROPERTIES IMPORTED_LOCATION "${PQ_SHARED_LIB}")
-message("Added shared library dependency pq: ${PQ_SHARED_LIB}")
+add_postgres_shared_library(pq "${PQ_SHARED_LIB}")
 
 set(TABLET_SRCS
   abstract_tablet.cc
@@ -73,11 +71,7 @@ set(TABLET_SRCS
   preparer.cc
   ${TABLET_SRCS_EXTENSIONS})
 
-# Make sure we build libpq first. It is built as part of the postgres target. The "pq" library
-# we defined above only points to the libpq shared library file but does not know how to build it.
-set(TABLET_DEPS
-  pq
-  postgres)
+set(TABLET_DEPS pq)
 
 PROTOBUF_GENERATE_CPP(
   TABLET_PROTO_SRCS TABLET_PROTO_HDRS TABLET_PROTO_TGTS
@@ -100,6 +94,7 @@ ADD_YB_LIBRARY(
   tablet
   SRCS ${TABLET_SRCS}
   DEPS ${TABLET_DEPS})
+
 cotire(tablet)
 
 ADD_YB_LIBRARY(
