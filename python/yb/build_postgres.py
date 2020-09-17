@@ -34,7 +34,9 @@ from yugabyte_pycommon import init_logging, run_program, WorkDirContext, mkdir_p
         is_verbose_mode
 
 from yb import common_util
+from yb.tool_base import YbBuildToolBase
 from yb.common_util import YB_SRC_ROOT, get_build_type_from_build_root, get_bool_env_var
+from overrides import overrides
 
 
 ALLOW_REMOTE_COMPILATION = True
@@ -114,7 +116,7 @@ def get_path_variants(path):
     return sorted(set([os.path.abspath(path), os.path.realpath(path)]))
 
 
-class PostgresBuilder:
+class PostgresBuilder(YbBuildToolBase):
     def __init__(self):
         self.args = None
         self.build_root = None
@@ -149,18 +151,17 @@ class PostgresBuilder:
         else:
             self.set_env_var(name, to_append)
 
+    @overrides
+    def get_description(self):
+        return __doc__
+
     def parse_args(self):
-        parser = argparse.ArgumentParser(
-            description='A tool for building the PostgreSQL code subtree in YugabyteDB codebase')
-        parser.add_argument('--build_root',
-                            default=os.environ.get('BUILD_ROOT'),
-                            help='YugaByte build root directory. The PostgreSQL build/install '
-                                 'directories will be created under here.')
+        self.create_arg_parser()
+        parser = self.arg_parser
         parser.add_argument('--cflags', help='C compiler flags')
         parser.add_argument('--clean',
                             action='store_true',
                             help='Clean PostgreSQL build and installation directories.')
-        parser.add_argument('--compiler_type', help='Compiler type, e.g. gcc or clang')
         parser.add_argument('--cxxflags', help='C++ compiler flags')
         parser.add_argument('--ldflags', help='Linker flags for all binaries')
         parser.add_argument('--ldflags_ex', help='Linker flags for executables')
@@ -172,9 +173,6 @@ class PostgresBuilder:
         parser.add_argument('--step',
                             choices=BUILD_STEPS,
                             help='Run a specific step of the build process')
-        parser.add_argument('--thirdparty-dir',
-                            required=True,
-                            help='Yugabyte third-party dependencies directory')
 
         self.args = parser.parse_args()
         if not self.args.build_root:
@@ -189,7 +187,7 @@ class PostgresBuilder:
         self.build_stamp_path = os.path.join(self.pg_build_root, 'build_stamp')
         self.pg_prefix = os.path.join(self.build_root, 'postgres')
         self.postgres_src_dir = os.path.join(YB_SRC_ROOT, 'src', 'postgres')
-        self.compiler_type = self.args.compiler_type or os.getenv('YB_COMPILER_TYPE')
+        self.compiler_type = self.args.compiler_type
         self.openssl_include_dir = self.args.openssl_include_dir
         self.openssl_lib_dir = self.args.openssl_lib_dir
 
@@ -716,12 +714,15 @@ class PostgresBuilder:
             'arguments': new_args
         }
 
+    @overrides
     def run(self):
         if get_bool_env_var('YB_SKIP_POSTGRES_BUILD'):
             logging.info("Skipping PostgreSQL build (YB_SKIP_POSTGRES_BUILD is set)")
             return
+        super.run()
 
-        self.parse_args()
+    @overrides
+    def run_impl(self):
         self.build_postgres()
 
     def steps_description(self):
@@ -782,6 +783,10 @@ class PostgresBuilder:
             self.steps_description(), time.time() - start_time_sec)
 
 
-if __name__ == '__main__':
+def main():
     init_logging()
     PostgresBuilder().run()
+
+
+if __name__ == '__main__':
+    main()
