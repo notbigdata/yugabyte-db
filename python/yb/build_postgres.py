@@ -118,7 +118,7 @@ def get_path_variants(path):
 
 class PostgresBuilder(YbBuildToolBase):
     def __init__(self):
-        self.args = None
+        super().__init__()
         self.build_root = None
         self.pg_build_root = None
         self.pg_prefix = None
@@ -156,7 +156,6 @@ class PostgresBuilder(YbBuildToolBase):
         return __doc__
 
     def parse_args(self):
-        self.create_arg_parser()
         parser = self.arg_parser
         parser.add_argument('--cflags', help='C compiler flags')
         parser.add_argument('--clean',
