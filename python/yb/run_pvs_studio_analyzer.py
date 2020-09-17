@@ -25,6 +25,7 @@ from overrides import overrides
 from yugabyte_pycommon import init_logging, mkdir_p
 from yb.common_util import YB_SRC_ROOT
 from yb.tool_base import YbBuildToolBase
+from yb.compile_commands import read_raw_compile_commands_file_paths
 
 
 class PvsStudioAnalyzerTool(YbBuildToolBase):
@@ -62,18 +63,22 @@ class PvsStudioAnalyzerTool(YbBuildToolBase):
         pvs_output_dir = os.path.join(self.args.build_root, 'pvs_output')
         mkdir_p(pvs_output_dir)
         pvs_log_path = os.path.join(pvs_output_dir, 'pvs_results.log')
-        analyzer_cmd_line = [
-            'pvs-studio-analyzer',
-            'analyze',
-            '--cfg',
-            pvs_config_path,
-            '--file',
-            compile_commands_path,
-            '--output-file',
-            pvs_log_path
-        ]
-        logging.info("Running command: %s", analyzer_cmd_line)
-        subprocess.check_call(analyzer_cmd_line)
+        raw_compile_commands_paths = sorted(
+            read_raw_compile_commands_file_paths(self.args.build_root))
+
+        for raw_compile_commands_path in raw_compile_commands_paths:
+            analyzer_cmd_line = [
+                'pvs-studio-analyzer',
+                'analyze',
+                '--cfg',
+                pvs_config_path,
+                '--file',
+                raw_compile_commands_path,
+                '--output-file',
+                pvs_log_path
+            ]
+            logging.info("Running command: %s", analyzer_cmd_line)
+            subprocess.check_call(analyzer_cmd_line)
 
 
 def main():

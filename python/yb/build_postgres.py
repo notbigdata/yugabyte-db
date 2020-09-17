@@ -35,7 +35,18 @@ from yugabyte_pycommon import init_logging, run_program, WorkDirContext, mkdir_p
 
 from yb import common_util
 from yb.tool_base import YbBuildToolBase
-from yb.common_util import YB_SRC_ROOT, get_build_type_from_build_root, get_bool_env_var
+from yb.common_util import (
+    YB_SRC_ROOT,
+    get_build_type_from_build_root,
+    get_bool_env_var,
+    write_json_file,
+    read_json_file,
+)
+from yb.compile_commands import (
+    RAW_COMPILE_COMMANDS_PATHS_FILE_NAME,
+    COMBINED_COMPILE_COMMANDS_FILE_NAME,
+    create_compile_commands_symlink,
+)
 from overrides import overrides
 
 
@@ -423,6 +434,7 @@ class PostgresBuilder(YbBuildToolBase):
 
             if not rerun_configure:
                 logging.error("Standard error from configure:\n" + configure_result.stderr)
+
                 raise RuntimeError("configure failed")
 
             configure_result = run_program(
@@ -574,36 +586,32 @@ class PostgresBuilder(YbBuildToolBase):
         so that they point to the original source directory, and concatenate with the main
         compilation commands file.
         """
+        all_compile_commands_paths = compile_commands_files + [
+            os.path.join(self.build_root, 'compile_commands.json')
+        ]
+
+        # Write the list of compile_commands.json files to another file.
+        compile_command_list_path = os.path.join(
+            self.build_root, RAW_COMPILE_COMMANDS_PATHS_FILE_NAME)
+        write_json_file(all_compile_commands_paths, compile_command_list_path)
+        logging.info(
+            "Wrote the list of raw compile_commands.json files (with no working directory changes)"
+            "to %s", compile_command_list_path)
+
         new_compile_commands = []
-        for compile_commands_path in (
-                compile_commands_files + [
-                    os.path.join(self.build_root, 'compile_commands.json')
-                ]):
-            with open(compile_commands_path) as compile_commands_file:
-                new_compile_commands += json.load(compile_commands_file)
+        for compile_commands_path in all_compile_commands_paths:
+            new_compile_commands += read_json_file(compile_commands_path)
 
         new_compile_commands = [
             self.postprocess_pg_compile_command(item)
             for item in new_compile_commands
         ]
 
-        output_path = os.path.join(self.build_root, 'combined_compile_commands.json')
-        with open(output_path, 'w') as compile_commands_output_file:
-            json.dump(new_compile_commands, compile_commands_output_file, indent=2)
-        logging.info("Wrote the compilation commands file to: %s", output_path)
-
-        dest_link_path = os.path.join(YB_SRC_ROOT, 'compile_commands.json')
-        if (not os.path.exists(dest_link_path) or
-                os.path.realpath(dest_link_path) != os.path.realpath(output_path)):
-            if os.path.exists(dest_link_path):
-                logging.info("Removing the old file/link at %s", dest_link_path)
-                os.remove(dest_link_path)
-            os.symlink(
-                os.path.relpath(
-                    os.path.realpath(output_path),
-                    os.path.realpath(YB_SRC_ROOT)),
-                dest_link_path)
-            logging.info("Created symlink at %s", dest_link_path)
+        combined_compile_commands_path = os.path.join(
+            self.build_root, COMBINED_COMPILE_COMMANDS_FILE_NAME)
+        write_json_file(new_compile_commands, combined_compile_commands_path)
+        logging.info("Wrote the compilation commands file to: %s", combined_compile_commands_path)
+        create_compile_commands_symlink(combined_compile_commands_path, self.build_type)
 
     def postprocess_pg_compile_command(self, compile_command_item):
         directory = compile_command_item['directory']

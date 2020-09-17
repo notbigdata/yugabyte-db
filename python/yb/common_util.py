@@ -9,11 +9,13 @@ import logging
 import os
 import re
 import sys
+import json
 
 
 MODULE_DIR = os.path.dirname(os.path.realpath(__file__))
 YB_SRC_ROOT = os.path.realpath(os.path.join(MODULE_DIR, '..', '..'))
 NINJA_BUILD_ROOT_PART_RE = re.compile(r'-ninja($|(?=-))')
+JSON_INDENTATION = 2
 
 # We default this to the env var or to the actual local thirdparty call, but we expose a getter
 # and setter below that should be imported and used to access this global.
@@ -166,3 +168,17 @@ def get_yb_src_root_from_build_root(build_dir, verbose=False, must_succeed=False
 
 def is_macos():
     return sys.platform == 'darwin'
+
+
+def write_json_file(json_data, output_path):
+    with open(output_path, 'w') as output_file:
+        json.dump(json_data, output_file, indent=JSON_INDENTATION)
+
+
+def read_json_file(input_path):
+    try:
+        with open(input_path) as input_file:
+            return json.load(input_file)
+    except:
+        logging.error("Failed reading JSON file %s", input_path)
+        raise
