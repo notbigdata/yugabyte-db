@@ -19,6 +19,7 @@ Runs the PVS Studio static analyzer on YugabyteDB's C/C++ code.
 import argparse
 import os
 import subprocess
+import logging
 from overrides import overrides
 
 from yugabyte_pycommon import init_logging, mkdir_p
