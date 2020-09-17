@@ -6,3 +6,4 @@
 //-V:DFATAL_OR_RETURN_NOT_OK:521
 //V_EXCLUDE_PATH *.pb.h
 //V_EXCLUDE_PATH *.pb.cc
+//V_EXCLUDE_PATH gram.y
