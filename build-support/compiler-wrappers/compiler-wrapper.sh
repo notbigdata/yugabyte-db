@@ -831,6 +831,11 @@ if [[ $compiler_exit_code -ne 0 ]]; then
   exit "$compiler_exit_code"
 fi
 
+if grep -Eq 'ld: warning: directory not found for option' "$stderr_path"; then
+  log "Linker failed to find a directory (probably a library directory) that should exist."
+  exit 1
+fi
+
 if is_clang &&
     [[ ${YB_ENABLE_STATIC_ANALYZER:-0} == "1" ]] &&
     ! is_thirdparty_build &&
