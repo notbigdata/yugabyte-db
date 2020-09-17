@@ -1108,6 +1108,15 @@ function(ADD_YB_LIBRARY LIB_NAME)
   endif()
 endfunction()
 
+# Import a shared library (e.g. libpq) that is built as part of PostgreSQL as a CMake target.
+function(ADD_POSTGRES_SHARED_LIBRARY LIB_NAME SHARED_LIB_PATH)
+  add_library(${LIB_NAME} SHARED IMPORTED)
+  set_target_properties(${LIB_NAME} PROPERTIES IMPORTED_LOCATION "${SHARED_LIB_PATH}")
+  # "postgres" is the target that actually builds this shared library, so build it first.
+  add_dependencies(${LIB_NAME} postgres)
+  message("Added shared library dependency ${LIB_NAME}: ${SHARED_LIB_PATH}")
+endfunction()
+
 ############################################################
 # Testing
 ############################################################
