@@ -581,9 +581,12 @@ find_compiler_by_type "$YB_COMPILER_TYPE"
 case "$cc_or_cxx" in
   cc) compiler_executable=$cc_executable ;;
   c++) compiler_executable=$cxx_executable ;;
-  default)
+  *)
     fatal "The $SCRIPT_NAME script should be invoked through a symlink named 'cc' or 'c++', " \
-          "found: $cc_or_cxx"
+          "found: $cc_or_cxx." \
+          "Just in case:" \
+          "cc_executable=${cc_executable:-undefined}," \
+          "cxx_executable=${cxx_executable:-undefined}."
 esac
 
 if [[ -z ${compiler_executable:-} ]]; then
