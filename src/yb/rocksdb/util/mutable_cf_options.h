@@ -18,8 +18,8 @@
 // under the License.
 //
 
-#ifndef ROCKSDB_UTIL_MUTABLE_CF_OPTIONS_H
-#define ROCKSDB_UTIL_MUTABLE_CF_OPTIONS_H
+#ifndef YB_ROCKSDB_UTIL_MUTABLE_CF_OPTIONS_H
+#define YB_ROCKSDB_UTIL_MUTABLE_CF_OPTIONS_H
 
 #pragma once
 
@@ -166,4 +166,4 @@ uint64_t MultiplyCheckOverflow(uint64_t op1, int op2);
 
 }  // namespace rocksdb
 
-#endif // ROCKSDB_UTIL_MUTABLE_CF_OPTIONS_H
+#endif // YB_ROCKSDB_UTIL_MUTABLE_CF_OPTIONS_H

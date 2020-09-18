@@ -18,8 +18,8 @@
 // or implied.  See the License for the specific language governing permissions and limitations
 // under the License.
 //
-#ifndef STRINGS_STRCAT_H_
-#define STRINGS_STRCAT_H_
+#ifndef YB_GUTIL_STRINGS_STRCAT_H
+#define YB_GUTIL_STRINGS_STRCAT_H
 
 #include <string>
 using std::string;
@@ -86,8 +86,7 @@ struct AlphaNum {
   //-V:digits_:730
   AlphaNum(const char *c_str) : piece(c_str) {}  // NOLINT(runtime/explicit)
   //-V:digits_:730
-  AlphaNum(GStringPiece pc)
-      : piece(std::move(pc)) {}            // NOLINT(runtime/explicit)
+  AlphaNum(GStringPiece pc) : piece(std::move(pc)) {}  // NOLINT(runtime/explicit)
   //-V:digits_:730
   AlphaNum(const string &s) : piece(s) {}  // NOLINT(runtime/explicit)
 
@@ -402,4 +401,4 @@ void StrAppend(string *dest,      const AlphaNum &a, const AlphaNum &b,
                const AlphaNum &h = gEmptyAlphaNum,
                const AlphaNum &i = gEmptyAlphaNum);
 
-#endif  // STRINGS_STRCAT_H_
+#endif  // YB_GUTIL_STRINGS_STRCAT_H
