@@ -578,10 +578,6 @@ set_default_compiler_type
 find_or_download_thirdparty
 find_compiler_by_type "$YB_COMPILER_TYPE"
 
-if [[ -z ${compiler_executable:-} ]]; then
-  fatal "The compiler_executable variable is not defined. Command line: $compiler_args_str"
-fi
-
 case "$cc_or_cxx" in
   cc) compiler_executable="$cc_executable" ;;
   c++) compiler_executable="$cxx_executable" ;;
@@ -590,10 +586,15 @@ case "$cc_or_cxx" in
           "found: $cc_or_cxx"
 esac
 
+if [[ -z ${compiler_executable:-} ]]; then
+  fatal "[Host $(hostname)] The compiler_executable variable is not defined." \
+        "Command line: $compiler_args_str"
+fi
+
 if [[ ! -x $compiler_executable ]]; then
   log_diagnostics_about_local_thirdparty
   fatal "[Host $(hostname)] Compiler executable does not exist or is not executable:" \
-        "$compiler_executable"
+        "$compiler_executable. Command line: $compiler_args_str"
 fi
 
 # We use ccache if it is available and YB_NO_CCACHE is not set.

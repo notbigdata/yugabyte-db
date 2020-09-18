@@ -86,6 +86,24 @@ def get_compiler_type_from_build_root(build_root):
     return build_root_basename_components[1]
 
 
+def set_env_vars_from_build_root(build_root):
+    build_root_from_env = os.getenv('BUILD_ROOT')
+    if build_root_from_env is not None and build_root_from_env != build_root:
+        raise ValueError(
+            "The BUILD_ROOT environment variable is %s but the build root is being set to %s" % (
+                build_root_from_env, build_root))
+    os.environ['BUILD_ROOT'] = build_root
+
+    compiler_type_from_build_root = get_compiler_type_from_build_root(build_root)
+    compiler_type_from_env = os.getenv['YB_COMPILER_TYPE')
+    if (compiler_type_from_env is not None and
+        compiler_type_from_env != compiler_type_from_build_root):
+        raise ValueError(
+            "The YB_COMPILER_TYPE environment variable is %s but the compiler type derived "
+            "from the build root is %s" % (compiler_type_from_env, compiler_type_from_build_root))
+    os.environ['YB_COMPILER_TYPE'] = compiler_type_from_build_root
+
+
 def safe_path_join(*args):
     """Like os.path.join, but allows the first argument to be None."""
     if args[0] is None:
