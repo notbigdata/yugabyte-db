@@ -578,13 +578,16 @@ set_default_compiler_type
 find_or_download_thirdparty
 find_compiler_by_type "$YB_COMPILER_TYPE"
 
+if [[ -z ${compiler_executable:-} ]]; then
+  fatal "The compiler_executable variable is not defined. Command line: $compiler_args_str"
+fi
+
 case "$cc_or_cxx" in
   cc) compiler_executable="$cc_executable" ;;
   c++) compiler_executable="$cxx_executable" ;;
   default)
-    echo "The $SCRIPT_NAME script should be invoked through a symlink named 'cc' or 'c++', " \
-         "found: $cc_or_cxx" >&2
-    exit 1
+    fatal "The $SCRIPT_NAME script should be invoked through a symlink named 'cc' or 'c++', " \
+          "found: $cc_or_cxx"
 esac
 
 if [[ ! -x $compiler_executable ]]; then
