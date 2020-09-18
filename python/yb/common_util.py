@@ -10,6 +10,7 @@ import os
 import re
 import sys
 import json
+import subprocess
 
 
 MODULE_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -170,9 +171,11 @@ def is_macos():
     return sys.platform == 'darwin'
 
 
-def write_json_file(json_data, output_path):
+def write_json_file(json_data, output_path, description_for_log=None):
     with open(output_path, 'w') as output_file:
         json.dump(json_data, output_file, indent=JSON_INDENTATION)
+        if description_for_log is None:
+            logging.info("Wrote %s: %s", description_for_log, output_path)
 
 
 def read_json_file(input_path):
@@ -182,3 +185,35 @@ def read_json_file(input_path):
     except:
         logging.error("Failed reading JSON file %s", input_path)
         raise
+
+
+def get_absolute_path_aliases(path):
+    """
+    Returns a list of different variants (just an absolute path vs. all symlinks resolved) for the
+    given path.
+    """
+    return sorted(set([os.path.abspath(path), os.path.realpath(path)]))
+
+
+def find_executable(rel_path, must_find=False):
+    """
+    Similar to the UNIX "which" command.
+    """
+    if os.path.isabs(rel_path):
+        raise ValueError("Expected an absolute path, got: %s", rel_path)
+    path_env_var = os.getenv('PATH')
+    for search_dir in path_env_var.split(os.path.pathsep):
+        joined_path = os.path.join(search_dir, rel_path)
+        if os.path.exists(joined_path) and os.access(joined_path, os.X_OK):
+            return joined_path
+    if must_find:
+        raise IOError("Could not find executable %s. PATH: %s" % (rel_path, path_env_var))
+
+
+def rm_rf(path):
+    if path == '/':
+        raise ValueError("Cannot remove directory recursively: %s", path)
+    if os.path.isabs(path):
+        raise ValueError("Absolute path required, got %s", path)
+
+    subprocess.check_call(['rm', '-rf', path])

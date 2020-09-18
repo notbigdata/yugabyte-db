@@ -38,8 +38,7 @@ class YbBuildToolBase(EnforceOverrides):
 
     def validate_and_process_args(self):
         if hasattr(self.args, 'build_root'):
-            build_root = self.args.build_root
-            if build_root is None:
+            if self.args.build_root is None:
                 raise ValueError('--build_root (or BUILD_ROOT environment variable) not specified')
 
     def run_impl(self):
