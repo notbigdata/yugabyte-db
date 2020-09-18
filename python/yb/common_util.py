@@ -11,6 +11,7 @@ import re
 import sys
 import json
 import subprocess
+import shlex
 
 
 MODULE_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -217,3 +218,13 @@ def rm_rf(path):
         raise ValueError("Absolute path required, got %s", path)
 
     subprocess.check_call(['rm', '-rf', path])
+
+
+def run_command(args):
+    cmd_str = shlex.join(args)
+    logging.info("Running command: %s", cmd_str)
+    try:
+        subprocess.check_call(args)
+    except subprocess.CalledProcessError as ex:
+        logging.exception("Command failed with exit code %d: %s", ex.returncode, cmd_str)
+        raise ex
