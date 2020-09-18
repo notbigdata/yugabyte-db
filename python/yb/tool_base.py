@@ -42,7 +42,7 @@ class YbBuildToolBase(EnforceOverrides):
         if hasattr(self.args, 'build_root'):
             if self.args.build_root is None:
                 raise ValueError('--build_root (or BUILD_ROOT environment variable) not specified')
-            set_env_vars_from_build_root(build_root)
+            set_env_vars_from_build_root(self.args.build_root)
 
     def run_impl(self):
         """
