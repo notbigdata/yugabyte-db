@@ -85,8 +85,9 @@ class PvsStudioAnalyzerTool(YbBuildToolBase):
             self.args.build_root, COMBINED_RAW_COMPILE_COMMANDS_FILE_NAME)
 
         if not os.path.exists(combined_raw_compile_commands_path):
-            raise IOError("Compilation commands file does not exist: %s" %
+            raise IOError("Raw compilation commands file does not exist: %s" %
                           combined_raw_compile_commands_path)
+
         if self.args.file_name_regex:
             compile_commands_path = os.path.join(
                 self.args.build_root, 'raw_compile_commands_filtered_for_analyze.json')
@@ -97,6 +98,9 @@ class PvsStudioAnalyzerTool(YbBuildToolBase):
         else:
             compile_commands_path = combined_raw_compile_commands_path
 
+        if not os.path.exists(compile_commands_path):
+            raise IOError("Compilation commands file does not exist: %s" %
+                          compile_commands_path)
 
         pvs_studio_analyzer_executable = find_executable('pvs-studio-analyzer', must_find=True)
         plog_converter_executable = find_executable('plog-converter', must_find=True)
@@ -106,7 +110,7 @@ class PvsStudioAnalyzerTool(YbBuildToolBase):
             '--cfg',
             pvs_config_path,
             '--file',
-            combined_raw_compile_commands_path,
+            compile_commands_path,
             '--output-file',
             pvs_log_path,
             '-j',
