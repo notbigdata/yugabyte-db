@@ -75,7 +75,7 @@ class IncludePathRewriter:
 
     def remember_original_include_path(self, original_include_path):
         if (original_include_path not in self.already_added_include_paths and
-            original_include_path not in self.original_include_paths):
+                original_include_path not in self.original_include_paths):
             self.original_include_paths.append(original_include_path)
 
     def check_for_postgres_installed_include_path(self, include_path):

@@ -97,7 +97,7 @@ def set_env_vars_from_build_root(build_root):
     compiler_type_from_build_root = get_compiler_type_from_build_root(build_root)
     compiler_type_from_env = os.getenv('YB_COMPILER_TYPE')
     if (compiler_type_from_env is not None and
-        compiler_type_from_env != compiler_type_from_build_root):
+            compiler_type_from_env != compiler_type_from_build_root):
         raise ValueError(
             "The YB_COMPILER_TYPE environment variable is %s but the compiler type derived "
             "from the build root is %s" % (compiler_type_from_env, compiler_type_from_build_root))
@@ -201,7 +201,8 @@ def read_json_file(input_path):
     try:
         with open(input_path) as input_file:
             return json.load(input_file)
-    except:
+    except:  # noqa: E129
+        # We re-throw the exception anyway.
         logging.error("Failed reading JSON file %s", input_path)
         raise
 
