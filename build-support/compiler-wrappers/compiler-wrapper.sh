@@ -579,8 +579,8 @@ find_or_download_thirdparty
 find_compiler_by_type "$YB_COMPILER_TYPE"
 
 case "$cc_or_cxx" in
-  cc) compiler_executable="$cc_executable" ;;
-  c++) compiler_executable="$cxx_executable" ;;
+  cc) compiler_executable=$cc_executable ;;
+  c++) compiler_executable=$cxx_executable ;;
   default)
     fatal "The $SCRIPT_NAME script should be invoked through a symlink named 'cc' or 'c++', " \
           "found: $cc_or_cxx"

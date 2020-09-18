@@ -117,7 +117,6 @@ class PvsStudioAnalyzerTool(YbBuildToolBase):
             str(multiprocessing.cpu_count()),
             '--disableLicenseExpirationCheck'
         ]
-        logging.info("Running command: %s", analyzer_cmd_line)
 
         analyzer_exit_code = 0
         try:
