@@ -25,7 +25,7 @@ import multiprocessing
 from overrides import overrides
 
 from yugabyte_pycommon import init_logging, mkdir_p
-from yb.common_util import YB_SRC_ROOT, find_executable, rm_rf
+from yb.common_util import YB_SRC_ROOT, find_executable, rm_rf, check_call_and_log
 from yb.tool_base import YbBuildToolBase
 from yb.compile_commands import COMBINED_RAW_COMPILE_COMMANDS_FILE_NAME, filter_compile_commands
 
@@ -121,9 +121,8 @@ class PvsStudioAnalyzerTool(YbBuildToolBase):
 
         analyzer_exit_code = 0
         try:
-            subprocess.check_call(analyzer_cmd_line)
+            check_call_and_log(analyzer_cmd_line)
         except CalledProcessError as analyzer_error:
-            logging.exception("PVS Studio analyzer returned an error")
             analyzer_exit_code = analyzer_error.returncode
             if analyzer_exit_code in PVS_ANALYZER_EXIT_CODE_DETAILS:
                 logging.info(
@@ -162,6 +161,7 @@ class PvsStudioAnalyzerTool(YbBuildToolBase):
             html_output_dir,
             pvs_log_path
         ]
+        check_call_and_log(log_converter_cmd_line_html)
 
 
 def main():
