@@ -578,6 +578,12 @@ set_default_compiler_type
 find_or_download_thirdparty
 find_compiler_by_type "$YB_COMPILER_TYPE"
 
+if [[ $cc_or_cxx == "compiler-wrapper.sh" && $compiler_args_str == "--version" ]]; then
+  # Allow invoking this script not through a symlink but directly in one special case: when trying
+  # to determine the compiler version.
+  cc_or_cxx=cc
+fi
+
 case "$cc_or_cxx" in
   cc) compiler_executable=$cc_executable ;;
   c++) compiler_executable=$cxx_executable ;;
