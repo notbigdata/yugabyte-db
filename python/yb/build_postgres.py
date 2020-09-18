@@ -41,11 +41,13 @@ from yb.common_util import (
     get_bool_env_var,
     write_json_file,
     read_json_file,
+    get_absolute_path_aliases,
 )
 from yb.compile_commands import (
-    RAW_COMPILE_COMMANDS_PATHS_FILE_NAME,
-    COMBINED_COMPILE_COMMANDS_FILE_NAME,
+    COMBINED_POSTPROCESSED_COMPILE_COMMANDS_FILE_NAME,
+    COMBINED_RAW_COMPILE_COMMANDS_FILE_NAME,
     create_compile_commands_symlink,
+    CompileCommandProcessor,
 )
 from overrides import overrides
 
@@ -119,14 +121,6 @@ def filter_compiler_flags(compiler_flags, step, language):
     ])
 
 
-def get_path_variants(path):
-    """
-    Returns a list of different variants (just an absolute path vs. all symlinks resolved) for the
-    given path.
-    """
-    return sorted(set([os.path.abspath(path), os.path.realpath(path)]))
-
-
 class PostgresBuilder(YbBuildToolBase):
     def __init__(self):
         super().__init__()
@@ -192,8 +186,6 @@ class PostgresBuilder(YbBuildToolBase):
 
         self.build_root = os.path.abspath(self.args.build_root)
         self.build_root_realpath = os.path.realpath(self.build_root)
-        self.postgres_install_dir_include_realpath = \
-            os.path.join(self.build_root_realpath, 'postgres', 'include')
         self.build_type = get_build_type_from_build_root(self.build_root)
         self.pg_build_root = os.path.join(self.build_root, 'postgres_build')
         self.build_stamp_path = os.path.join(self.pg_build_root, 'build_stamp')
@@ -293,12 +285,10 @@ class PostgresBuilder(YbBuildToolBase):
 
         # Tell gdb to pretend that we're compiling the code in the $YB_SRC_ROOT/src/postgres
         # directory.
-        build_path_variants = get_path_variants(self.pg_build_root)
-        src_path_variants = get_path_variants(self.postgres_src_dir)
         additional_c_cxx_flags += [
             '-fdebug-prefix-map=%s=%s' % (build_path, source_path)
-            for build_path in build_path_variants
-            for source_path in src_path_variants
+            for build_path in get_absolute_path_aliases(self.pg_build_root)
+            for source_path in get_absolute_path_aliases(self.postgres_src_dir)
         ]
 
         if self.compiler_type == 'gcc':
@@ -527,9 +517,7 @@ class PostgresBuilder(YbBuildToolBase):
 
         compile_commands_files = []
 
-        work_dirs = [self.pg_build_root]
-        if self.build_type != 'compilecmds':
-            work_dirs.append(os.path.join(self.pg_build_root, 'contrib'))
+        work_dirs = [self.pg_build_root, os.path.join(self.pg_build_root, 'contrib')]
 
         for work_dir in work_dirs:
             with WorkDirContext(work_dir):
@@ -590,138 +578,39 @@ class PostgresBuilder(YbBuildToolBase):
             os.path.join(self.build_root, 'compile_commands.json')
         ]
 
-        # Write the list of compile_commands.json files to another file.
-        compile_command_list_path = os.path.join(
-            self.build_root, RAW_COMPILE_COMMANDS_PATHS_FILE_NAME)
-        write_json_file(all_compile_commands_paths, compile_command_list_path)
-        logging.info(
-            "Wrote the list of raw compile_commands.json files (with no working directory changes)"
-            "to %s", compile_command_list_path)
+        # -----------------------------------------------------------------------------------------
+        # Combine raw compilation commands in a single file.
+        # -----------------------------------------------------------------------------------------
 
-        new_compile_commands = []
+        combined_raw_compile_commands = []
         for compile_commands_path in all_compile_commands_paths:
-            new_compile_commands += read_json_file(compile_commands_path)
+            combined_raw_compile_commands += read_json_file(compile_commands_path)
 
-        new_compile_commands = [
-            self.postprocess_pg_compile_command(item)
-            for item in new_compile_commands
+        write_json_file(
+            combined_raw_compile_commands,
+            os.path.join(self.build_root, COMBINED_RAW_COMPILE_COMMANDS_FILE_NAME),
+            description_for_log='combined raw compilation commands file')
+
+        # -----------------------------------------------------------------------------------------
+        # Combine post-processed compilation commands in a single file.
+        # -----------------------------------------------------------------------------------------
+
+        compile_command_processor = CompileCommandProcessor(self.build_root)
+        combined_postprocessed_compile_commands = [
+            compile_command_processor.postprocess_compile_command(item)
+            for item in combined_raw_compile_commands
         ]
 
-        combined_compile_commands_path = os.path.join(
-            self.build_root, COMBINED_COMPILE_COMMANDS_FILE_NAME)
-        write_json_file(new_compile_commands, combined_compile_commands_path)
-        logging.info("Wrote the compilation commands file to: %s", combined_compile_commands_path)
-        create_compile_commands_symlink(combined_compile_commands_path, self.build_type)
+        combined_postprocessed_compile_commands_path = os.path.join(
+            self.build_root, COMBINED_POSTPROCESSED_COMPILE_COMMANDS_FILE_NAME)
 
-    def postprocess_pg_compile_command(self, compile_command_item):
-        directory = compile_command_item['directory']
-        if 'command' not in compile_command_item and 'arguments' not in compile_command_item:
-            raise ValueError(
-                "Invalid compile command item: %s (neither 'command' nor 'arguments' are present)" %
-                json.dumps(compile_command_item))
-        if 'command' in compile_command_item and 'arguments' in compile_command_item:
-            raise ValueError(
-                "Invalid compile command item: %s (both 'command' and 'arguments' are present)" %
-                json.dumps(compile_command_item))
+        write_json_file(
+            combined_postprocessed_compile_commands,
+            combined_postprocessed_compile_commands_path,
+            description_for_log='combined postprocessed compilation commands file')
 
-        file_path = compile_command_item['file']
-
-        new_directory = directory
-        if directory.startswith(self.pg_build_root + '/'):
-            new_directory = os.path.join(YB_SRC_ROOT, 'src', 'postgres',
-                                         os.path.relpath(directory, self.pg_build_root))
-            # Some files only exist in the postgres build directory. We don't switch the work
-            # directory of the compiler to the original source directory in those cases.
-            if (not os.path.isabs(file_path) and
-                    not os.path.isfile(os.path.join(new_directory, file_path))):
-                new_directory = directory
-
-        if 'arguments' in compile_command_item:
-            assert 'command' not in compile_command_item
-            arguments = compile_command_item['arguments']
-        else:
-            assert 'arguments' not in compile_command_item
-            arguments = compile_command_item['command'].split()
-
-        new_args = []
-        already_added_include_paths = set()
-        original_include_paths = []
-        additional_postgres_include_paths = []
-
-        def add_original_include_path(original_include_path):
-            if (original_include_path not in already_added_include_paths and
-                    original_include_path not in original_include_paths):
-                original_include_paths.append(original_include_path)
-
-        def handle_original_include_path(include_path):
-            if (os.path.realpath(include_path) == self.postgres_install_dir_include_realpath and
-                    not additional_postgres_include_paths):
-                additional_postgres_include_paths.extend([
-                    os.path.join(YB_SRC_ROOT, 'src', 'postgres', 'src', 'interfaces', 'libpq'),
-                    os.path.join(
-                        self.build_root_realpath, 'postgres_build', 'src', 'include'),
-                    os.path.join(
-                        self.build_root_realpath, 'postgres_build', 'interfaces', 'libpq')
-                ])
-
-        for arg in arguments:
-            if arg.startswith('-I'):
-                include_path = arg[2:]
-                if os.path.isabs(include_path):
-                    # This is already an absolute path, append it as is.
-                    new_args.append(arg)
-                    handle_original_include_path(arg)
-                else:
-                    original_include_path = os.path.realpath(os.path.join(directory, include_path))
-                    # This is a relative path. Try to rewrite it relative to the new directory
-                    # where we are running the compiler.
-                    new_include_path = os.path.join(new_directory, include_path)
-                    if os.path.isdir(new_include_path):
-                        new_args.append('-I' + new_include_path)
-                        # This is to avoid adding duplicate paths.
-                        already_added_include_paths.add(new_include_path)
-                        already_added_include_paths.add(os.path.abspath(new_include_path))
-                    else:
-                        # Append the path as is -- maybe the directory will get created later.
-                        new_args.append(arg)
-
-                    # In any case, for relative paths, add the absolute path in the original
-                    # directory at the end of the compiler command line.
-                    add_original_include_path(original_include_path)
-                    handle_original_include_path(original_include_path)
-
-            else:
-                new_args.append(arg)
-
-            # Replace the compiler path in compile_commands.json according to user preferences.
-            compiler_basename = os.path.basename(new_args[0])
-            new_compiler_path = None
-            if compiler_basename in ['cc', 'gcc', 'clang']:
-                new_compiler_path = os.environ.get('YB_CC_FOR_COMPILE_COMMANDS')
-            elif compiler_basename in ['c++', 'g++', 'clang++']:
-                new_compiler_path = os.environ.get('YB_CXX_FOR_COMPILE_COMMANDS')
-            else:
-                logging.warning(
-                    "Unexpected compiler path: %s. Compile command: %s",
-                    new_args[0], json.dumps(compile_command_item))
-            if new_compiler_path:
-                new_args[0] = new_compiler_path
-
-        new_args += [
-            '-I%s' % include_path
-            for include_path in additional_postgres_include_paths + original_include_paths]
-
-        new_file_path = file_path
-        if not os.path.isabs(file_path):
-            new_file_path = os.path.join(new_directory, file_path)
-            if not os.path.isfile(new_file_path):
-                new_file_path = file_path
-
-        return {
-            'directory': new_directory,
-            'file': new_file_path,
-            'arguments': new_args
-        }
+        create_compile_commands_symlink(
+            combined_postprocessed_compile_commands_path, self.build_type)
 
     @overrides
     def run_impl(self):
