@@ -221,5 +221,5 @@ def filter_compile_commands(input_path, output_path, file_name_regex_str):
         "Filtered compilation commands from %d to %d entries using the regex %s",
         len(input_cmds), len(output_cmds), file_name_regex_str)
     write_json_file(
-        output_cmds, file_name_regex_str,
+        output_cmds, output_path,
         description_for_log="filtered compilation commands file")
