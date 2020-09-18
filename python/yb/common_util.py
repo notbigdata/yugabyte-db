@@ -95,7 +95,7 @@ def set_env_vars_from_build_root(build_root):
     os.environ['BUILD_ROOT'] = build_root
 
     compiler_type_from_build_root = get_compiler_type_from_build_root(build_root)
-    compiler_type_from_env = os.getenv['YB_COMPILER_TYPE')
+    compiler_type_from_env = os.getenv('YB_COMPILER_TYPE')
     if (compiler_type_from_env is not None and
         compiler_type_from_env != compiler_type_from_build_root):
         raise ValueError(
