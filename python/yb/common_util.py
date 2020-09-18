@@ -220,8 +220,14 @@ def rm_rf(path):
     subprocess.check_call(['rm', '-rf', path])
 
 
+def shlex_join(args):
+    if hasattr(shlex, 'join'):
+        return shlex.join(args)
+    return ' '.join([shlex.quote(arg) for arg in args])
+
+
 def check_call_and_log(args):
-    cmd_str = shlex.join(args)
+    cmd_str = shlex_join(args)
     logging.info("Running command: %s", cmd_str)
     try:
         subprocess.check_call(args)
