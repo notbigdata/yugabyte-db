@@ -214,7 +214,12 @@ def filter_compile_commands(input_path, output_path, file_name_regex_str):
     compiled_re = re.compile(file_name_regex_str)
     input_cmds = read_json_file(input_path)
     output_cmds = [
-        item for item in inputs_cmds
+        item for item in input_cmds
         if compiled_re.match(os.path.basename(item['file']))
     ]
-    write_json_file(output_cmds, file_name_regex_str)
+    logging.info(
+        "Filtered compilation commands from %d to %d entries using the regex %s",
+        len(input_cmds), len(output_cmds), file_name_regex_str)
+    write_json_file(
+        output_cmds, file_name_regex_str,
+        description_for_log="filtered compilation commands file")
