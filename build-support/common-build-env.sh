@@ -543,7 +543,6 @@ set_cmake_build_type_and_compiler_type() {
     pvs)
       cmake_build_type=debug
       export YB_EXPORT_COMPILE_COMMANDS=1
-      export YB_PVS_STUDIO_ENABLED=1
       export YB_DO_NOT_BUILD_TESTS=1
       export YB_SKIP_INITIAL_SYS_CATALOG_SNAPSHOT=1
       export YB_REMOTE_COMPILATION=0
