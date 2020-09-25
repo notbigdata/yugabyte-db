@@ -424,7 +424,6 @@ class PostgresBuilder(YbBuildToolBase):
 
             if not rerun_configure:
                 logging.error("Standard error from configure:\n" + configure_result.stderr)
-
                 raise RuntimeError("configure failed")
 
             configure_result = run_program(
