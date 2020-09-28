@@ -22,8 +22,6 @@ ADD_YB_LIBRARY(yb_pgwrapper
                SRCS ${PGWRAPPER_SRCS}
                DEPS ${PGWRAPPER_LIBS})
 
-#link_directories(${YB_BUILD_ROOT}/postgres/lib)
-
 add_library(
     pg_wrapper_test_base
     pg_mini_test_base.cc

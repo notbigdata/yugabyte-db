@@ -30,8 +30,6 @@
 # under the License.
 #
 
-#include_directories(${YB_BUILD_ROOT}/postgres/include)
-
 # TODO: find a way to add this only to the top-level CMakeLists.txt file.
 # See https://github.com/yugabyte/yugabyte-db/issues/5853 for more details.
 allow_using_postgres_libraries()
