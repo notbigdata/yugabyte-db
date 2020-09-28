@@ -165,8 +165,7 @@ def load_profile(arg_names_to_load, args_map, profile_name="default_profile"):
 
             for cur_dir_variant in cur_dir_variants:
                 for local_code_dir_variant in [
-                        os.path.abspath(local_code_dir), os.path.realpath(local_code_dir)
-                    ]:
+                        os.path.abspath(local_code_dir), os.path.realpath(local_code_dir)]:
                     if cur_dir_variant == local_code_dir_variant:
                         remote_path = remote_code_dir
                     elif cur_dir_variant.startswith(local_code_dir_variant + '/'):
@@ -226,15 +225,15 @@ def sync_changes(host, branch, remote_path, wait_for_ssh):
 
         can_clone_and_retry = False
         logging.info("Trying to clone the remote repository at %s", remote_path)
-        remote_communicate(host,
-                """
-                    repo_dir={0};
-                    echo "Attempting to clone the code on $(hostname) at $repo_dir"
-                    if [[ ! -e $repo_dir ]]; then
-                        ( set -x; git clone git@github.com:yugabyte/yugabyte-db.git "$repo_dir" )
-                    fi
-                """.format(shlex.quote(remote_path)).strip()
-            )
+        remote_communicate(
+            host,
+            """
+                repo_dir={0};
+                echo "Attempting to clone the code on $(hostname) at $repo_dir"
+                if [[ ! -e $repo_dir ]]; then
+                    ( set -x; git clone git@github.com:yugabyte/yugabyte-db.git "$repo_dir" )
+                fi
+            """.format(shlex.quote(remote_path)).strip())
 
     if remote_path.startswith('~/'):
         escaped_remote_path = '$HOME/' + shlex.quote(remote_path[2:])
