@@ -50,7 +50,9 @@ def main():
                               'variable.').format(remote.REMOTE_BUILD_HOST_ENV_VAR))
     home = os.path.expanduser('~')
     cwd = os.getcwd()
-    default_path = '~/{0}'.format(cwd[len(home) + 1:] if cwd.startswith(home) else 'code/yugabyte')
+    default_path = '~/{0}'.format(
+        cwd[len(home) + 1:] if cwd.startswith(home + '/') else 'code/yugabyte'
+    )
 
     # Note: don't specify default arguments here, because they may come from the "profile".
     parser.add_argument('--remote-path', type=str,
@@ -79,7 +81,7 @@ def main():
     args = parser.parse_args()
     init_env(verbose=args.verbose)
 
-    remote.load_profile(['host', 'remote_path', 'branch'], args, args.profile)
+    remote.load_profile(args, args.profile)
 
     # ---------------------------------------------------------------------------------------------
     # Default arguments go here.

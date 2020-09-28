@@ -261,7 +261,8 @@ def dict_set_or_del(d, k, v):
     is None.
     """
     if v is None:
-        del d[k]
+        if k in d:
+            del d[k]
     else:
         d[k] = v
 

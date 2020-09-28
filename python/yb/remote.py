@@ -115,13 +115,12 @@ def apply_default_host_value(host):
     return host
 
 
-def load_profile(arg_names_to_load, args_map, profile_name="default_profile"):
+def load_profile(args, profile_name="default_profile"):
     """
     Loads the profile from config file if it's defined, initializing given arguments
     in the CLI args map with the ones from profile - if they were omitted in CLI call.
     Also appends 'extra_args' from profile to 'build_args' in args map.
-    :param arg_names_to_load: argument names to load from profile
-    :param args_map: parsed CLI arguments map to init missing values with the loaded args
+    :param args: parsed CLI arguments map to init missing values with the loaded args
     :param profile_name: name of the profile to load
     :return:
     """
@@ -147,16 +146,15 @@ def load_profile(arg_names_to_load, args_map, profile_name="default_profile"):
     if profile is None:
         raise RuntimeError("Unknown profile '%s'" % profile_name)
 
-    if 'remote_path' not in profile:
+    if 'remote_path' not in profile and args.remote_path is None:
         # Automatically figure out the remote path based on directory substitutions specified in the
-        # profile. E.g. I could specify
+        # profile. E.g. one could specify
         # "code_directory_substitutions": [{
         #   "local": "~/code",
         #   "remote": "/home/centos/code"
         # }]
         # and then run remote_build.py in ~/code/yugabyte-db and the build will run in
-        # /home/centos/code/yugabyte-db on the remote host automatically.
-        remote_path = None
+        # /home/centos/code/yugabyte-db on the remote host.
         cur_dir = os.getcwd()
         cur_dir_variants = [os.path.abspath(cur_dir), os.path.realpath(cur_dir)]
         for substitution in profile.get('code_directory_substitutions', []):
@@ -167,31 +165,28 @@ def load_profile(arg_names_to_load, args_map, profile_name="default_profile"):
                 for local_code_dir_variant in [
                         os.path.abspath(local_code_dir), os.path.realpath(local_code_dir)]:
                     if cur_dir_variant == local_code_dir_variant:
-                        remote_path = remote_code_dir
+                        args.remote_path = remote_code_dir
                     elif cur_dir_variant.startswith(local_code_dir_variant + '/'):
-                        remote_path = os.path.join(
+                        args.remote_path = os.path.join(
                             remote_code_dir,
                             os.path.relpath(cur_dir_variant, local_code_dir_variant))
 
-                if remote_path is not None:
+                if args.remote_path is not None:
                     break
 
-            if remote_path is not None:
+            if args.remote_path is not None:
                 logging.info(
                     "Auto-detected remote path as %s based on current directory %s using the "
                     "substitution %s in the profile",
-                    remote_path, cur_dir, json.dumps(substitution))
+                    args.remote_path, cur_dir, json.dumps(substitution))
                 break
 
-        if remote_path is not None:
-            profile['remote_path'] = remote_path
-
-    for arg_name in arg_names_to_load:
-        if getattr(args_map, arg_name) is None:
-            setattr(args_map, arg_name, profile.get(arg_name))
-    if args_map.build_args is None:
-        args_map.build_args = []
-    args_map.build_args += profile.get('extra_args', [])
+    for arg_name in ['host', 'remote_path', 'branch']:
+        if getattr(args, arg_name) is None:
+            setattr(args, arg_name, profile.get(arg_name))
+    if args.build_args is None:
+        args.build_args = []
+    args.build_args += profile.get('extra_args', [])
 
 
 def sync_changes(host, branch, remote_path, wait_for_ssh):
