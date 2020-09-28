@@ -42,6 +42,7 @@ from yb.common_util import (
     write_json_file,
     read_json_file,
     get_absolute_path_aliases,
+    EnvVarContext,
 )
 from yb.compile_commands import (
     COMBINED_POSTPROCESSED_COMPILE_COMMANDS_FILE_NAME,
@@ -412,7 +413,10 @@ class PostgresBuilder(YbBuildToolBase):
 
         if self.build_type != 'release':
             configure_cmd_line += ['--enable-cassert']
-        configure_result = run_program(configure_cmd_line, error_ok=True)
+        # Unset YB_SHOW_COMPILER_COMMAND_LINE when configuring postgres to avoid unintended side
+        # effects from additional compiler output.
+        with EnvVarContext(YB_SHOW_COMPILER_COMMAND_LINE=None):
+            configure_result = run_program(configure_cmd_line, error_ok=True)
         if configure_result.failure():
             rerun_configure = False
             for line in configure_result.stderr.splitlines():

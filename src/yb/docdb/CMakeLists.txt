@@ -48,9 +48,11 @@ ADD_YB_LIBRARY(yb_docdb_encoding
         )
 
 include_directories(${YB_BUILD_ROOT}/postgres/include/server)
-link_directories(${YB_BUILD_ROOT}/postgres/lib)
+#link_directories(${YB_BUILD_ROOT}/postgres/lib)
 
-add_postgres_shared_library(yb_pgbackend "${YB_PGBACKEND_SHARED_LIB}")
+# TODO: find a way to add this only to the top-level CMakeLists.txt file.
+# See https://github.com/yugabyte/yugabyte-db/issues/5853 for more details.
+allow_using_postgres_libraries()
 
 set(DOCDB_SRCS
         bounded_rocksdb_iterator.cc

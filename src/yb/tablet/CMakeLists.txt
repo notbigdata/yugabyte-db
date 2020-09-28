@@ -30,10 +30,11 @@
 # under the License.
 #
 
-include_directories(${YB_BUILD_ROOT}/postgres/include)
-link_directories(${YB_BUILD_ROOT}/postgres/lib)
+#include_directories(${YB_BUILD_ROOT}/postgres/include)
 
-add_postgres_shared_library(pq "${PQ_SHARED_LIB}")
+# TODO: find a way to add this only to the top-level CMakeLists.txt file.
+# See https://github.com/yugabyte/yugabyte-db/issues/5853 for more details.
+allow_using_postgres_libraries()
 
 set(TABLET_SRCS
   abstract_tablet.cc
