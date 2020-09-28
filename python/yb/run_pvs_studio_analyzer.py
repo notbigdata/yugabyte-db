@@ -135,16 +135,16 @@ class PvsStudioAnalyzerTool(YbBuildToolBase):
         if analyzer_exit_code not in PVS_ANALYZER_EXIT_CODE_DETAILS:
             raise IOError("Unrecognized PVS Studio Analyzer exit code: %s", analyzer_exit_code)
 
+        pvs_output_path = os.path.join(pvs_output_dir, 'pvs_tasks.csv')
         log_converter_cmd_line_csv = [
             plog_converter_executable,
             '--renderTypes',
             'tasklist',
             '--output',
-            'pvs_tasks.csv',
+            pvs_output_path,
             pvs_log_path
         ]
-        logging.info("Running command: %s", log_converter_cmd_line_csv)
-        subprocess.check_call(log_converter_cmd_line_csv)
+        check_call_and_log(log_converter_cmd_line_csv)
 
         html_output_dir = os.path.join(pvs_output_dir, 'pvs_html')
         if os.path.exists(html_output_dir):
