@@ -494,7 +494,9 @@ elseif (${YB_USE_ASAN})
 
   # Compile and link against the thirdparty ASAN instrumented libstdcxx.
   set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=address")
-elseif (IS_CLANG AND EXISTS "${YB_THIRDPARTY_DIR}/installed/clang_uninstrumented/libcxx")
+elseif (IS_LINUX AND
+        IS_CLANG AND
+        EXISTS "${YB_THIRDPARTY_DIR}/installed/clang_uninstrumented/libcxx")
   YB_SETUP_CLANG("clang_uninstrumented")
 else()
   # Going forward, for third-party dependency builds where we are only using Clang to build
