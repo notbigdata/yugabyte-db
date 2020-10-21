@@ -305,6 +305,7 @@ function(add_executable name)
 endfunction()
 
 macro(YB_SETUP_CLANG THIRDPARTY_BUILD_TYPE)
+  message("YB_SETUP_CLANG: THIRDPARTY_BUILD_TYPE=${THIRDPARTY_BUILD_TYPE}")
   ADD_CXX_FLAGS("-stdlib=libc++")
 
   # Disables using the precompiled template specializations for std::string, shared_ptr, etc
