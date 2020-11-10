@@ -317,9 +317,24 @@ AsyncRpcBase<Req, Resp>::AsyncRpcBase(AsyncRpcData* data,
       auto read_time = read_point->GetReadTime(tablet_invoker_.tablet()->tablet_id());
       if (read_time) {
         has_read_time = true;
+        VLOG(1) << "DEBUG mbautin: when sending RPC to tablet "
+                << tablet_invoker_.tablet()->tablet_id()
+                << ": read time is " << read_time.ToString() << ", adding to PB";
         read_time.AddToPB(&req_);
+      } else {
+        VLOG(1) << "DEBUG mbautin: when sending RPC to tablet "
+                << tablet_invoker_.tablet()->tablet_id()
+                << ": read time is not defined";
       }
+    } else {
+      VLOG(1) << "DEBUG mbautin: when sending RPC to tablet "
+              << tablet_invoker_.tablet()->tablet_id() << ": "
+              << "need_consistent_read=" << data->need_consistent_read << ", "
+              << "is_transactional="
+              << table()->InternalSchema().table_properties().is_transactional();
     }
+  } else {
+    VLOG(1) << "DEBUG mbautin: read_point is not set";
   }
   if (!ops_.empty()) {
     req_.set_batch_idx(ops_.front()->batch_idx);

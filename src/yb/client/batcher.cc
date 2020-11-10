@@ -537,6 +537,8 @@ void Batcher::ExecuteOperations(Initial initial) {
     //
     // If transaction is not yet ready to do it, then it will notify as via provided when
     // it could be done.
+    VLOG(1) << "DEBUG mbautin: transaction is set, force_consistent_read_="
+            << force_consistent_read_;
     if (!transaction->Prepare(&ops_info_,
                               force_consistent_read_,
                               deadline_,
@@ -574,6 +576,11 @@ void Batcher::ExecuteOperations(Initial initial) {
   // Now flush the ops for each group.
   // Consistent read is not required when whole batch fits into one command.
   const auto need_consistent_read = force_consistent_read || ops_info_.groups.size() > 1;
+  VLOG(1) << "DEBUG mbautin: "
+          << EXPR_VALUE_FOR_LOG(force_consistent_read_) << ", "
+          << EXPR_VALUE_FOR_LOG(this->transaction()) << ", "
+          << EXPR_VALUE_FOR_LOG(ops_info_.groups.size()) << ", "
+          << EXPR_VALUE_FOR_LOG(need_consistent_read);
 
   for (const auto& group : ops_info_.groups) {
     // Allow local calls for last group only.

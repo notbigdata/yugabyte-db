@@ -144,6 +144,7 @@ Status PgTxnManager::SetDeferrable(bool deferrable) {
 
 void PgTxnManager::StartNewSession() {
   session_ = std::make_shared<YBSession>(async_client_init_->client(), clock_);
+  VLOG(1) << "DEBUG mbautin: StartNewSession is calling SetReadPoint";
   session_->SetReadPoint(client::Restart::kFalse);
   session_->SetForceConsistentRead(client::ForceConsistentRead::kTrue);
 }
@@ -168,8 +169,10 @@ Status PgTxnManager::BeginWriteTransactionIfNecessary(bool read_only_op,
     return Status::OK();
   }
 
-  VLOG(2) << "BeginWriteTransactionIfNecessary: txn_in_progress_="
-          << txn_in_progress_ << ", txn_=" << txn_.get();
+  VLOG(2) << "BeginWriteTransactionIfNecessary: "
+          << EXPR_VALUE_FOR_LOG(txn_in_progress_) << ", "
+          << EXPR_VALUE_FOR_LOG(read_only_op) << ", "
+          << EXPR_VALUE_FOR_LOG(txn_.get());
 
   // Using Postgres isolation_level_, read_only_, and deferrable_, determine the internal isolation
   // level and defer effect.

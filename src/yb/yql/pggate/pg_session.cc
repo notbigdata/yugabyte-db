@@ -432,8 +432,11 @@ Status PgSession::RunHelper::Apply(std::shared_ptr<client::YBPgsqlOp> op,
   if (!yb_session_) {
     yb_session_ = session->shared_from_this();
     if (transactional_ && read_time) {
+      VLOG(1) << "DEBUG mbautin: transactional_ is true, *read_time is set: "
+              << static_cast<bool>(*read_time);
       if (!*read_time) {
         *read_time = pg_session_.clock_->Now().ToUint64();
+        VLOG(1) << "DEBUG mbautin: I've just set the read time to " << *read_time;
       }
       yb_session_->SetInTxnLimit(HybridTime(*read_time));
     }
