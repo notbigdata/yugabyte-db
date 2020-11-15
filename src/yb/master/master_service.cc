@@ -645,6 +645,13 @@ void MasterServiceImpl::GetMasterRegistration(const GetMasterRegistrationRequest
     std::this_thread::sleep_for(20s);
   }
   resp->mutable_instance_id()->CopyFrom(server_->instance_pb());
+  Status availability_status = server_->CheckMasterRegistrationAvailability();
+  if (!availability_status.ok()) {
+    CheckRespErrorOrSetUnknown(availability_status, resp);
+    rpc.RespondSuccess();
+    return;
+  }
+
   CatalogManager::ScopedLeaderSharedLock l(server_->catalog_manager());
   if (!l.CheckIsInitializedOrRespond(resp, &rpc)) {
     return;

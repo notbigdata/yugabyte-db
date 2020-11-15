@@ -108,6 +108,10 @@ class Master : public server::RpcAndWebServerBase {
 
   const MasterOptions& opts() { return opts_; }
 
+  // Checks an atomic flag indicating that master registration information is availabile. This can
+  // be used even without holding the catalog manager shared lock.
+  CHECKED_STATUS CheckMasterRegistrationAvailability() const;
+
   // Get the RPC and HTTP addresses for this master instance.
   CHECKED_STATUS GetMasterRegistration(ServerRegistrationPB* registration) const;
 

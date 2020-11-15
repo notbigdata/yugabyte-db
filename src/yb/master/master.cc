@@ -129,19 +129,19 @@ namespace yb {
 namespace master {
 
 Master::Master(const MasterOptions& opts)
-  : RpcAndWebServerBase(
-        "Master", opts, "yb.master", server::CreateMemTrackerForServer()),
-    state_(kStopped),
-    ts_manager_(new TSManager()),
-    catalog_manager_(new enterprise::CatalogManager(this)),
-    path_handlers_(new MasterPathHandlers(this)),
-    flush_manager_(new FlushManager(this, catalog_manager())),
-    opts_(opts),
-    registration_initialized_(false),
-    maintenance_manager_(new MaintenanceManager(MaintenanceManager::DEFAULT_OPTIONS)),
-    metric_entity_cluster_(METRIC_ENTITY_cluster.Instantiate(metric_registry_.get(),
-                                                             "yb.cluster")),
-    master_tablet_server_(new MasterTabletServer(this, metric_entity())) {
+    : RpcAndWebServerBase(
+          "Master", opts, "yb.master", server::CreateMemTrackerForServer()),
+      state_(kStopped),
+      ts_manager_(new TSManager()),
+      catalog_manager_(new enterprise::CatalogManager(this)),
+      path_handlers_(new MasterPathHandlers(this)),
+      flush_manager_(new FlushManager(this, catalog_manager())),
+      opts_(opts),
+      registration_initialized_(false),
+      maintenance_manager_(new MaintenanceManager(MaintenanceManager::DEFAULT_OPTIONS)),
+      metric_entity_cluster_(METRIC_ENTITY_cluster.Instantiate(metric_registry_.get(),
+                                                              "yb.cluster")),
+      master_tablet_server_(new MasterTabletServer(this, metric_entity())) {
   SetConnectionContextFactory(rpc::CreateConnectionContextFactory<rpc::YBInboundConnectionContext>(
       GetAtomicFlag(&FLAGS_inbound_rpc_memory_limit),
       mem_tracker()));
@@ -334,10 +334,15 @@ void Master::Shutdown() {
   state_ = kStopped;
 }
 
-Status Master::GetMasterRegistration(ServerRegistrationPB* reg) const {
+Status Master::CheckMasterRegistrationAvailability() const {
   if (!registration_initialized_.load(std::memory_order_acquire)) {
     return STATUS(ServiceUnavailable, "Master startup not complete");
   }
+  return Status::OK();
+}
+
+Status Master::GetMasterRegistration(ServerRegistrationPB* reg) const {
+  RETURN_NOT_OK(CheckMasterRegistrationAvailability());
   reg->CopyFrom(registration_);
   return Status::OK();
 }
