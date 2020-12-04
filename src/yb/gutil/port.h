@@ -430,7 +430,7 @@ inline void* memrchr(const void* bytes, int find_char, size_t len) {
 // the running time and memory requirements for racy code when TSAN is active.
 // GCC does not support this attribute at the time of this writing (GCC 4.8).
 // Also a similar macro for AddressSanitizer.
-#if defined(__llvm__)
+#if defined(__llvm__) || (defined(__GNUC__) && __GNUC__ >= 8)
 #define ATTRIBUTE_NO_SANITIZE_THREAD \
     __attribute__((no_sanitize_thread))
 #define ATTRIBUTE_NO_SANITIZE_ADDRESS \
