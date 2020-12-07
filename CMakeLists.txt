@@ -213,9 +213,10 @@ endif()
 # This helps find the right third-party build directory.
 if ("${YB_BUILD_TYPE}" MATCHES "^(asan|tsan)$")
   set(THIRDPARTY_INSTRUMENTATION_TYPE "${YB_BUILD_TYPE}")
-elseif ("$ENV{YB_COMPILER_TYPE}" STREQUAL "clang") # Cannot use IS_CLANG before building 3rd party
+elseif ("${COMPILER_FAMILY}" STREQUAL "clang")
   if(NOT APPLE AND
-     NOT EXISTS "${YB_THIRDPARTY_DIR}/installed/clang_uninstrumented/libcxx")
+     (NOT EXISTS "${YB_THIRDPARTY_DIR}/installed/clang_uninstrumented/libcxx" OR
+      "${COMPILER_VERSION}" VERSION_GREATER_EQUAL "10.0.0"))
     # This must be a Clang third-party build where we use "uninstrumented" instead of
     # "clang_uninstrumented" because everything is built with Clang.
     set(THIRDPARTY_INSTRUMENTATION_TYPE "uninstrumented")

@@ -153,6 +153,8 @@ readonly -a VALID_COMPILER_TYPES=(
   gcc
   gcc8
   gcc9
+  clang10
+  clang11
   zapcc
 )
 make_regex_from_list VALID_COMPILER_TYPES "${VALID_COMPILER_TYPES[@]}"
@@ -855,6 +857,12 @@ log_diagnostics_about_local_thirdparty() {
 find_compiler_by_type() {
   compiler_type=$1
   validate_compiler_type "$1"
+  if [[ -n ${YB_RESOLVED_CC_COMPILER:-} && -n ${YB_RESOLVED_CXX_COMPILER:-} ]]; then
+    cc_executable=$YB_RESOLVED_CC_COMPILER
+    cxx_executable=$YB_RESOLVED_CXX_COMPILER
+    return
+  fi
+
   local compiler_type=$1
   unset cc_executable
   unset cxx_executable
@@ -947,6 +955,19 @@ find_compiler_by_type() {
       cc_executable+=${YB_CLANG_SUFFIX:-}
       cxx_executable+=${YB_CLANG_SUFFIX:-}
     ;;
+    clang10|clang11)
+      local clang_prefix_candidate
+      local clang_cc_compiler_basename=${YB_COMPILER_TYPE//clang/clang-}
+      local clang_cxx_compiler_basename=${YB_COMPILER_TYPE//clang/clang++-}
+      for clang_prefix_candidate in /usr/local/bin /usr/bin; do
+        if [[ -L $clang_prefix_candidate/$clang_cc_compiler_basename &&
+              -L $clang_prefix_candidate/$clang_cxx_compiler_basename ]]; then
+          cc_executable=$( readlink "$clang_prefix_candidate/$clang_cc_compiler_basename" )
+          cxx_executable=$( readlink "$clang_prefix_candidate/$clang_cxx_compiler_basename" )
+          break
+        fi
+      done
+    ;;
     zapcc)
       if [[ -n ${YB_ZAPCC_INSTALL_PATH:-} ]]; then
         cc_executable=$YB_ZAPCC_INSTALL_PATH/bin/zapcc
@@ -993,6 +1014,9 @@ find_compiler_by_type() {
       eval $compiler_var_name=\"$compiler_path\"
     fi
   done
+
+  export YB_RESOLVED_CC_COMPILER=$cc_executable
+  export YB_RESOLVED_CXX_COMPILER=$cxx_executable
 }
 
 # Make pushd and popd quiet.
