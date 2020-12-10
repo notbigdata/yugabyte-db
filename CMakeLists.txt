@@ -230,6 +230,13 @@ else()
 endif()
 message("THIRDPARTY_INSTRUMENTATION_TYPE=${THIRDPARTY_INSTRUMENTATION_TYPE}")
 
+if (NOT APPLE AND
+    "${COMPILER_FAMILY}" STREQUAL "clang" AND
+    "${COMPILER_VERSION}" VERSION_GREATER_EQUAL "10.0.0")
+  # TODO: switch our default back to ld when building clang.
+  ADD_LINKER_FLAGS("-fuse-ld=ld")
+endif()
+
 # Make sure third-party dependency is up-to-date.
 # TODO: do not invoke this step as part of the build. Always invoke it separately.
 if (REBUILD_THIRDPARTY)
@@ -494,30 +501,8 @@ endif()
 set(YB_PREFIX_COMMON "${YB_THIRDPARTY_DIR}/installed/common")
 
 # Flag to enable thread sanitizer (clang or gcc 4.8)
-if ("${YB_BUILD_TYPE}" STREQUAL "tsan")
-  YB_SETUP_SANITIZER("TSAN")
-  ADD_CXX_FLAGS("-fsanitize=thread")
-
-  # Enables dynamic_annotations.h to actually generate code
-  ADD_CXX_FLAGS("-DDYNAMIC_ANNOTATIONS_ENABLED")
-
-  # changes atomicops to use the tsan implementations
-  ADD_CXX_FLAGS("-DTHREAD_SANITIZER")
-
-  # Compile and link against the thirdparty TSAN instrumented libstdcxx.
-  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=thread")
-elseif ("${YB_BUILD_TYPE}" STREQUAL "asan")
-  YB_SETUP_SANITIZER("ASAN")
-
-  ADD_CXX_FLAGS("-fsanitize=address")
-  ADD_CXX_FLAGS("-DADDRESS_SANITIZER")
-
-  # Compile and link against the thirdparty ASAN instrumented libstdcxx.
-  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=address")
-  if("${COMPILER_FAMILY}" STREQUAL "gcc")
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -lubsan -ldl")
-    ADD_CXX_FLAGS("-Wno-error=maybe-uninitialized")
-  endif()
+if ("${YB_BUILD_TYPE}" MATCHES "^(asan|tsan)$")
+  YB_SETUP_SANITIZER()
 elseif (NOT APPLE AND IS_CLANG)
   # Special setup for Clang on Linux. This is not needed on macOS.
   if (EXISTS "${YB_THIRDPARTY_DIR}/installed/clang_uninstrumented/libcxx")
