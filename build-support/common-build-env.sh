@@ -855,18 +855,19 @@ log_diagnostics_about_local_thirdparty() {
 # use custom gcc and clang installations. Sets cc_executable and cxx_executable variables. This is
 # used in compiler-wrapper.sh.
 find_compiler_by_type() {
-  compiler_type=$1
-  validate_compiler_type "$1"
+  expect_num_args 0 "$@"
+  expect_vars_to_be_set YB_COMPILER_TYPE
   if [[ -n ${YB_RESOLVED_CC_COMPILER:-} && -n ${YB_RESOLVED_CXX_COMPILER:-} ]]; then
     cc_executable=$YB_RESOLVED_CC_COMPILER
     cxx_executable=$YB_RESOLVED_CXX_COMPILER
     return
   fi
 
-  local compiler_type=$1
+  validate_compiler_type "$YB_COMPILER_TYPE"
+
   unset cc_executable
   unset cxx_executable
-  case "$compiler_type" in
+  case "$YB_COMPILER_TYPE" in
     gcc)
       if [[ -n ${YB_GCC_PREFIX:-} ]]; then
         if [[ ! -d $YB_GCC_PREFIX/bin ]]; then
@@ -978,7 +979,7 @@ find_compiler_by_type() {
       fi
     ;;
     *)
-      fatal "Unknown compiler type '$compiler_type'"
+      fatal "Unknown compiler type '$YB_COMPILER_TYPE'"
   esac
 
   # -----------------------------------------------------------------------------------------------
@@ -1009,7 +1010,7 @@ find_compiler_by_type() {
               "Compiler does not exist or is not executable at the path we set" \
               "$compiler_var_name to" \
               "(possibly applying 'which' expansion): $compiler_path" \
-              "(trying to use compiler type '$compiler_type')."
+              "(trying to use compiler type '$YB_COMPILER_TYPE')."
       fi
       eval $compiler_var_name=\"$compiler_path\"
     fi

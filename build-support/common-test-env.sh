@@ -997,7 +997,7 @@ run_cxx_test_and_process_results() {
 }
 
 set_sanitizer_runtime_options() {
-  expect_vars_to_be_set BUILD_ROOT
+  expect_vars_to_be_set BUILD_ROOT YB_COMPILER_TYPE
 
   # Don't allow setting these options directly from outside. We will allow controlling them through
   # our own "extra options" environment variables.
@@ -1025,9 +1025,23 @@ set_sanitizer_runtime_options() {
             "exist, reverting to default behavior."
       fi
 
-      for asan_symbolizer_candidate_path in \
-          "$YB_THIRDPARTY_DIR/installed/bin/llvm-symbolizer" \
-          "$YB_THIRDPARTY_DIR/clang-toolchain/bin/llvm-symbolizer"; do
+      local candidate_bin_dirs=(
+        "$YB_THIRDPARTY_DIR/installed/bin"
+        "$YB_THIRDPARTY_DIR/clang-toolchain/bin"
+      )
+      # When building with clang10 or clang11, normally $YB_RESOLVED_CC_COMPILER would contain the
+      # path of clang within LLVM's bin directory.
+      if [[ -z ${cc_executable:-} ]]; then
+        find_compiler_by_type
+        if [[ -z ${cc_executable:-} ]]; then
+          fatal "find_compiler_by_type did not set the cc_executable variable"
+        fi
+      fi
+      if [[ $cc_executable == */clang ]]; then
+        candidate_bin_dirs+=( "${cc_executable%/clang}" )
+      fi
+      for asan_symbolizer_candidate_bin_dir in "${candidate_bin_dirs[@]}"; do
+        local asan_symbolizer_candidate_path=$asan_symbolizer_candidate_bin_dir/llvm-symbolizer
         if [[ -f "$asan_symbolizer_candidate_path" ]]; then
           ASAN_SYMBOLIZER_PATH=$asan_symbolizer_candidate_path
           break
