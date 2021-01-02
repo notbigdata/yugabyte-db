@@ -1263,6 +1263,7 @@ save_paths_to_build_dir() {
 }
 
 detect_linuxbrew() {
+  expect_vars_to_be_set YB_COMPILER_TYPE
   if [[ -z ${BUILD_ROOT:-} ]]; then
     fatal "BUILD_ROOT is not set, not trying to use the default version of Linuxbrew."
   fi
