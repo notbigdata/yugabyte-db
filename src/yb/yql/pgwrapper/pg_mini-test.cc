@@ -687,6 +687,7 @@ class PgMiniTestManualSysTableTxn : public PgMiniTest {
     // Enable manual transaction control for operations on system tables. Otherwise, they would
     // execute non-transactionally.
     FLAGS_ysql_enable_manual_sys_table_txn_ctl = true;
+    FLAGS_ysql_sleep_before_retry_on_txn_conflict = false;
   }
 };
 
@@ -759,12 +760,6 @@ TEST_F_EX(PgMiniTest, YB_DISABLE_TEST_IN_TSAN(SystemTableTxnTest), PgMiniTestMan
         << "Both transactions can't commit. " << get_commit_statuses_str();
     ASSERT_TRUE(succeeded1 || succeeded2)
         << "We expect one of the two transactions to succeed. " << get_commit_statuses_str();
-    if (!commit_status1.ok()) {
-      ASSERT_OK(conn1.Execute("ROLLBACK"));
-    }
-    if (!commit_status2.ok()) {
-      ASSERT_OK(conn2.Execute("ROLLBACK"));
-    }
 
     if (RandomUniformBool()) {
       std::swap(conn1, conn2);

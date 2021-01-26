@@ -991,7 +991,9 @@ Status PgSession::FlushBufferedOperationsImpl(const Flusher& flusher) {
 }
 
 bool PgSession::ShouldHandleTransactionally(const client::YBPgsqlOp& op) {
-  return op.IsTransactional() &&  !YBCIsInitDbModeEnvVarSet() &&
+  return op.IsTransactional() &&
+         !YBCIsInitDbModeEnvVarSet() &&
+         pg_txn_manager_->IsTxnInProgress() &&
          (!op.IsYsqlCatalogOp() || pg_txn_manager_->IsDdlMode() ||
              // In this mode, used for some tests, we will execute direct statements on YSQL system
              // catalog tables in the user-controlled transaction, as opposed to executing them

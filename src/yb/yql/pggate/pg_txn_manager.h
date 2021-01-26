@@ -74,6 +74,7 @@ class PgTxnManager : public RefCountedThreadSafe<PgTxnManager> {
   bool CanRestart() { return can_restart_.load(std::memory_order_acquire); }
 
   bool IsDdlMode() const { return ddl_session_.get() != nullptr; }
+  bool IsTxnInProgress() const { return txn_in_progress_ || ddl_session_; }
 
  private:
   YB_STRONGLY_TYPED_BOOL(NeedsPessimisticLocking);

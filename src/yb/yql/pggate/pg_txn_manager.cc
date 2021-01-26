@@ -92,11 +92,7 @@ PgTxnManager::PgTxnManager(
 }
 
 PgTxnManager::~PgTxnManager() {
-  // Abort the transaction before the transaction manager gets destroyed.
-  if (txn_) {
-    txn_->Abort();
-  }
-  ResetTxnAndSession();
+  const auto status __attribute__((unused)) = AbortTransaction();
 }
 
 Status PgTxnManager::BeginTransaction() {
