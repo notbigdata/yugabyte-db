@@ -1819,6 +1819,11 @@ void PgLibPqTest::TestCacheRefreshRetry(const bool is_retry_disabled) {
 
   for (int i = 0; i < kNumTries; ++i) {
     ASSERT_OK(conns[0].ExecuteFormat("ALTER TABLE $0 ADD COLUMN j$1 int", kTableName, i));
+
+    // TODO(mbautin): remove this. This is just to check that the the test passes with the delay
+    // here.
+    SleepFor(MonoDelta::FromSeconds(5));
+
     auto res = conns[1].FetchFormat("SELECT * FROM $0", kTableName);
     if (is_retry_disabled) {
       // Ensure that we fall under one of two cases:
