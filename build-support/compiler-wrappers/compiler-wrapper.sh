@@ -359,13 +359,13 @@ if [[ $local_build_only == "false" &&
     fi
 
     get_build_worker_list
-    build_worker_name=${build_workers[ $RANDOM % ${#build_workers[@]} ]}
     if "$rerun_on_the_same_host"; then
       if [[ -z "${build_host:-}" ]]; then
         fatal "Internal error: build_host is not defined but rerun_on_the_same_host is set to true"
       fi
       log "Re-running compilation command on the host '$build_host'"
     else
+      build_worker_name=${build_workers[ $RANDOM % ${#build_workers[@]} ]}
       build_host="$build_worker_name$YB_BUILD_WORKER_DOMAIN"
     fi
     rerun_on_the_same_host=false  # For the next attempt.
