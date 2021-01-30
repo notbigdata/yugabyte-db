@@ -409,22 +409,26 @@ if [[ $local_build_only == "false" &&
       if [[ $sleep_deciseconds -lt 9 ]]; then
         (( sleep_deciseconds+=1 ))
       fi
+      # We set this debugging variable for at most one iteration, so unset it for the next attempt.
+      unset YB_COMMON_BUILD_ENV_DEBUG
+
       continue
     fi
+    # Exit code 1 with empty output is a special case because it could indicate an error in our
+    # scripts. However, if YB_COMMON_BUILD_ENV_DEBUG is set to 1, we assume that we already went
+    # through the logic below and got the same output. (That in combination with stderr being empty
+    # is unlikely because stderr will be filled with debug information in that mode.)
     if [[ $exit_code -eq 1 &&
           ${YB_COMMON_BUILD_ENV_DEBUG:-0} != "1" ]] &&
         ! grep -Eq '[^[:space:]]' "$stderr_path"
     then
       log "The compilation command run on the host '$build_host' with exit code '$exit_code'" \
           "did not produce any valid output. Re-running the command on the same host with Bash" \
-          "debug output turned on."
+          "debug output turned on (YB_COMMON_BUILD_ENV_DEBUG=1)."
       export YB_COMMON_BUILD_ENV_DEBUG=1
       rerun_on_the_same_host=true
       continue
     fi
-
-    # We set this debugging variable for at most one iteration, so unset it for the next iteration.
-    export YB_COMMON_BUILD_ENV_DEBUG=0
 
     remote_build_flush_stderr_file
 
