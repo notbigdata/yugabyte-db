@@ -11,6 +11,7 @@
 // under the License.
 //
 
+#include "yb/util/tostring.h"
 #include "yb/yql/pggate/pggate.h"
 #include "yb/yql/pggate/pggate_flags.h"
 #include "yb/yql/pggate/pg_txn_manager.h"
@@ -26,6 +27,12 @@
 
 #include "yb/util/random_util.h"
 #include "yb/util/status.h"
+
+// This macro is not enclosed in do { ... } while (true) because we want to be able to write
+// additional information into the same log message.
+#define VLOG_TXN_STATE(vlog_level) \
+    VLOG(vlog_level) << __func__ << ": " << TxnStateDebugStr() \
+                     << "; query: " << GetDebugQueryString()
 
 namespace {
 
@@ -85,10 +92,12 @@ using client::LocalTabletFilter;
 PgTxnManager::PgTxnManager(
     AsyncClientInitialiser* async_client_init,
     scoped_refptr<ClockBase> clock,
-    const tserver::TServerSharedObject* tserver_shared_object)
+    const tserver::TServerSharedObject* tserver_shared_object,
+    const YBCPgCallbacks& pg_callbacks)
     : async_client_init_(async_client_init),
       clock_(std::move(clock)),
-      tserver_shared_object_(tserver_shared_object) {
+      tserver_shared_object_(tserver_shared_object),
+      pg_callbacks_(pg_callbacks) {
 }
 
 PgTxnManager::~PgTxnManager() {
@@ -100,7 +109,7 @@ PgTxnManager::~PgTxnManager() {
 }
 
 Status PgTxnManager::BeginTransaction() {
-  VLOG(2) << "BeginTransaction: txn_in_progress_=" << txn_in_progress_;
+  VLOG_TXN_STATE(2);
   if (txn_in_progress_) {
     return STATUS(IllegalState, "Transaction is already in progress");
   }
@@ -108,7 +117,7 @@ Status PgTxnManager::BeginTransaction() {
 }
 
 Status PgTxnManager::RecreateTransaction() {
-  VLOG(2) << "RecreateTransaction: txn_in_progress_=" << txn_in_progress_;
+  VLOG_TXN_STATE(2);
   if (!txn_) {
     return Status::OK();
   }
@@ -168,14 +177,15 @@ Status PgTxnManager::BeginWriteTransactionIfNecessary(bool read_only_op,
     return Status::OK();
   }
 
-  VLOG(2) << "BeginWriteTransactionIfNecessary: txn_in_progress_="
-          << txn_in_progress_ << ", txn_=" << txn_.get();
-
   // Using Postgres isolation_level_, read_only_, and deferrable_, determine the internal isolation
   // level and defer effect.
-  IsolationLevel isolation = (isolation_level_ == PgIsolationLevel::SERIALIZABLE) && !read_only_
-      ? IsolationLevel::SERIALIZABLE_ISOLATION : IsolationLevel::SNAPSHOT_ISOLATION;
+  const IsolationLevel isolation =
+      (isolation_level_ == PgIsolationLevel::SERIALIZABLE) && !read_only_
+          ? IsolationLevel::SERIALIZABLE_ISOLATION
+          : IsolationLevel::SNAPSHOT_ISOLATION;
   bool defer = read_only_ && deferrable_;
+
+  VLOG_TXN_STATE(2) << "; effective isolation level: " << IsolationLevel_Name(isolation);
 
   if (txn_) {
     // Sanity check: query layer should ensure that this does not happen.
@@ -184,7 +194,7 @@ Status PgTxnManager::BeginWriteTransactionIfNecessary(bool read_only_op,
     }
   } else if (read_only_op && isolation == IsolationLevel::SNAPSHOT_ISOLATION) {
     if (defer) {
-      // This call is idempotent, meaning it has no affect after the first call.
+      // This call is idempotent, meaning it has no effect after the first call.
       session_->DeferReadPoint();
     }
   } else {
@@ -216,11 +226,18 @@ Status PgTxnManager::BeginWriteTransactionIfNecessary(bool read_only_op,
       RETURN_NOT_OK(txn_->Init(isolation));
     }
     session_->SetTransaction(txn_);
+
+    VLOG_TXN_STATE(2) << "; effective isolation level: "
+                      << IsolationLevel_Name(isolation)
+                      << "; transaction started successfully.";
   }
+
   return Status::OK();
 }
 
 Status PgTxnManager::RestartTransaction() {
+  VLOG_TXN_STATE(2);
+
   if (!txn_in_progress_ || !txn_) {
     CHECK_NOTNULL(session_);
     if (!session_->IsRestartRequired()) {
@@ -241,6 +258,8 @@ Status PgTxnManager::RestartTransaction() {
 }
 
 Status PgTxnManager::CommitTransaction() {
+  VLOG_TXN_STATE(2);
+
   if (!txn_in_progress_) {
     VLOG(2) << "No transaction in progress, nothing to commit.";
     return Status::OK();
@@ -251,14 +270,16 @@ Status PgTxnManager::CommitTransaction() {
     ResetTxnAndSession();
     return Status::OK();
   }
-  VLOG(2) << "Committing transaction.";
+
   Status status = txn_->CommitFuture().get();
-  VLOG(2) << "Transaction commit status: " << status;
+  VLOG_TXN_STATE(2) << "; transaction commit status: " << status;
   ResetTxnAndSession();
   return status;
 }
 
 Status PgTxnManager::AbortTransaction() {
+  VLOG_TXN_STATE(2);
+
   // If a DDL operation during a DDL txn fails the txn will be aborted before we get here.
   // However if there are failures afterwards (i.e. during COMMIT or catalog version increment),
   // then we might get here with a ddl_txn_. Clean it up in that case.
@@ -301,13 +322,13 @@ TransactionManager* PgTxnManager::GetOrCreateTransactionManager() {
 
 Result<client::YBSession*> PgTxnManager::GetTransactionalSession() {
   if (ddl_session_) {
-    VLOG(2) << "Using the DDL session: " << ddl_session_.get();
+    VLOG_TXN_STATE(2) << "; using the DDL session: " << ddl_session_.get();
     return ddl_session_.get();
   }
   if (!txn_in_progress_) {
     RETURN_NOT_OK(BeginTransaction());
   }
-  VLOG(2) << "Using the non-DDL transactional session: " << session_.get();
+  VLOG_TXN_STATE(2) << "; using the non-DDL transactional session: " << session_.get();
   return session_.get();
 }
 
@@ -316,6 +337,7 @@ std::shared_future<Result<TransactionMetadata>> PgTxnManager::GetDdlTxnMetadata(
 }
 
 void PgTxnManager::ResetTxnAndSession() {
+  VLOG_TXN_STATE(2);
   txn_in_progress_ = false;
   session_ = nullptr;
   txn_ = nullptr;
@@ -323,6 +345,7 @@ void PgTxnManager::ResetTxnAndSession() {
 }
 
 Status PgTxnManager::EnterSeparateDdlTxnMode() {
+  VLOG_TXN_STATE(2);
   RSTATUS_DCHECK(!ddl_txn_,
           IllegalState, "EnterSeparateDdlTxnMode called when already in a DDL transaction");
   VLOG(2) << __PRETTY_FUNCTION__;
@@ -338,6 +361,7 @@ Status PgTxnManager::EnterSeparateDdlTxnMode() {
 }
 
 Status PgTxnManager::ExitSeparateDdlTxnMode(bool is_success) {
+  VLOG_TXN_STATE(2);
   VLOG(2) << __PRETTY_FUNCTION__ << ": ddl_txn_=" << ddl_txn_.get() << ",is_success=" << is_success;
   RSTATUS_DCHECK(!!ddl_txn_,
           IllegalState, "ExitSeparateDdlTxnMode called when not in a DDL transaction");
@@ -349,6 +373,26 @@ Status PgTxnManager::ExitSeparateDdlTxnMode(bool is_success) {
   ddl_txn_.reset();
   ddl_session_.reset();
   return Status::OK();
+}
+
+std::string PgTxnManager::TxnStateDebugStr() const {
+  return YB_CLASS_TO_STRING(
+      txn,
+      read_only,
+      deferrable,
+      txn_in_progress,
+      isolation_level);
+}
+
+std::string PgTxnManager::GetDebugQueryString() const {
+  if (pg_callbacks_.GetDebugQueryString) {
+    const char* query_str = pg_callbacks_.GetDebugQueryString();
+    if (query_str) {
+      return query_str;
+    }
+    return std::string("N/A");
+  }
+  return std::string("Callback unavailable");
 }
 
 }  // namespace pggate

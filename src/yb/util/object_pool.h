@@ -204,6 +204,7 @@ class ThreadSafeObjectPool {
       : factory_(std::move(factory)), deleter_(std::move(deleter)) {
     // Need the actual number of CPUs, so we do not use the Gflag value
     auto num_cpus = base::RawNumCPUs();
+    CHECK_GE(num_cpus, 0);
     pools_.reserve(num_cpus);
     while (pools_.size() != num_cpus) {
       pools_.emplace_back(50);

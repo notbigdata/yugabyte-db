@@ -106,6 +106,7 @@ Status PggateTest::Init(const char *test_name, int num_tablet_servers) {
   YBCPgCallbacks callbacks;
   callbacks.FetchUniqueConstraintName = &FetchUniqueConstraintName;
   callbacks.GetCurrentYbMemctx = &TestGetCurrentYbMemctx;
+  callbacks.GetDebugQueryString = nullptr;
   YBCInitPgGate(type_table, count, callbacks);
 
   // Don't try to connect to tserver shared memory in pggate tests.

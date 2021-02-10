@@ -33,6 +33,8 @@
 #include "yb/util/fast_varint.h"
 #include "yb/util/net/inetaddress.h"
 
+#include "yb/docdb/doc_key.h"
+
 using std::string;
 using strings::Substitute;
 using yb::QLValuePB;
@@ -122,6 +124,13 @@ string PrimitiveValue::ToString() const {
       return "invalid";
     case ValueType::kStringDescending:
     case ValueType::kString:
+      {
+        DocKey decoded;
+        Status decode_status = decoded.FullyDecodeFrom(str_val_);
+        if (decode_status.ok()) {
+          return Format("EncodedDocKey($0)", decoded);
+        }
+      }
       return FormatBytesAsStr(str_val_);
     case ValueType::kInt32Descending: FALLTHROUGH_INTENDED;
     case ValueType::kInt32:

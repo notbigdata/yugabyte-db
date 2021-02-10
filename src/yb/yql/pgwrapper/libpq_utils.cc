@@ -242,6 +242,17 @@ Result<PGResultPtr> PGConn::FetchMatrix(const std::string& command, int rows, in
   return res;
 }
 
+Result<PGResultPtr> PGConn::FetchColumns(const std::string& command, int columns) {
+  auto res = VERIFY_RESULT(Fetch(command));
+
+  auto fetched_columns = PQnfields(res.get());
+  if (fetched_columns != columns) {
+    return STATUS_FORMAT(
+        RuntimeError, "Fetched $0 columns, while $1 expected", fetched_columns, columns);
+  }
+  return res;
+}
+
 CHECKED_STATUS PGConn::StartTransaction(IsolationLevel isolation_level) {
   switch (isolation_level) {
     case IsolationLevel::NON_TRANSACTIONAL:

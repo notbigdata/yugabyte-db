@@ -371,7 +371,6 @@ INSTANTIATE_TEST_CASE_P(TwoDCTestParams, TwoDCYsqlTest,
                         ::testing::Values(TwoDCTestParams(1, true), TwoDCTestParams(1, false),
                                           TwoDCTestParams(0, true), TwoDCTestParams(0, false)));
 
-
 TEST_P(TwoDCYsqlTest, SetupUniverseReplication) {
   YB_SKIP_TEST_IN_TSAN();
   auto tables = ASSERT_RESULT(SetUpWithParams({8, 4}, {6, 6}, 3, 1, false /* colocated */));

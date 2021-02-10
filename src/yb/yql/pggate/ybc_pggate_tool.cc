@@ -63,6 +63,7 @@ YBCStatus YBCInitPgGateBackend() {
   YBCPgCallbacks callbacks;
   callbacks.FetchUniqueConstraintName = &FetchUniqueConstraintName;
   callbacks.GetCurrentYbMemctx = &GetCurrentToolYbMemctx;
+  callbacks.GetDebugQueryString = nullptr;
   YBCInitPgGate(YBCEmptyTypeEntityTable, 0, callbacks);
 
   return YBCPgInitSession(/* pg_env */ nullptr, /* database_name */ nullptr);

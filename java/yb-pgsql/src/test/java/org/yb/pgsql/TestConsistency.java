@@ -19,13 +19,13 @@ import java.sql.Connection;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.commons.lang3.RandomUtils;
 import org.apache.commons.lang3.time.StopWatch;
@@ -47,20 +47,28 @@ public class TestConsistency extends BasePgSQLTest {
   private static final Logger LOG = LoggerFactory.getLogger(TestConsistency.class);
 
   /** How long (in seconds) do we want workloads to run? */
-  private final int TIME_LIMIT_S = 200;
+  private final int TIME_LIMIT_S = 300;
 
   @Override
   public int getTestMethodTimeoutSec() {
     // Global time limit doesn't depend on a build type, so we only adjust a margin time.
-    return (int) ((TIME_LIMIT_S + Timeouts.adjustTimeoutSecForBuildType(50)) * 1.5);
+    // return (int) ((TIME_LIMIT_S + Timeouts.adjustTimeoutSecForBuildType(50)) * 1.5);
+    return 3600 * 2;
+  }
+
+  @Override
+  protected int getInitialNumMasters() {
+    return 1;
   }
 
   /** Use a (non-unique) index instead of a PK for the long-fork. */
   @Test
   public void longFork_serializable_index() throws Exception {
     try (Statement stmt = connection.createStatement()) {
-      stmt.executeUpdate("CREATE TABLE long_fork(key int PRIMARY KEY, key2 int, val int)");
-      stmt.executeUpdate("CREATE INDEX long_fork_idx ON long_fork (key2) INCLUDE (val)");
+      stmt.executeUpdate(
+          "CREATE TABLE long_fork(key int PRIMARY KEY, key2 int, val int) SPLIT INTO 1 TABLETS");
+      stmt.executeUpdate(
+          "CREATE INDEX long_fork_idx ON long_fork (key2) INCLUDE (val) SPLIT INTO 2 TABLETS");
     }
     longForkWorkload(
         IsolationLevel.SERIALIZABLE,
@@ -93,21 +101,27 @@ public class TestConsistency extends BasePgSQLTest {
     final int neightborsToLookAt = 500;
 
     AtomicInteger lastKeyUsed = new AtomicInteger();
-    Map<Integer, List<Integer>> keysUsedPerGroup = Collections.synchronizedMap(new HashMap<>());
+    AtomicInteger numSuccessfulReads = new AtomicInteger(0);
+    AtomicInteger numSuccessfulWrites = new AtomicInteger(0);
+    AtomicInteger numAttemptedReads = new AtomicInteger(0);
+    AtomicInteger numAttemptedWrites = new AtomicInteger(0);
+    Map<Integer, List<Integer>> keysUsedPerGroup = Collections.synchronizedMap(new TreeMap<>());
     for (int i = 0; i < groupsNum; ++i) {
       keysUsedPerGroup.put(i, Collections.synchronizedList(new ArrayList<>()));
     }
 
-    List<Map<Integer, Integer>> reads = Collections.synchronizedList(new ArrayList<>());
+    Map<Integer, Map<Integer, Integer>> reads = new ConcurrentHashMap<>();
+    AtomicInteger numReadIds = new AtomicInteger(0);
     Workload wl = new Workload(isolation);
     for (int c = 0; c < concurrencyPerNode; ++c) {
       for (int tsIdx = 0; tsIdx < miniCluster.getNumTServers(); ++tsIdx) {
         final int group = RandomUtils.nextInt(0, groupsNum);
-        wl.addThread(tsIdx, (conn) -> {
+        wl.addThread(tsIdx, (conn, repeatableReadConn) -> {
           boolean shouldRead = Math.random() < readProbablitiy;
 
-          try (Statement stmt = conn.createStatement()) {
+          try (Statement stmt = ( /* shouldRead ? repeatableReadConn : */ conn).createStatement()) {
             if (shouldRead) {
+              int readId = numReadIds.incrementAndGet();
               List<Integer> keysToRead = new ArrayList<>();
               for (List<Integer> groupKeys : keysUsedPerGroup.values()) {
                 int lowerIdx = Math.max(0, groupKeys.size() - hindsight);
@@ -118,10 +132,18 @@ public class TestConsistency extends BasePgSQLTest {
               if (keysToRead.isEmpty()) {
                 return; // Nothing to read yet.
               }
+
+              Collections.sort(keysToRead);
+
+              LOG.info(
+                  "Read #" + readId +
+                  ": starting to read keys " + keysToRead);
+
               String query = readQuery.apply(
                   keysToRead.stream()
                       .map((v) -> v.toString())
                       .collect(Collectors.joining(", ")));
+
               List<Row> rows = getRowList(stmt.executeQuery(query));
               Map<Integer, Integer> read = new TreeMap<>();
               for (Integer k : keysToRead) {
@@ -130,11 +152,30 @@ public class TestConsistency extends BasePgSQLTest {
               for (Row row : rows) {
                 read.put(row.getInt(0), row.getInt(1));
               }
-              reads.add(read);
+
+              List<Integer> keysNotFound = new ArrayList<Integer>();
+              for (Integer k : read.keySet()) {
+                if (read.get(k) == null) {
+                  keysNotFound.add(k);
+                }
+              }
+              Collections.sort(keysNotFound);
+
+              reads.put(readId, read);
+
+              LOG.info(
+                  "Read #" + readId + ": " +
+                  "Finished reading keys: " +
+                  keysToRead + "; did not find these keys: " +
+                  keysNotFound);
+
+              numSuccessfulReads.incrementAndGet();
             } else {
+              numAttemptedWrites.incrementAndGet();
               int k = lastKeyUsed.incrementAndGet();
               keysUsedPerGroup.get(group).add(k);
               stmt.executeUpdate(writeQuery.apply(k));
+              numSuccessfulWrites.incrementAndGet();
             }
           } catch (PSQLException ex) {
             // Ignore transactional errors, re-throw the rest.
@@ -153,6 +194,10 @@ public class TestConsistency extends BasePgSQLTest {
     wl.executeWorkload();
     LOG.info(reads.size() + " reads performed");
     assertFalse("No reads has been performed, test bug?", reads.isEmpty());
+    LOG.info("Attempted reads: " + numAttemptedReads.get());
+    LOG.info("Successful reads: " + numSuccessfulReads.get());
+    LOG.info("Attempted writes: " + numAttemptedWrites.get());
+    LOG.info("Successful writes: " + numSuccessfulWrites.get());
 
     // Reads may be out of order, but each read (except first) must observe
     // a superset of what another read saw.
@@ -166,21 +211,29 @@ public class TestConsistency extends BasePgSQLTest {
     //   b. [-, 2]
     // That's the type of anomaly this workload looks for.
 
-    // Cross-compare every read with its neighbors
-    // (cutting corners to avoid  O(n^2) comparison of every pair).
-    LOG.info("Checking invariants");
+    LOG.info("Checking invariants for " + reads.size() + " reads");
     StopWatch sw = StopWatch.createStarted();
-    for (int i = 0; i < reads.size(); ++i) {
-      Map<Integer, Integer> read1 = reads.get(i);
-      int maxCheckIdx = Math.min(reads.size() - 1, i + neightborsToLookAt);
+    ArrayList<Map.Entry<Integer, Map<Integer, Integer>>> sortedEntries =
+        new ArrayList<>();
+    sortedEntries.addAll(reads.entrySet());
+    Collections.sort(sortedEntries, Map.Entry.comparingByKey());
+    for (int i = 0; i < sortedEntries.size(); ++i) {
+      Map.Entry<Integer, Map<Integer, Integer>> entry1 = sortedEntries.get(i);
+      int readId1 = entry1.getKey();
+      Map<Integer, Integer> read1 = entry1.getValue();
+      final int maxCheckIdx = Math.min(sortedEntries.size() - 1, i + neightborsToLookAt);
       for (int j = i + 1; j <= maxCheckIdx; ++j) {
-        Map<Integer, Integer> read2 = reads.get(j);
+        Map.Entry<Integer, Map<Integer, Integer>> entry2 = sortedEntries.get(j);
+        int readId2 = entry2.getKey();
+        Map<Integer, Integer> read2 = entry2.getValue();
 
         boolean read2ComesAfter = false;
         // We don't care about actual values - we know them in advance anyway.
+        int keyIn2ButNot1 = -1;
         for (int key : read2.keySet()) {
           if (read1.containsKey(key) && read1.get(key) == null && read2.get(key) != null) {
             read2ComesAfter = true;
+            keyIn2ButNot1 = key;
             break;
           }
         }
@@ -188,16 +241,20 @@ public class TestConsistency extends BasePgSQLTest {
           // read2 has to see everything read1 saw.
           for (int key : read1.keySet()) {
             if (read2.containsKey(key) && read2.get(key) == null && read1.get(key) != null) {
-              LOG.info("Invariants chcked in " + sw.getTime() + " ms, analysis invalid!");
-              fail("Anomaly found! Read values:\n"
-                  + "#" + i + " " + read1 + "\n"
-                  + "#" + j + " " + read2);
+              LOG.info("Invariants checked in " + sw.getTime() + " ms, analysis invalid!");
+              fail("Anomaly found! " +
+                   "Key in 1 but not in 2: " + key + ", " +
+                   "key in 2 but not in 1: " + keyIn2ButNot1 + ".\n" +
+                   "Read key set 1: " + read1.keySet() + "\n" +
+                   "Read key set 2: " + read2.keySet() + "\n" +
+                   "Read values:\n" + "#" + readId1 + " " + read1 + "\n"
+                                    + "#" + readId2 + " " + read2);
             }
           }
         }
       }
     }
-    LOG.info("Invariants chcked in " + sw.getTime() + " ms, everything looks good");
+    LOG.info("Invariants checked in " + sw.getTime() + " ms, everything looks good");
   }
 
   //
@@ -279,9 +336,13 @@ public class TestConsistency extends BasePgSQLTest {
         try (Connection conn = getConnectionBuilder()
             .withTServer(tserverIdx)
             .withIsolationLevel(isolation)
+            .connect();
+            Connection repeatableReadConn = getConnectionBuilder()
+            .withTServer(tserverIdx)
+            .withIsolationLevel(IsolationLevel.REPEATABLE_READ)
             .connect()) {
           while (!Thread.interrupted()) {
-            op.execute(conn);
+            op.execute(conn, repeatableReadConn);
           }
         } catch (InterruptedException ex) {
           // Don't care, that's normal - just terminate.
@@ -301,7 +362,6 @@ public class TestConsistency extends BasePgSQLTest {
    */
   @FunctionalInterface
   private interface Operation {
-
-    void execute(Connection conn) throws Exception;
+    void execute(Connection conn, Connection repeatableReadConn) throws Exception;
   }
 }

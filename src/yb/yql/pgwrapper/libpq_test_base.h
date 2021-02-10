@@ -23,14 +23,20 @@ namespace pgwrapper {
 
 class LibPqTestBase : public PgWrapperTestBase {
  protected:
+  static constexpr int kDefaultPgTsIndex = -1;
+
   void SetUp() override;
-  Result<PGConn> Connect();
-  Result<PGConn> ConnectToDB(const string& db_name);
-  Result<PGConn> ConnectToDBAsUser(const string& db_name, const string& user);
+  Result<PGConn> Connect(int ts_index = kDefaultPgTsIndex);
+  Result<PGConn> ConnectToDB(const string& db_name, int ts_index = kDefaultPgTsIndex);
+  Result<PGConn> ConnectToDBAsUser(
+      const string& db_name, const string& user, int ts_index = kDefaultPgTsIndex);
   Result<PGConn> ConnectUsingString(
       const string& conn_str,
       CoarseTimePoint deadline = CoarseMonoClock::Now() + MonoDelta::FromSeconds(10));
   static bool TransactionalFailure(const Status& status);
+
+ private:
+  ExternalTabletServer* GetTsToConnectTo(int index);
 };
 
 } // namespace pgwrapper

@@ -38,16 +38,20 @@ void LibPqTestBase::SetUp() {
   PgWrapperTestBase::SetUp();
 }
 
-Result<PGConn> LibPqTestBase::Connect() {
-  return PGConn::Connect(HostPort(pg_ts->bind_host(), pg_ts->pgsql_rpc_port()));
+Result<PGConn> LibPqTestBase::Connect(int ts_index) {
+  auto* ts = GetTsToConnectTo(ts_index);
+  return PGConn::Connect(HostPort(ts->bind_host(), ts->pgsql_rpc_port()));
 }
 
-Result<PGConn> LibPqTestBase::ConnectToDB(const string& db_name) {
-  return PGConn::Connect(HostPort(pg_ts->bind_host(), pg_ts->pgsql_rpc_port()), db_name);
+Result<PGConn> LibPqTestBase::ConnectToDB(const string& db_name, int ts_index) {
+  auto* ts = GetTsToConnectTo(ts_index);
+  return PGConn::Connect(HostPort(ts->bind_host(), ts->pgsql_rpc_port()), db_name);
 }
 
-Result<PGConn> LibPqTestBase::ConnectToDBAsUser(const string& db_name, const string& user) {
-  return PGConn::Connect(HostPort(pg_ts->bind_host(), pg_ts->pgsql_rpc_port()), db_name, user);
+Result<PGConn> LibPqTestBase::ConnectToDBAsUser(
+    const string& db_name, const string& user, int ts_index) {
+  auto* ts = GetTsToConnectTo(ts_index);
+  return PGConn::Connect(HostPort(ts->bind_host(), ts->pgsql_rpc_port()), db_name, user);
 }
 
 Result<PGConn> LibPqTestBase::ConnectUsingString(const string& conn_str, CoarseTimePoint deadline) {
@@ -61,6 +65,17 @@ bool LibPqTestBase::TransactionalFailure(const Status& status) {
   }
   YBPgErrorCode code = PgsqlErrorTag::Decode(pgerr);
   return code == YBPgErrorCode::YB_PG_T_R_SERIALIZATION_FAILURE;
+}
+
+ExternalTabletServer* LibPqTestBase::GetTsToConnectTo(int index) {
+  if (index == kDefaultPgTsIndex) {
+    // The vast majority of tests just use pg_ts.
+    return pg_ts;
+  }
+  CHECK_LE(0, index);
+  CHECK_LT(index, cluster_->num_tablet_servers());
+
+  return cluster_->tablet_server(index);
 }
 
 } // namespace pgwrapper

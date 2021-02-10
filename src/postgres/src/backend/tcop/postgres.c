@@ -92,7 +92,7 @@
  *		global variables
  * ----------------
  */
-const char *debug_query_string; /* client-supplied query string */
+const char *debug_query_string = NULL; /* client-supplied query string */
 
 /* Note: whereToSendOutput is initialized for the bootstrap/standalone case */
 CommandDest whereToSendOutput = DestDebug;
@@ -4300,7 +4300,7 @@ yb_attempt_to_restart_on_error(int attempt,
 	MemoryContext error_context = MemoryContextSwitchTo(exec_context);
 	ErrorData*    edata         = CopyErrorData();
 
-	if (yb_is_restart_possible(edata, attempt, restart_data)) {
+	if (false && yb_is_restart_possible(edata, attempt, restart_data)) {
 		if (yb_debug_log_internal_restarts)
 		{
 			ereport(LOG,

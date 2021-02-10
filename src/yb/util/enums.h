@@ -45,9 +45,14 @@ constexpr typename std::underlying_type<E>::type to_underlying(E e) {
 // -----------------------------------------------------------------------------------------------
 
 // A convenient way to define enums along with string conversion functions.
-// Example:
+// Examples:
 //
 //   YB_DEFINE_ENUM(MyEnum, (kFoo)(kBar)(kBaz))
+//
+// It is also possible to specify values for enum items. Note the double
+// parentheses around each tuple.
+//
+//   YB_DEFINE_ENUM(MyEnum, ((kFoo, 0))((kBar, 1))((kBaz, 2)))
 //
 // This will define
 // - An enum class MyEnum with values FOO, BAR, and BAZ.

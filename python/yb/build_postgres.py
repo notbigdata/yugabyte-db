@@ -539,8 +539,15 @@ class PostgresBuilder(YbBuildToolBase):
 
         compile_commands_files = []
 
-        work_dirs = [self.pg_build_root, os.path.join(self.pg_build_root, 'contrib'),
-                     os.path.join(self.pg_build_root, 'third-party-extensions')]
+        work_dirs = [self.pg_build_root,
+                    os.path.join(self.pg_build_root, 'contrib')]
+        if self.build_type != 'compilecmds':
+            # Do not build third-party extensions in this mode because postgres.h might not be
+            # found. Note that we are not using self.export_compile_commands here because we could
+            # still fully build another build type with YB_EXPORT_COMPILE_COMMANDS set to 1.
+            #
+            # TODO: generate compile_commands.json for third-party extensions as well.
+            work_dirs.append(os.path.join(self.pg_build_root, 'third-party-extensions'))
 
         for work_dir in work_dirs:
             with WorkDirContext(work_dir):

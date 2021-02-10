@@ -702,6 +702,8 @@ class TransactionState {
     }
 
     status_ = TransactionStatus::COMMITTED;
+    VLOG(1) <<
+        "Commit replicated in coordinator: transaction_id: " << id() << "; " << data.ToString();
     StartApply();
     return Status::OK();
   }

@@ -104,6 +104,9 @@ class PGConn {
   // Fetches data matrix of specified size. I.e. exact number of rows and columns are expected.
   Result<PGResultPtr> FetchMatrix(const std::string& command, int rows, int columns);
 
+  // Fetches data of the specific expected number of columns width.
+  Result<PGResultPtr> FetchColumns(const std::string& command, int columns);
+
   template <class T>
   Result<T> FetchValue(const std::string& command) {
     auto res = VERIFY_RESULT(FetchMatrix(command, 1, 1));

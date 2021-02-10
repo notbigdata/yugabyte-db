@@ -128,6 +128,7 @@ Result<HybridTime> TransactionStatusCache::DoGetCommitTime(const TransactionId& 
   bool retry_allowed = FLAGS_TEST_transaction_allow_rerequest_status;
   CoarseBackoffWaiter waiter(deadline_, kMaxWait);
   static const std::string kRequestReason = "get commit time"s;
+  bool had_retry = false;
   for(;;) {
     auto txn_status_promise = std::make_shared<std::promise<Result<TransactionStatusResult>>>();
     auto future = txn_status_promise->get_future();
@@ -156,6 +157,7 @@ Result<HybridTime> TransactionStatusCache::DoGetCommitTime(const TransactionId& 
       LOG(WARNING)
           << "Failed to request transaction " << transaction_id << " status: "
           <<  txn_status_result.status();
+      had_retry = true;
       if (!txn_status_result.status().IsTryAgain()) {
         return std::move(txn_status_result.status());
       }
@@ -180,13 +182,21 @@ Result<HybridTime> TransactionStatusCache::DoGetCommitTime(const TransactionId& 
   // There could be case when transaction was committed and applied between previous call to
   // GetLocalCommitTime, in this case coordinator does not know transaction and will respond
   // with ABORTED status. So we recheck whether it was committed locally.
+  HybridTime final_ht;
   if (txn_status.status == TransactionStatus::ABORTED) {
     local_commit_time = GetLocalCommitTime(transaction_id);
-    return local_commit_time.is_valid() ? local_commit_time : HybridTime::kMin;
+    final_ht = local_commit_time.is_valid() ? local_commit_time : HybridTime::kMin;
   } else {
-    return txn_status.status == TransactionStatus::COMMITTED ? txn_status.status_time
+    final_ht = txn_status.status == TransactionStatus::COMMITTED ? txn_status.status_time
         : HybridTime::kMin;
   }
+  if (had_retry) {
+    LOG(INFO) << "Had retries: transaction_id: " << transaction_id << " at " << read_time_
+              << ": status: " << TransactionStatus_Name(txn_status.status)
+              << ", status_time: " << txn_status.status_time
+              << ", final_ht: " << final_ht;
+  }
+  return final_ht;
 }
 
 namespace {

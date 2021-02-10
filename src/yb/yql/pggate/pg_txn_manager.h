@@ -25,6 +25,8 @@
 #include "yb/gutil/ref_counted.h"
 #include "yb/tserver/tserver_util_fwd.h"
 #include "yb/util/result.h"
+#include "yb/util/enums.h"
+#include "yb/yql/pggate/ybc_pg_typedefs.h"
 
 namespace yb {
 namespace tserver {
@@ -36,19 +38,22 @@ class TabletServerServiceProxy;
 namespace pggate {
 
 // These should match XACT_READ_UNCOMMITED, XACT_READ_COMMITED, XACT_REPEATABLE_READ,
-// XACT_SERIALIZABLE from xact.h.
-enum class PgIsolationLevel {
-  READ_UNCOMMITED = 0,
-  READ_COMMITED = 1,
-  REPEATABLE_READ = 2,
-  SERIALIZABLE = 3,
-};
+// XACT_SERIALIZABLE from xact.h. Please do not change this enum.
+YB_DEFINE_ENUM(
+  PgIsolationLevel,
+  ((READ_UNCOMMITED, 0))
+  ((READ_COMMITED, 1))
+  ((REPEATABLE_READ, 2))
+  ((SERIALIZABLE, 3))
+);
 
 class PgTxnManager : public RefCountedThreadSafe<PgTxnManager> {
  public:
-  PgTxnManager(client::AsyncClientInitialiser* async_client_init,
-               scoped_refptr<ClockBase> clock,
-               const tserver::TServerSharedObject* tserver_shared_object);
+  PgTxnManager(
+      client::AsyncClientInitialiser* async_client_init,
+      scoped_refptr<ClockBase> clock,
+      const tserver::TServerSharedObject* tserver_shared_object,
+      const YBCPgCallbacks& pg_callbacks);
 
   virtual ~PgTxnManager();
 
@@ -71,8 +76,6 @@ class PgTxnManager : public RefCountedThreadSafe<PgTxnManager> {
   CHECKED_STATUS BeginWriteTransactionIfNecessary(bool read_only_op,
                                                   bool needs_pessimistic_locking = false);
 
-  bool CanRestart() { return can_restart_.load(std::memory_order_acquire); }
-
   bool IsDdlMode() const { return ddl_session_.get() != nullptr; }
 
  private:
@@ -84,7 +87,15 @@ class PgTxnManager : public RefCountedThreadSafe<PgTxnManager> {
   void StartNewSession();
   Status RecreateTransaction(SavePriority save_priority);
 
+  // A string for debug logging that lists the transaction's state.
+  std::string TxnStateDebugStr() const;
+
   uint64_t GetPriority(NeedsPessimisticLocking needs_pessimistic_locking);
+
+  // Get the current query, or an empty string if not defined.
+  std::string GetDebugQueryString() const;
+
+  // ----------------------------------------------------------------------------------------------
 
   client::AsyncClientInitialiser* async_client_init_ = nullptr;
   scoped_refptr<ClockBase> clock_;
@@ -115,6 +126,8 @@ class PgTxnManager : public RefCountedThreadSafe<PgTxnManager> {
   SavePriority use_saved_priority_ = SavePriority::kFalse;
 
   std::unique_ptr<tserver::TabletServerServiceProxy> tablet_server_proxy_;
+
+  const YBCPgCallbacks& pg_callbacks_;
 
   DISALLOW_COPY_AND_ASSIGN(PgTxnManager);
 };
