@@ -103,7 +103,7 @@ const PrimitiveValue PrimitiveValue::kInvalid = PrimitiveValue(ValueType::kInval
 const PrimitiveValue PrimitiveValue::kTombstone = PrimitiveValue(ValueType::kTombstone);
 const PrimitiveValue PrimitiveValue::kObject = PrimitiveValue(ValueType::kObject);
 
-string PrimitiveValue::ToString() const {
+string PrimitiveValue::ToString(AutoDecodeKeys auto_decode_keys) const {
   switch (type_) {
     case ValueType::kNullHigh: FALLTHROUGH_INTENDED;
     case ValueType::kNullLow:
@@ -124,11 +124,13 @@ string PrimitiveValue::ToString() const {
       return "invalid";
     case ValueType::kStringDescending:
     case ValueType::kString:
-      {
-        DocKey decoded;
-        Status decode_status = decoded.FullyDecodeFrom(str_val_);
+      if (auto_decode_keys) {
+        // This is useful when logging write batches for secondary indexes.
+        SubDocKey sub_doc_key;
+        Status decode_status = sub_doc_key.FullyDecodeFrom(str_val_, HybridTimeRequired::kFalse);
         if (decode_status.ok()) {
-          return Format("EncodedDocKey($0)", decoded);
+          // This gives us "EncodedSubDocKey(...)".
+          return Format("Encoded$0", sub_doc_key);
         }
       }
       return FormatBytesAsStr(str_val_);
