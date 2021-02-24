@@ -183,10 +183,10 @@ PgApiImpl::PgApiImpl(const YBCPgTypeEntity *YBCDataTypeArray, int count, YBCPgCa
                          messenger_holder_.messenger.get()),
       clock_(new server::HybridClock()),
       tserver_shared_object_(InitTServerSharedObject()),
+      pg_callbacks_(callbacks),
       pg_txn_manager_(
           new PgTxnManager(
               &async_client_init_, clock_, tserver_shared_object_.get(), pg_callbacks_)) {
-      pg_callbacks_(callbacks) {
   CHECK_OK(clock_->Init());
 
   // Setup type mapping.

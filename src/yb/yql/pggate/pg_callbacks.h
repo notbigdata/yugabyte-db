@@ -17,6 +17,8 @@
 
 #include "yb/yql/pggate/ybc_pg_typedefs.h"
 
+#include <string>
+
 namespace yb {
 namespace pggate {
 

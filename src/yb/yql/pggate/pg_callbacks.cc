@@ -12,6 +12,8 @@
 
 #include "yb/yql/pggate/pg_callbacks.h"
 
+#include <string>
+
 namespace yb {
 namespace pggate {
 
