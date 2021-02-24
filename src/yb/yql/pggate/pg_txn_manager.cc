@@ -178,9 +178,13 @@ Status PgTxnManager::BeginWriteTransactionIfNecessary(bool read_only_op,
   }
 
   // Using Postgres isolation_level_, read_only_, and deferrable_, determine the effective isolation
-  // level and defer effect.
+  // level and defer effect. "Effective isolation" means that we execute read-only serializable
+  // queries at snapshot isolation queries at snapshot isolation internally for performance reasons,
+  // so the isolation level declared by the user is different from the effective isolation level.
+  // Note that the read remains serializable, as its serialization order is determined by the
+  // read timestamp.
   //
-  // A notable
+  // "Defer" means that we set read time to global limit to exclude the possibility.
   const IsolationLevel effective_isolation =
       (isolation_level_ == PgIsolationLevel::SERIALIZABLE) && !read_only_
           ? IsolationLevel::SERIALIZABLE_ISOLATION
