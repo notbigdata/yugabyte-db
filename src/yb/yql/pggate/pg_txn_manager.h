@@ -48,7 +48,8 @@ class PgTxnManager : public RefCountedThreadSafe<PgTxnManager> {
  public:
   PgTxnManager(client::AsyncClientInitialiser* async_client_init,
                scoped_refptr<ClockBase> clock,
-               const tserver::TServerSharedObject* tserver_shared_object);
+               const tserver::TServerSharedObject* tserver_shared_object,
+               PgCallbacks pg_callbacks);
 
   virtual ~PgTxnManager();
 
@@ -115,6 +116,8 @@ class PgTxnManager : public RefCountedThreadSafe<PgTxnManager> {
   SavePriority use_saved_priority_ = SavePriority::kFalse;
 
   std::unique_ptr<tserver::TabletServerServiceProxy> tablet_server_proxy_;
+
+  PgCallbacks pg_callbacks_;
 
   DISALLOW_COPY_AND_ASSIGN(PgTxnManager);
 };

@@ -85,10 +85,12 @@ using client::LocalTabletFilter;
 PgTxnManager::PgTxnManager(
     AsyncClientInitialiser* async_client_init,
     scoped_refptr<ClockBase> clock,
-    const tserver::TServerSharedObject* tserver_shared_object)
+    const tserver::TServerSharedObject* tserver_shared_object,
+    PgCallbacks pg_callbacks)
     : async_client_init_(async_client_init),
       clock_(std::move(clock)),
-      tserver_shared_object_(tserver_shared_object) {
+      tserver_shared_object_(tserver_shared_object),
+      pg_callbacks_(pg_callbacks) {
 }
 
 PgTxnManager::~PgTxnManager() {
