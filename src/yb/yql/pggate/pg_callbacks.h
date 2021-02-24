@@ -15,9 +15,9 @@
 #ifndef YB_YQL_PGGATE_PG_CALLBACKS_H
 #define YB_YQL_PGGATE_PG_CALLBACKS_H
 
-#include "yb/yql/pggate/ybc_pg_typedefs.h"
-
 #include <string>
+
+#include "yb/yql/pggate/ybc_pg_typedefs.h"
 
 namespace yb {
 namespace pggate {
