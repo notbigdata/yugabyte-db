@@ -25,6 +25,8 @@
 #include "yb/gutil/ref_counted.h"
 #include "yb/tserver/tserver_util_fwd.h"
 #include "yb/util/result.h"
+#include "yb/util/enums.h"
+#include "yb/yql/pggate/pg_callbacks.h"
 
 namespace yb {
 namespace tserver {
@@ -36,13 +38,14 @@ class TabletServerServiceProxy;
 namespace pggate {
 
 // These should match XACT_READ_UNCOMMITED, XACT_READ_COMMITED, XACT_REPEATABLE_READ,
-// XACT_SERIALIZABLE from xact.h.
-enum class PgIsolationLevel {
-  READ_UNCOMMITED = 0,
-  READ_COMMITED = 1,
-  REPEATABLE_READ = 2,
-  SERIALIZABLE = 3,
-};
+// XACT_SERIALIZABLE from xact.h. Please do not change this enum.
+YB_DEFINE_ENUM(
+  PgIsolationLevel,
+  ((READ_UNCOMMITED, 0))
+  ((READ_COMMITED, 1))
+  ((REPEATABLE_READ, 2))
+  ((SERIALIZABLE, 3))
+);
 
 class PgTxnManager : public RefCountedThreadSafe<PgTxnManager> {
  public:
@@ -86,6 +89,10 @@ class PgTxnManager : public RefCountedThreadSafe<PgTxnManager> {
   Status RecreateTransaction(SavePriority save_priority);
 
   uint64_t GetPriority(NeedsPessimisticLocking needs_pessimistic_locking);
+
+  std::string TxnStateDebugStr() const;
+
+  // ----------------------------------------------------------------------------------------------
 
   client::AsyncClientInitialiser* async_client_init_ = nullptr;
   scoped_refptr<ClockBase> clock_;

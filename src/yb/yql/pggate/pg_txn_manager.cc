@@ -27,6 +27,13 @@
 #include "yb/util/random_util.h"
 #include "yb/util/status.h"
 
+// A macro for logging the function name and the state of the current transaction.
+// This macro is not enclosed in do { ... } while (true) because we want to be able to write
+// additional information into the same log message.
+#define VLOG_TXN_STATE(vlog_level) \
+    VLOG(vlog_level) << __func__ << ": " << TxnStateDebugStr() \
+                     << "; query: { " << ::yb::pggate::GetDebugQueryString(pg_callbacks_) << " }; "
+
 namespace {
 
 constexpr uint64_t txn_priority_highpri_upper_bound = yb::kHighPriTxnUpperBound;
@@ -70,7 +77,6 @@ void YBCAssignTransactionPriorityUpperBound(double newval, void* extra) {
 using namespace std::literals;
 using namespace std::placeholders;
 
-
 namespace yb {
 namespace pggate {
 
@@ -102,7 +108,7 @@ PgTxnManager::~PgTxnManager() {
 }
 
 Status PgTxnManager::BeginTransaction() {
-  VLOG(2) << "BeginTransaction: txn_in_progress_=" << txn_in_progress_;
+  VLOG_TXN_STATE(2);
   if (txn_in_progress_) {
     return STATUS(IllegalState, "Transaction is already in progress");
   }
@@ -110,7 +116,7 @@ Status PgTxnManager::BeginTransaction() {
 }
 
 Status PgTxnManager::RecreateTransaction() {
-  VLOG(2) << "RecreateTransaction: txn_in_progress_=" << txn_in_progress_;
+  VLOG_TXN_STATE(2);
   if (!txn_) {
     return Status::OK();
   }
@@ -167,26 +173,34 @@ uint64_t PgTxnManager::GetPriority(const NeedsPessimisticLocking needs_pessimist
 Status PgTxnManager::BeginWriteTransactionIfNecessary(bool read_only_op,
                                                       bool needs_pessimistic_locking) {
   if (ddl_txn_) {
+    VLOG_TXN_STATE(2);
     return Status::OK();
   }
 
-  VLOG(2) << "BeginWriteTransactionIfNecessary: txn_in_progress_="
-          << txn_in_progress_ << ", txn_=" << txn_.get();
-
-  // Using Postgres isolation_level_, read_only_, and deferrable_, determine the internal isolation
+  // Using Postgres isolation_level_, read_only_, and deferrable_, determine the effective isolation
   // level and defer effect.
-  IsolationLevel isolation = (isolation_level_ == PgIsolationLevel::SERIALIZABLE) && !read_only_
-      ? IsolationLevel::SERIALIZABLE_ISOLATION : IsolationLevel::SNAPSHOT_ISOLATION;
-  bool defer = read_only_ && deferrable_;
+  //
+  // A notable
+  const IsolationLevel effective_isolation =
+      (isolation_level_ == PgIsolationLevel::SERIALIZABLE) && !read_only_
+          ? IsolationLevel::SERIALIZABLE_ISOLATION
+          : IsolationLevel::SNAPSHOT_ISOLATION;
+  const bool defer = read_only_ && deferrable_;
+
+  VLOG_TXN_STATE(2) << "effective isolation level: " << IsolationLevel_Name(effective_isolation);
 
   if (txn_) {
     // Sanity check: query layer should ensure that this does not happen.
-    if (txn_->isolation() != isolation) {
-      return STATUS(IllegalState, "Changing txn isolation level in the middle of a transaction");
+    if (txn_->isolation() != effective_isolation) {
+      return STATUS_FORMAT(
+          IllegalState,
+          "Attempt to change effective isolation from $0 to $1 in the middle of a transaction. "
+          "Postgres-level isolation: $2.",
+          txn_->isolation(), IsolationLevel_Name(effective_isolation), isolation_level_);
     }
-  } else if (read_only_op && isolation == IsolationLevel::SNAPSHOT_ISOLATION) {
+  } else if (read_only_op && effective_isolation == IsolationLevel::SNAPSHOT_ISOLATION) {
     if (defer) {
-      // This call is idempotent, meaning it has no affect after the first call.
+      // This call is idempotent, meaning it has no effect after the first call.
       session_->DeferReadPoint();
     }
   } else {
@@ -212,12 +226,17 @@ Status PgTxnManager::BeginWriteTransactionIfNecessary(bool read_only_op,
 
     txn_->SetPriority(GetPriority(NeedsPessimisticLocking(needs_pessimistic_locking)));
 
-    if (isolation == IsolationLevel::SNAPSHOT_ISOLATION) {
-      txn_->InitWithReadPoint(isolation, std::move(*session_->read_point()));
+    if (effective_isolation == IsolationLevel::SNAPSHOT_ISOLATION) {
+      txn_->InitWithReadPoint(effective_isolation, std::move(*session_->read_point()));
     } else {
-      RETURN_NOT_OK(txn_->Init(isolation));
+      DCHECK_EQ(effective_isolation, IsolationLevel::SERIALIZABLE_ISOLATION);
+      RETURN_NOT_OK(txn_->Init(effective_isolation));
     }
     session_->SetTransaction(txn_);
+
+    VLOG_TXN_STATE(2) << "effective isolation level: "
+                      << IsolationLevel_Name(effective_isolation)
+                      << "; transaction started successfully.";
   }
   return Status::OK();
 }
@@ -244,18 +263,18 @@ Status PgTxnManager::RestartTransaction() {
 
 Status PgTxnManager::CommitTransaction() {
   if (!txn_in_progress_) {
-    VLOG(2) << "No transaction in progress, nothing to commit.";
+    VLOG_TXN_STATE(2) << "No transaction in progress, nothing to commit.";
     return Status::OK();
   }
 
   if (!txn_) {
-    VLOG(2) << "This was a read-only transaction, nothing to commit.";
+    VLOG_TXN_STATE(2) << "This was a read-only transaction, nothing to commit.";
     ResetTxnAndSession();
     return Status::OK();
   }
-  VLOG(2) << "Committing transaction.";
+  VLOG_TXN_STATE(2) << "committing transaction.";
   Status status = txn_->CommitFuture().get();
-  VLOG(2) << "Transaction commit status: " << status;
+  VLOG_TXN_STATE(2) << "transaction commit status: " << status;
   ResetTxnAndSession();
   return status;
 }
@@ -303,13 +322,13 @@ TransactionManager* PgTxnManager::GetOrCreateTransactionManager() {
 
 Result<client::YBSession*> PgTxnManager::GetTransactionalSession() {
   if (ddl_session_) {
-    VLOG(2) << "Using the DDL session: " << ddl_session_.get();
+    VLOG_TXN_STATE(2) << "Using the DDL session: " << ddl_session_.get();
     return ddl_session_.get();
   }
   if (!txn_in_progress_) {
     RETURN_NOT_OK(BeginTransaction());
   }
-  VLOG(2) << "Using the non-DDL transactional session: " << session_.get();
+  VLOG_TXN_STATE(2) << "Using the non-DDL transactional session: " << session_.get();
   return session_.get();
 }
 
@@ -327,7 +346,7 @@ void PgTxnManager::ResetTxnAndSession() {
 Status PgTxnManager::EnterSeparateDdlTxnMode() {
   RSTATUS_DCHECK(!ddl_txn_,
           IllegalState, "EnterSeparateDdlTxnMode called when already in a DDL transaction");
-  VLOG(2) << __PRETTY_FUNCTION__;
+  VLOG_TXN_STATE(2);
   ddl_session_ = std::make_shared<YBSession>(async_client_init_->client(), clock_);
   ddl_session_->SetForceConsistentRead(client::ForceConsistentRead::kTrue);
   ddl_txn_ = std::make_shared<YBTransaction>(GetOrCreateTransactionManager());
@@ -335,14 +354,15 @@ Status PgTxnManager::EnterSeparateDdlTxnMode() {
   RETURN_NOT_OK(ddl_txn_->Init(
       FLAGS_ysql_serializable_isolation_for_ddl_txn ? IsolationLevel::SERIALIZABLE_ISOLATION
                                                     : IsolationLevel::SNAPSHOT_ISOLATION));
-  VLOG(2) << __PRETTY_FUNCTION__ << ": ddl_txn_=" << ddl_txn_.get();
+  VLOG_TXN_STATE(2);
   return Status::OK();
 }
 
 Status PgTxnManager::ExitSeparateDdlTxnMode(bool is_success) {
-  VLOG(2) << __PRETTY_FUNCTION__ << ": ddl_txn_=" << ddl_txn_.get() << ",is_success=" << is_success;
-  RSTATUS_DCHECK(!!ddl_txn_,
-          IllegalState, "ExitSeparateDdlTxnMode called when not in a DDL transaction");
+  VLOG_TXN_STATE(2) << "is_success=" << is_success;
+  RSTATUS_DCHECK(
+      ddl_txn_ != nullptr,
+      IllegalState, "ExitSeparateDdlTxnMode called when not in a DDL transaction");
   if (is_success) {
     RETURN_NOT_OK(ddl_txn_->CommitFuture().get());
   } else {
@@ -351,6 +371,16 @@ Status PgTxnManager::ExitSeparateDdlTxnMode(bool is_success) {
   ddl_txn_.reset();
   ddl_session_.reset();
   return Status::OK();
+}
+
+std::string PgTxnManager::TxnStateDebugStr() const {
+  return YB_CLASS_TO_STRING(
+      txn,
+      ddl_txn,
+      read_only,
+      deferrable,
+      txn_in_progress,
+      isolation_level);
 }
 
 }  // namespace pggate
