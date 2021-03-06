@@ -34,6 +34,13 @@
     VLOG(vlog_level) << __func__ << ": " << TxnStateDebugStr() \
                      << "; query: " << GetDebugQueryString()
 
+extern "C" {
+extern int yb_last_txn_commit_ht_lower_half;
+extern int yb_last_txn_commit_ht_upper_half;
+extern int yb_read_ht_override_lower_half;
+extern int yb_read_ht_override_upper_half;
+}
+
 namespace {
 
 constexpr uint64_t txn_priority_highpri_upper_bound = yb::kHighPriTxnUpperBound;

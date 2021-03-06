@@ -752,6 +752,7 @@ class YBTransaction::Impl final {
       }
     }
     VLOG_WITH_PREFIX(4) << "Commit done: " << actual_status;
+    LOG(INFO) << "DEBUG mbautin: txn commit response: " << response.ShortDebugString();
     commit_callback_(actual_status);
 
     if (actual_status.IsExpired()) {

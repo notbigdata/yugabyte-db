@@ -133,6 +133,11 @@ extern bool optimize_bounded_sort;
 static double yb_transaction_priority_lower_bound = 0.0;
 static double yb_transaction_priority_upper_bound = 1.0;
 
+static int yb_last_txn_commit_ht_lower_half = 0;
+static int yb_last_txn_commit_ht_upper_half = 0;
+static int yb_read_ht_override_lower_half = 0;
+static int yb_read_ht_override_upper_half = 0;
+
 static int	GUC_check_errcode_value;
 
 /* global variables for check hook support */
@@ -3179,6 +3184,47 @@ static struct config_int ConfigureNamesInt[] =
 		},
 		&yb_default_copy_from_rows_per_transaction,
 		DEFAULT_BATCH_ROWS_PER_TRANSACTION, 0, INT_MAX,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"yb_last_txn_commit_ht_lower_half", PGC_USERSET, CLIENT_CONN_STATEMENT,
+			gettext_noop("yb_last_txn_commit_ht_lower_half"),
+			NULL,
+			0
+		},
+		&yb_last_txn_commit_ht_lower_half,
+		0, INT_MIN, INT_MAX,
+		NULL, NULL, NULL
+	},
+	{
+		{"yb_last_txn_commit_ht_upper_half", PGC_USERSET, CLIENT_CONN_STATEMENT,
+			gettext_noop("yb_last_txn_commit_ht_upper_half"),
+			NULL,
+			0
+		},
+		&yb_last_txn_commit_ht_upper_half,
+		0, INT_MIN, INT_MAX,
+		NULL, NULL, NULL
+	},
+	{
+		{"yb_read_ht_override_lower_half", PGC_USERSET, CLIENT_CONN_STATEMENT,
+			gettext_noop("yb_read_ht_override_lower_half"),
+			NULL,
+			0
+		},
+		&yb_read_ht_override_lower_half,
+		0, INT_MIN, INT_MAX,
+		NULL, NULL, NULL
+	},
+	{
+		{"yb_read_ht_override_upper_half", PGC_USERSET, CLIENT_CONN_STATEMENT,
+			gettext_noop("yb_read_ht_override_upper_half"),
+			NULL,
+			0
+		},
+		&yb_read_ht_override_upper_half,
+		0, INT_MIN, INT_MAX,
 		NULL, NULL, NULL
 	},
 

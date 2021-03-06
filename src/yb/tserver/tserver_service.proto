@@ -142,6 +142,9 @@ message UpdateTransactionResponsePB {
   optional TabletServerErrorPB error = 1;
 
   optional fixed64 propagated_hybrid_time = 2;
+
+  // This is set in case of successful commit.
+  optional fixed64 commit_hybrid_time = 3;
 }
 
 message GetTransactionStatusRequestPB {
