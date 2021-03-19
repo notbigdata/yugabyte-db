@@ -46,7 +46,7 @@ public class TestCqlIndexConsistency extends BaseCQLTest {
 
   private static final int MIN_KEY_ID = 100_000_000;
   private static final int NUM_KEY_IDS = 100;
-  private static final int NUM_VALUES = 100;
+  private static final int NUM_VALUES = 200;
 
   private static int NUM_KEY_TYPES = 2;
   private static String KEY_TYPE1 = "ITEMID_TO_WPID";
@@ -55,6 +55,11 @@ public class TestCqlIndexConsistency extends BaseCQLTest {
   private static String DELIMITER = "_";
 
   private static final int NUM_LOCKS = NUM_KEY_IDS * NUM_KEY_TYPES;
+
+  @Override
+  public int getTestMethodTimeoutSec() {
+    return 600;
+  }
 
   private static String getKeyByIndex(int keyIndex) {
     return String.valueOf(MIN_KEY_ID + keyIndex);
@@ -106,8 +111,7 @@ public class TestCqlIndexConsistency extends BaseCQLTest {
     return keyAndTypeToLockIndex(items[0], items[1]);
   }
 
-
-  @Test
+  @Test(timeout = 3600 * 1000)
   public void testCqlIndexConsistency() throws Exception {
     try (Cluster cluster = getDefaultClusterBuilder().build();
          final Session session = cluster.connect()) {
@@ -127,27 +131,36 @@ public class TestCqlIndexConsistency extends BaseCQLTest {
           "global_keys.global_akpk_one_to_one (key_value, key_type);";
       session.execute(createTable);
       session.execute(createIndex);
-      final int numWriterThreads = 10;
+      final int numWriterThreads = 5;
+      final int numDeletionThreads = 5;
       final int numReaderThread = 10;
       ExecutorCompletionService ecs = new ExecutorCompletionService(
-          Executors.newFixedThreadPool(numWriterThreads + numReaderThread));
+          Executors.newFixedThreadPool(
+              numWriterThreads + numReaderThread + numDeletionThreads));
       final AtomicBoolean stop = new AtomicBoolean(false);
 
       final int INSERTS_PER_TXN = 3;
-      final int ROWS_TO_READ_PER_TXN = 10;
 
       ConcurrentMap<String, AtomicInteger> keyAndTypeToNextVersion = new ConcurrentHashMap<>();
       List<Future<Void>> futures = new ArrayList<>();
-      final AtomicInteger totalNumInserts = new AtomicInteger(0);
-      final AtomicInteger totalNumSuccessfulInserts = new AtomicInteger(0);
+
+      final AtomicInteger numInsertTxnAttempts = new AtomicInteger(0);
+      final AtomicInteger numInsertTxnSuccesses = new AtomicInteger(0);
+
+      final AtomicInteger numDeletionAttempts = new AtomicInteger(0);
+      final AtomicInteger numDeletionSuccesses = new AtomicInteger(0);
+
+      final AtomicInteger numReadsRowNotFound = new AtomicInteger(0);
+      final AtomicInteger numReadsRowFound = new AtomicInteger(0);
+      final AtomicInteger numReadsRowAndIndexFound = new AtomicInteger(0);
 
       final List<Lock> locks = new ArrayList<>();
       for (int i = 0; i < NUM_LOCKS; ++i) {
         locks.add(new ReentrantLock());
       }
-      long workloadStartTimeMs = System.currentTimeMillis();
       final AtomicBoolean failed = new AtomicBoolean(false);
 
+      // Insertion / overwrite threads.
       for (int wThreadIndex = 1; wThreadIndex <= numWriterThreads; ++wThreadIndex) {
         final String threadName = "Workload writer thread " + wThreadIndex;
         futures.add(ecs.submit(() -> {
@@ -192,7 +205,7 @@ public class TestCqlIndexConsistency extends BaseCQLTest {
               }
               sb.append("END TRANSACTION;");
 
-              totalNumInserts.incrementAndGet();
+              numInsertTxnAttempts.incrementAndGet();
               Collections.sort(lockIndexes);
 
               int lockedUntil = 0;
@@ -203,7 +216,7 @@ public class TestCqlIndexConsistency extends BaseCQLTest {
                 }
 
                 session.execute(sb.toString());
-                totalNumSuccessfulInserts.incrementAndGet();
+                numInsertTxnSuccesses.incrementAndGet();
               } finally {
                 for (int i = lockedUntil - 1; i >= 0; --i) {
                   locks.get(lockIndexes.get(i)).unlock();
@@ -211,14 +224,16 @@ public class TestCqlIndexConsistency extends BaseCQLTest {
               }
 
             } catch (com.datastax.driver.core.exceptions.InvalidQueryException ex) {
-              if (ex.getMessage().contains("Duplicate value disallowed")) {
+              if (ex.getMessage().contains("Duplicate value disallowed") ||
+                  ex.getMessage().contains("Duplicate request")) {
                 continue;
               }
-              LOG.error("Exception in {}", threadName, ex);
+              LOG.error("Exception in: {}", threadName, ex);
               stop.set(true);
+              failed.set(true);
               break;
             } catch (Exception ex) {
-              LOG.error("Exception in {}", threadName, ex);
+              LOG.error("Exception in: {}", threadName, ex);
               stop.set(true);
               failed.set(true);
               break;
@@ -227,6 +242,56 @@ public class TestCqlIndexConsistency extends BaseCQLTest {
           return null;
         }));
       }
+
+      // Deletion threads.
+      for (int dThreadIndex = 1; dThreadIndex <= numDeletionThreads; ++dThreadIndex) {
+        final String threadName = "Workload deletion thread " + dThreadIndex;
+        futures.add(ecs.submit(() -> {
+          Thread.currentThread().setName(threadName);
+          while (!stop.get()) {
+            try {
+              StringBuilder sb = new StringBuilder();
+              String k = genRandomKeyId();
+              String keyType = genRandomKeyType();
+
+              String deletionStmt = String.format(
+                  "DELETE FROM global_keys.global_akpk_one_to_one " +
+                  "WHERE key_id = '%s' AND key_type = '%s'",
+                  k,
+                  keyType);
+              numDeletionAttempts.incrementAndGet();
+
+              int lockIndex = keyAndTypeToLockIndex(k, keyType);
+              Lock lock = locks.get(lockIndex);
+              lock.lock();
+
+              try {
+                session.execute(deletionStmt);
+                numDeletionSuccesses.incrementAndGet();
+              } finally {
+                lock.unlock();
+              }
+
+//            } catch (com.datastax.driver.core.exceptions.InvalidQueryException ex) {
+//              if (ex.getMessage().contains("Duplicate value disallowed")) {
+//                continue;
+//              }
+//              LOG.error("Exception in: {}", threadName, ex);
+//              stop.set(true);
+//              break;
+            } catch (Exception ex) {
+              LOG.error("Exception in: {}", threadName, ex);
+              stop.set(true);
+              failed.set(true);
+              break;
+            }
+          }
+          return null;
+        }));
+      }
+
+
+      // Reader (verification) threads.
       for (int rThreadIndex = 1; rThreadIndex <= numReaderThread; ++rThreadIndex) {
         final String threadName = "Workload reader thread " + rThreadIndex;
         futures.add(ecs.submit(() -> {
@@ -234,32 +299,39 @@ public class TestCqlIndexConsistency extends BaseCQLTest {
           LOG.info("Thread starting: {}", threadName);
           while (!stop.get()) {
             try {
-              StringBuilder sb = new StringBuilder();
-              sb.append(
-                  "select key_id, key_type, key_value from global_keys.global_akpk_one_to_one " +
-                  "where key_type = '");
               String keyType = genRandomKeyType();
-              sb.append(keyType);
-              sb.append("' AND key_value IN (");
-              Set<String> usedValues = new HashSet<>();
-              for (int i = 0; i < ROWS_TO_READ_PER_TXN; ++i) {
-                String value = genRandomValue();
-                if (!usedValues.contains(value)) {
-                  if (!usedValues.isEmpty()) {
-                    sb.append(", ");
-                  }
-                  sb.append("'" + value + "'");
+              String keyId = genRandomKeyId();
+              int lockIndex = keyAndTypeToLockIndex(keyId, keyType);
+              locks.get(lockIndex).lock();
+              try {
+                String selectPrimaryRow = String.format(
+                    "SELECT key_value FROM global_keys.global_akpk_one_to_one " +
+                        "WHERE key_id = '%s' AND key_type = '%s'",
+                    keyId, keyType);
+                ResultSet primaryRowResult = session.execute(selectPrimaryRow);
+                List<Row> rows = primaryRowResult.all();
+                if (rows.isEmpty()) {
+                  numReadsRowNotFound.incrementAndGet();
+                } else {
+                  assertEquals(1, rows.size());
+                  numReadsRowFound.incrementAndGet();
+                  String keyValue = rows.get(0).getString(0);
+                  String selectFromIndex = String.format(
+                      "SELECT key_id, key_value, key_type " +
+                          "FROM global_keys.global_akpk_one_to_one " +
+                          "WHERE key_value = '%s' AND key_type = '%s'",
+                      keyValue, keyType);
+                  ResultSet indexResult = session.execute(selectFromIndex);
+                  List<Row> indexRows = indexResult.all();
+                  assertEquals(1, indexRows.size());
+                  assertEquals(keyId, indexRows.get(0).getString(0));
+                  numReadsRowAndIndexFound.incrementAndGet();
                 }
-              }
-              sb.append(")");
-              ResultSet rs = session.execute(sb.toString());
-              for (Row row : rs.all()) {
-                String keyId = row.getString(0);
-                String retrievedKeyType = row.getString(1);
-                String value = row.getString(2);
+              } finally {
+                locks.get(lockIndex).unlock();;
               }
             } catch (Exception ex) {
-              LOG.error("Exception in {}", threadName, ex);
+              LOG.error("Exception in: {}", threadName, ex);
               stop.set(true);
               failed.set(true);
               break;
@@ -270,7 +342,7 @@ public class TestCqlIndexConsistency extends BaseCQLTest {
       }
 
       LOG.info("Workload started");
-      long WORKLOAD_TIME_MS = 60000;
+      long WORKLOAD_TIME_MS = 180000;
       long startTimeMs = System.currentTimeMillis();
       while (!stop.get() && System.currentTimeMillis() < startTimeMs + WORKLOAD_TIME_MS) {
         Thread.sleep(500);
@@ -285,8 +357,14 @@ public class TestCqlIndexConsistency extends BaseCQLTest {
           (System.currentTimeMillis() - startTimeMs) / 1000.0
       ));
 
-      LOG.info("Number of insert transactions: " + totalNumInserts.get());
-      LOG.info("Number of successful insert transactions: " + totalNumSuccessfulInserts.get());
+      LOG.info("Number of insert transaction attempts: " + numInsertTxnAttempts.get());
+      LOG.info("Number of insert transaction successes: " + numInsertTxnSuccesses.get());
+      LOG.info("Number of deletion attempts: " + numDeletionAttempts.get());
+      LOG.info("Number of deletion successes: " + numDeletionSuccesses.get());
+      LOG.info("Number of reads where the row is not found: " + numReadsRowNotFound.get());
+      LOG.info("Number of reads where the row is found: " + numReadsRowFound.get());
+      LOG.info("Number of reads where row and index entry are found: " +
+          numReadsRowAndIndexFound.get());
       assertFalse(failed.get());
     }
   }
