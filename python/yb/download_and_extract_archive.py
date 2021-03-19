@@ -76,7 +76,7 @@ def compute_sha256sum(file_path):
     if sys.platform.startswith('linux'):
         cmd_line = ['sha256sum', file_path]
     elif sys.platform.startswith('darwin'):
-        cmd_line = ['shasum', '--portable', '--algorithm', '256', file_path]
+        cmd_line = ['shasum', '--algorithm', '256', file_path]
     else:
         raise ValueError("Don't know how to compute SHA256 checksum on platform %s" % sys.platform)
 
@@ -241,7 +241,7 @@ def download_and_extract(url, dest_dir_parent, local_cache_dir, nfs_cache_dir):
 
         nfs_tar_gz_path = os.path.join(nfs_cache_dir, tar_gz_name)
         nfs_checksum_file_path = os.path.join(nfs_cache_dir, checksum_file_name)
-        if (os.path.isdir(nfs_cache_dir) and 
+        if (os.path.isdir(nfs_cache_dir) and
             os.access(nfs_cache_dir, os.W_OK) and
             (not os.path.exists(nfs_tar_gz_path) or
              not os.path.exists(nfs_checksum_file_path))):
