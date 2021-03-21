@@ -37,6 +37,7 @@
 #include "yb/util/random_util.h"
 #include "yb/util/thread_restrictions.h"
 #include "yb/util/trace.h"
+#include "yb/util/scope_exit.h"
 
 namespace yb {
 namespace ql {
@@ -62,10 +63,28 @@ using client::YBTableName;
 using client::YBTableType;
 using strings::Substitute;
 
+namespace {
+thread_local int g_my_nesting_level = 0;
+constexpr size_t kMyIndent = 2;
+static constexpr const char* kMyDebugPrefix = "mydebug: ";
+}
+
 #define RETURN_STMT_NOT_OK(s) do {                                         \
     auto&& _s = (s);                                                       \
     if (PREDICT_FALSE(!_s.ok())) return StatementExecuted(MoveStatus(_s)); \
   } while (false)
+
+#define MYDEBUG() \
+    const char* _current_function_name = __func__; \
+    VLOG(1) << kMyDebugPrefix \
+            << std::string(g_my_nesting_level * kMyIndent, ' ') << " Entering " << __func__; \
+    g_my_nesting_level++; \
+    auto _my_scope_exit = ScopeExit([_current_function_name]{ \
+      g_my_nesting_level--; \
+      VLOG(1) << kMyDebugPrefix \
+              << std::string(g_my_nesting_level * kMyIndent, ' ') << " Leaving " \
+              << _current_function_name; \
+    });
 
 //--------------------------------------------------------------------------------------------------
 
@@ -85,6 +104,7 @@ Executor::~Executor() {
 
 void Executor::ExecuteAsync(const ParseTree& parse_tree, const StatementParameters& params,
                             StatementExecutedCallback cb) {
+  MYDEBUG();
   DCHECK(cb_.is_null()) << "Another execution is in progress.";
   cb_ = std::move(cb);
   session_->SetForceConsistentRead(client::ForceConsistentRead::kFalse);
@@ -99,6 +119,7 @@ void Executor::ExecuteAsync(const ParseTree& parse_tree, const StatementParamete
 }
 
 void Executor::ExecuteAsync(const StatementBatch& batch, StatementExecutedCallback cb) {
+  MYDEBUG();
   DCHECK(cb_.is_null()) << "Another execution is in progress.";
   cb_ = std::move(cb);
   session_->SetForceConsistentRead(client::ForceConsistentRead::kFalse);
@@ -177,6 +198,7 @@ void Executor::ExecuteAsync(const StatementBatch& batch, StatementExecutedCallba
 //--------------------------------------------------------------------------------------------------
 
 Status Executor::Execute(const ParseTree& parse_tree, const StatementParameters& params) {
+  MYDEBUG();
   // Prepare execution context and execute the parse tree's root node.
   exec_contexts_.emplace_back(parse_tree, params);
   exec_context_ = &exec_contexts_.back();
@@ -195,6 +217,7 @@ Status Executor::Execute(const ParseTree& parse_tree, const StatementParameters&
 //--------------------------------------------------------------------------------------------------
 
 Status Executor::PreExecTreeNode(TreeNode *tnode) {
+  MYDEBUG();
   if (!tnode) {
     return Status::OK();
   } else if (tnode->opcode() == TreeNodeOpcode::kPTInsertStmt) {
@@ -205,6 +228,7 @@ Status Executor::PreExecTreeNode(TreeNode *tnode) {
 }
 
 Status Executor::PreExecTreeNode(PTInsertStmt *tnode) {
+  MYDEBUG();
   if (tnode->InsertingValue()->opcode() == TreeNodeOpcode::kPTInsertJsonClause) {
     // We couldn't resolve JSON clause bind variable until now
     return PreExecTreeNode(static_cast<PTInsertJsonClause*>(tnode->InsertingValue().get()));
@@ -214,6 +238,7 @@ Status Executor::PreExecTreeNode(PTInsertStmt *tnode) {
 }
 
 shared_ptr<client::YBTable> Executor::GetTableFromStatement(const TreeNode *tnode) const {
+  MYDEBUG();
   if (tnode != nullptr) {
     switch (tnode->opcode()) {
       case TreeNodeOpcode::kPTAlterTable:
@@ -244,6 +269,7 @@ shared_ptr<client::YBTable> Executor::GetTableFromStatement(const TreeNode *tnod
 //--------------------------------------------------------------------------------------------------
 
 Status Executor::ExecTreeNode(const TreeNode *tnode) {
+  MYDEBUG();
   if (tnode == nullptr) {
     return Status::OK();
   }
@@ -322,6 +348,7 @@ Status Executor::ExecTreeNode(const TreeNode *tnode) {
 }
 
 Status Executor::ExecPTNode(const PTCreateRole *tnode) {
+  MYDEBUG();
   const Status s = ql_env_->CreateRole(tnode->role_name(), tnode->salted_hash(), tnode->login(),
                                        tnode->superuser());
   if (PREDICT_FALSE(!s.ok())) {
@@ -346,6 +373,7 @@ Status Executor::ExecPTNode(const PTCreateRole *tnode) {
 //--------------------------------------------------------------------------------------------------
 
 Status Executor::ExecPTNode(const PTAlterRole *tnode) {
+  MYDEBUG();
   const Status s = ql_env_->AlterRole(tnode->role_name(), tnode->salted_hash(), tnode->login(),
                                       tnode->superuser());
   if (PREDICT_FALSE(!s.ok())) {
@@ -362,6 +390,7 @@ Status Executor::ExecPTNode(const PTAlterRole *tnode) {
 //--------------------------------------------------------------------------------------------------
 
 Status Executor::ExecPTNode(const PTGrantRevokeRole* tnode) {
+  MYDEBUG();
   const Status s = ql_env_->GrantRevokeRole(tnode->statement_type(), tnode->granted_role_name(),
                                             tnode->recipient_role_name());
   if (PREDICT_FALSE(!s.ok())) {
@@ -380,6 +409,7 @@ Status Executor::ExecPTNode(const PTGrantRevokeRole* tnode) {
 //--------------------------------------------------------------------------------------------------
 
 Status Executor::ExecPTNode(const PTListNode *tnode) {
+  MYDEBUG();
   for (TreeNode::SharedPtr dml : tnode->node_list()) {
     RETURN_NOT_OK(ExecTreeNode(dml.get()));
   }
@@ -389,6 +419,7 @@ Status Executor::ExecPTNode(const PTListNode *tnode) {
 //--------------------------------------------------------------------------------------------------
 
 Status Executor::ExecPTNode(const PTCreateType *tnode) {
+  MYDEBUG();
   YBTableName yb_name = tnode->yb_type_name();
 
   const std::string& type_name = yb_name.table_name();
@@ -427,6 +458,7 @@ Status Executor::ExecPTNode(const PTCreateType *tnode) {
 //--------------------------------------------------------------------------------------------------
 
 Status Executor::ExecPTNode(const PTCreateTable *tnode) {
+  MYDEBUG();
   YBTableName table_name = tnode->yb_table_name();
 
   if (table_name.is_system() && client::FLAGS_yb_system_namespace_readonly) {
@@ -574,6 +606,7 @@ Status Executor::ExecPTNode(const PTCreateTable *tnode) {
 }
 
 Status Executor::AddColumnToIndexInfo(IndexInfoPB *index_info, const PTColumnDefinition *column) {
+  MYDEBUG();
   // Associate index-column with data-column.
   if (index_info) {
     // Note that column_id is assigned by master server, so we don't have it yet. When processing
@@ -589,6 +622,7 @@ Status Executor::AddColumnToIndexInfo(IndexInfoPB *index_info, const PTColumnDef
 //--------------------------------------------------------------------------------------------------
 
 Status Executor::ExecPTNode(const PTAlterTable *tnode) {
+  MYDEBUG();
   YBTableName table_name = tnode->yb_table_name();
 
   shared_ptr<YBTableAlterer> table_alterer(ql_env_->NewTableAlterer(table_name));
@@ -641,6 +675,7 @@ Status Executor::ExecPTNode(const PTAlterTable *tnode) {
 //--------------------------------------------------------------------------------------------------
 
 Status Executor::ExecPTNode(const PTDropStmt *tnode) {
+  MYDEBUG();
   Status s;
   ErrorCode error_not_found = ErrorCode::SERVER_ERROR;
 
@@ -735,6 +770,7 @@ Status Executor::ExecPTNode(const PTDropStmt *tnode) {
 }
 
 Status Executor::ExecPTNode(const PTGrantRevokePermission* tnode) {
+  MYDEBUG();
   const string role_name = tnode->role_name()->QLName();
   const string canonical_resource = tnode->canonical_resource();
   const char* resource_name = tnode->resource_name();
@@ -766,6 +802,7 @@ Status Executor::GetOffsetOrLimit(
     const std::function<PTExpr::SharedPtr(const PTSelectStmt* tnode)>& get_val,
     const string& clause_type,
     int32_t* value) {
+  MYDEBUG();
   QLExpressionPB expr_pb;
   Status s = (PTExprToPB(get_val(tnode), &expr_pb));
   if (PREDICT_FALSE(!s.ok())) {
@@ -794,6 +831,7 @@ Status Executor::GetOffsetOrLimit(
 //--------------------------------------------------------------------------------------------------
 
 Status Executor::ExecPTNode(const PTSelectStmt *tnode, TnodeContext* tnode_context) {
+  MYDEBUG();
   const shared_ptr<client::YBTable>& table = tnode->table();
   if (table == nullptr) {
     // If this is a request for 'system.peers_v2' table make sure that we send the appropriate error
@@ -1001,6 +1039,7 @@ Result<bool> Executor::FetchMoreRows(const PTSelectStmt* tnode,
                                      const YBqlReadOpPtr& op,
                                      TnodeContext* tnode_context,
                                      ExecContext* exec_context) {
+  MYDEBUG();
   RowsResult::SharedPtr current_result = tnode_context->rows_result();
   if (!current_result) {
     return STATUS(InternalError, "Missing result for SELECT operation");
@@ -1118,6 +1157,7 @@ Result<bool> Executor::FetchRowsByKeys(const PTSelectStmt* tnode,
                                        const YBqlReadOpPtr& select_op,
                                        const QLRowBlock& keys,
                                        TnodeContext* tnode_context) {
+  MYDEBUG();
   const Schema& schema = tnode->table()->InternalSchema();
   for (const QLRow& key : keys.rows()) {
     YBqlReadOpPtr op(tnode->table()->NewQLSelect());
@@ -1133,6 +1173,7 @@ Result<bool> Executor::FetchRowsByKeys(const PTSelectStmt* tnode,
 //--------------------------------------------------------------------------------------------------
 
 Status Executor::ExecPTNode(const PTInsertStmt *tnode, TnodeContext* tnode_context) {
+  MYDEBUG();
   // Create write request.
   const shared_ptr<client::YBTable>& table = tnode->table();
   YBqlWriteOpPtr insert_op(table->NewQLInsert());
@@ -1201,6 +1242,7 @@ Status Executor::ExecPTNode(const PTInsertStmt *tnode, TnodeContext* tnode_conte
 //--------------------------------------------------------------------------------------------------
 
 Status Executor::ExecPTNode(const PTDeleteStmt *tnode, TnodeContext* tnode_context) {
+  MYDEBUG();
   // Create write request.
   const shared_ptr<client::YBTable>& table = tnode->table();
   YBqlWriteOpPtr delete_op(table->NewQLDelete());
@@ -1255,6 +1297,7 @@ Status Executor::ExecPTNode(const PTDeleteStmt *tnode, TnodeContext* tnode_conte
 //--------------------------------------------------------------------------------------------------
 
 Status Executor::ExecPTNode(const PTUpdateStmt *tnode, TnodeContext* tnode_context) {
+  MYDEBUG();
   // Create write request.
   const shared_ptr<client::YBTable>& table = tnode->table();
   YBqlWriteOpPtr update_op(table->NewQLUpdate());
@@ -1317,12 +1360,14 @@ Status Executor::ExecPTNode(const PTUpdateStmt *tnode, TnodeContext* tnode_conte
 //--------------------------------------------------------------------------------------------------
 
 Status Executor::ExecPTNode(const PTStartTransaction *tnode) {
+  MYDEBUG();
   return exec_context_->StartTransaction(tnode->isolation_level(), ql_env_);
 }
 
 //--------------------------------------------------------------------------------------------------
 
 Status Executor::ExecPTNode(const PTCommit *tnode) {
+  MYDEBUG();
   // Commit happens after the write operations have been flushed and responded.
   return Status::OK();
 }
@@ -1330,12 +1375,14 @@ Status Executor::ExecPTNode(const PTCommit *tnode) {
 //--------------------------------------------------------------------------------------------------
 
 Status Executor::ExecPTNode(const PTTruncateStmt *tnode) {
+  MYDEBUG();
   return ql_env_->TruncateTable(tnode->table_id());
 }
 
 //--------------------------------------------------------------------------------------------------
 
 Status Executor::ExecPTNode(const PTCreateKeyspace *tnode) {
+  MYDEBUG();
   Status s = ql_env_->CreateKeyspace(tnode->name());
 
   if (PREDICT_FALSE(!s.ok())) {
@@ -1360,6 +1407,7 @@ Status Executor::ExecPTNode(const PTCreateKeyspace *tnode) {
 //--------------------------------------------------------------------------------------------------
 
 Status Executor::ExecPTNode(const PTUseKeyspace *tnode) {
+  MYDEBUG();
   const Status s = ql_env_->UseKeyspace(tnode->name());
   if (PREDICT_FALSE(!s.ok())) {
     ErrorCode error_code = s.IsNotFound() ? ErrorCode::KEYSPACE_NOT_FOUND : ErrorCode::SERVER_ERROR;
@@ -1373,6 +1421,7 @@ Status Executor::ExecPTNode(const PTUseKeyspace *tnode) {
 //--------------------------------------------------------------------------------------------------
 
 Status Executor::ExecPTNode(const PTAlterKeyspace *tnode) {
+  MYDEBUG();
   // To get new keyspace properties use: tnode->keyspace_properties()
   // Current implementation only check existence of this keyspace.
   const Status s = ql_env_->AlterKeyspace(tnode->name());
@@ -1400,6 +1449,7 @@ void RightPad(const int length, string *s) {
 } // namespace
 
 Status Executor::ExecPTNode(const PTExplainStmt *tnode) {
+  MYDEBUG();
   TreeNode::SharedPtr subStmt = tnode->stmt();
   PTDmlStmt *dmlStmt = down_cast<PTDmlStmt *>(subStmt.get());
   const YBTableName explainTable(YQL_DATABASE_CQL, "Explain");
@@ -1485,6 +1535,7 @@ bool NeedsRestart(const Status& s) {
 // Process TnodeContexts and their children under an ExecContext.
 Status ProcessTnodeContexts(ExecContext* exec_context,
                             const std::function<Result<bool>(TnodeContext*)>& processor) {
+  MYDEBUG();
   for (TnodeContext& tnode_context : exec_context->tnode_contexts()) {
     TnodeContext* p = &tnode_context;
     while (p != nullptr) {
@@ -1502,6 +1553,7 @@ Status ProcessTnodeContexts(ExecContext* exec_context,
 } // namespace
 
 void Executor::FlushAsync() {
+  MYDEBUG();
   // Buffered read/write operations are flushed in rounds. In each round, FlushAsync() is called to
   // flush buffered operations in the non-transactional session in the Executor or the transactional
   // session in each ExecContext if any. Also, transactions in any ExecContext ready to commit with
@@ -1588,6 +1640,7 @@ void Executor::FlushAsync() {
 // Any update on data structures shared in Executor should either be protected by a mutex or
 // deferred to ProcessAsyncResults() that will be invoked exclusively.
 void Executor::FlushAsyncDone(Status s, ExecContext* exec_context) {
+  MYDEBUG();
   TRACE("Flush Async Done");
   // Process FlushAsync status for either transactional session in an ExecContext, or the
   // non-transactional session in the Executor for other ExecContexts with no transactional session.
@@ -1634,6 +1687,7 @@ void Executor::FlushAsyncDone(Status s, ExecContext* exec_context) {
 }
 
 void Executor::CommitDone(Status s, ExecContext* exec_context) {
+  MYDEBUG();
   TRACE("Commit Transaction Done");
 
   if (s.ok()) {
@@ -1659,6 +1713,7 @@ void Executor::CommitDone(Status s, ExecContext* exec_context) {
 }
 
 void Executor::ProcessAsyncResults(const bool rescheduled) {
+  MYDEBUG();
   // If the current thread is not the RPC worker thread, call the callback directly. Otherwise,
   // reschedule the call to resume in the RPC worker thread.
   if (!rescheduled && rescheduler_->NeedReschedule()) {
@@ -1798,6 +1853,7 @@ void Executor::ProcessAsyncResults(const bool rescheduled) {
 }
 
 Result<bool> Executor::ProcessTnodeResults(TnodeContext* tnode_context) {
+  MYDEBUG();
   bool has_buffered_ops = false;
 
   // Go through each op in a TnodeContext and process async results.
@@ -1949,6 +2005,7 @@ namespace {
 // Check if index updates can be issued from CQL proxy directly when executing a DML. Only indexes
 // that index primary key columns only may be updated from CQL proxy.
 bool UpdateIndexesLocally(const PTDmlStmt *tnode, const QLWriteRequestPB& req) {
+  MYDEBUG();
   if (req.has_if_expr() || req.returns_status()) {
     return false;
   }
@@ -1999,6 +2056,7 @@ bool UpdateIndexesLocally(const PTDmlStmt *tnode, const QLWriteRequestPB& req) {
 Status Executor::UpdateIndexes(const PTDmlStmt *tnode,
                                QLWriteRequestPB *req,
                                TnodeContext* tnode_context) {
+  MYDEBUG();
   // DML with TTL is not allowed if indexes are present.
   if (req->has_ttl()) {
     return exec_context_->Error(tnode, ErrorCode::FEATURE_NOT_SUPPORTED);
@@ -2053,6 +2111,7 @@ Status Executor::UpdateIndexes(const PTDmlStmt *tnode,
   }
 
   if (!req->update_index_ids().empty() && tnode->RequiresTransaction()) {
+    VLOG(1) << "Prepared child transaction: " << req->DebugString();
     RETURN_NOT_OK(exec_context_->PrepareChildTransaction(req->mutable_child_transaction_data()));
   }
   return Status::OK();
@@ -2062,6 +2121,7 @@ Status Executor::UpdateIndexes(const PTDmlStmt *tnode,
 Status Executor::AddIndexWriteOps(const PTDmlStmt *tnode,
                                   const QLWriteRequestPB& req,
                                   TnodeContext* tnode_context) {
+  MYDEBUG();
   const Schema& schema = tnode->table()->InternalSchema();
   const bool is_upsert = (req.type() == QLWriteRequestPB::QL_STMT_INSERT ||
                           req.type() == QLWriteRequestPB::QL_STMT_UPDATE);
@@ -2123,6 +2183,7 @@ Status Executor::AddIndexWriteOps(const PTDmlStmt *tnode,
 //--------------------------------------------------------------------------------------------------
 
 bool Executor::WriteBatch::Add(const YBqlWriteOpPtr& op) {
+  MYDEBUG();
   // Checks if the write operation reads the primary/static row and if another operation that writes
   // the primary/static row by the same primary/hash key already exists.
   if ((op->ReadsPrimaryRow() && ops_by_primary_key_.count(op) > 0) ||
@@ -2136,6 +2197,7 @@ bool Executor::WriteBatch::Add(const YBqlWriteOpPtr& op) {
 }
 
 void Executor::WriteBatch::Clear() {
+  MYDEBUG();
   ops_by_primary_key_.clear();
   ops_by_hash_key_.clear();
 }
@@ -2147,6 +2209,7 @@ bool Executor::WriteBatch::Empty() const {
 //--------------------------------------------------------------------------------------------------
 
 Status Executor::AddOperation(const YBqlReadOpPtr& op, TnodeContext *tnode_context) {
+  MYDEBUG();
   DCHECK(write_batch_.Empty()) << "Concurrent read and write operations not supported yet";
 
   op->mutable_request()->set_request_id(exec_context_->params().request_id());
@@ -2185,6 +2248,7 @@ Status Executor::AddOperation(const YBqlWriteOpPtr& op, TnodeContext *tnode_cont
 //--------------------------------------------------------------------------------------------------
 
 Status Executor::ProcessStatementStatus(const ParseTree& parse_tree, const Status& s) {
+  MYDEBUG();
   if (PREDICT_FALSE(!s.ok() && s.IsQLError() && !parse_tree.reparsed())) {
     // If execution fails because the statement was analyzed with stale metadata cache, the
     // statement needs to be reparsed and re-analyzed. Symptoms of stale metadata are as listed
@@ -2232,6 +2296,7 @@ Status Executor::ProcessStatementStatus(const ParseTree& parse_tree, const Statu
 Status Executor::ProcessOpStatus(const PTDmlStmt* stmt,
                                  const YBqlOpPtr& op,
                                  ExecContext* exec_context) {
+  MYDEBUG();
   const QLResponsePB &resp = op->response();
   // Returns if this op was deferred and has not been completed, or it has been completed okay.
   if (!resp.has_status() || resp.status() == QLResponsePB::YQL_STATUS_OK) {
@@ -2273,6 +2338,7 @@ Status Executor::ProcessOpStatus(const PTDmlStmt* stmt,
 }
 
 Status Executor::ProcessAsyncStatus(const OpErrors& op_errors, ExecContext* exec_context) {
+  MYDEBUG();
   return ProcessTnodeContexts(
       exec_context,
       [this, exec_context, &op_errors](TnodeContext* tnode_context) -> Result<bool> {
@@ -2304,6 +2370,7 @@ Status Executor::ProcessAsyncStatus(const OpErrors& op_errors, ExecContext* exec
 }
 
 Status Executor::AppendRowsResult(RowsResult::SharedPtr&& rows_result) {
+  MYDEBUG();
   if (!rows_result) {
     return Status::OK();
   }
@@ -2316,6 +2383,7 @@ Status Executor::AppendRowsResult(RowsResult::SharedPtr&& rows_result) {
 }
 
 void Executor::StatementExecuted(const Status& s) {
+  MYDEBUG();
   // Update metrics for all statements executed.
   if (s.ok() && ql_metrics_ != nullptr) {
     for (auto& exec_context : exec_contexts_) {
@@ -2358,6 +2426,7 @@ void Executor::StatementExecuted(const Status& s) {
 }
 
 void Executor::Reset() {
+  MYDEBUG();
   exec_context_ = nullptr;
   exec_contexts_.clear();
   write_batch_.Clear();
@@ -2369,6 +2438,7 @@ void Executor::Reset() {
 }
 
 QLExpressionPB* CreateQLExpression(QLWriteRequestPB *req, const ColumnDesc& col_desc) {
+  MYDEBUG();
   if (col_desc.is_hash()) {
     return req->add_hashed_column_values();
   } else if (col_desc.is_primary()) {
