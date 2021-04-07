@@ -418,11 +418,15 @@ public class YBClient implements AutoCloseable {
   String getMasterUUID(String host, int port) {
     HostAndPort hostAndPort = HostAndPort.fromParts(host, port);
     Deferred<GetMasterRegistrationResponse> d;
+    LOG.info("DEBUG mbautin: creating new master client for host/port " + hostAndPort);
     TabletClient clientForHostAndPort = asyncClient.newMasterClient(hostAndPort);
     if (clientForHostAndPort == null) {
       String message = "Couldn't resolve master's address at " + hostAndPort.toString();
       LOG.warn(message);
     } else {
+      LOG.info(
+          "DEBUG mbautin: sending GetMasterRegistration to host and port " +
+          host + ":" + port);
       d = asyncClient.getMasterRegistration(clientForHostAndPort);
       try {
         GetMasterRegistrationResponse resp = d.join(getDefaultAdminOperationTimeoutMs());
@@ -443,17 +447,25 @@ public class YBClient implements AutoCloseable {
   public String getLeaderMasterUUID() {
     for (HostAndPort hostAndPort : asyncClient.getMasterAddresses()) {
       Deferred<GetMasterRegistrationResponse> d;
+      LOG.info("DEBUG mbautin: in getLeaderMasterUUID: creating new master client for host/port " + 
+          hostAndPort);
       TabletClient clientForHostAndPort = asyncClient.newMasterClient(hostAndPort);
       if (clientForHostAndPort == null) {
         String message = "Couldn't resolve this master's address " + hostAndPort.toString();
         LOG.warn(message);
       } else {
+        LOG.info(
+            "DEBUG mbautin: in getLeaderMasterUUID: sending GetMasterRegistration to host/port " +
+            hostAndPort);
         d = asyncClient.getMasterRegistration(clientForHostAndPort);
         try {
           GetMasterRegistrationResponse resp = d.join(getDefaultAdminOperationTimeoutMs());
           if (resp.getRole() == Metadata.RaftPeerPB.Role.LEADER) {
             return resp.getInstanceId().getPermanentUuid().toStringUtf8();
           }
+          LOG.info(
+              "DEBUG mbautin: in getLeaderMasterUUID: got a response from " + hostAndPort + ": " + 
+              resp + ", role=" + resp.getRole());
         } catch (Exception e) {
           LOG.warn("Couldn't get registration info for master {} due to error '{}'.",
                    hostAndPort.toString(), e.getMessage());

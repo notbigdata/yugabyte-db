@@ -54,6 +54,7 @@ DEFINE_test_flag(int64, mvcc_op_trace_num_items, 32,
 namespace yb {
 namespace tablet {
 
+<<<<<<< Updated upstream
 namespace {
 
 YB_DEFINE_ENUM(
@@ -229,6 +230,10 @@ std::ostream& operator<< (
   log_helper.mvcc_op_trace->DumpTrace(&out);
   return out;
 }
+=======
+constexpr int kNormalVLogLevel = 2;
+constexpr int kDetailedVLogLevel = 3;
+>>>>>>> Stashed changes
 
 // ------------------------------------------------------------------------------------------------
 // SafeTimeWithSource
@@ -255,7 +260,7 @@ MvccManager::~MvccManager() {
 }
 
 void MvccManager::Replicated(HybridTime ht) {
-  VLOG_WITH_PREFIX(1) << __func__ << "(" << ht << ")";
+  VLOG_WITH_PREFIX(kNormalVLogLevel) << __func__ << "(" << ht << ")";
 
   {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -271,7 +276,7 @@ void MvccManager::Replicated(HybridTime ht) {
 }
 
 void MvccManager::Aborted(HybridTime ht) {
-  VLOG_WITH_PREFIX(1) << __func__ << "(" << ht << ")";
+  VLOG_WITH_PREFIX(kNormalVLogLevel) << __func__ << "(" << ht << ")";
 
   {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -310,12 +315,12 @@ void MvccManager::AddPending(HybridTime* ht) {
 
   if (is_follower_side) {
     // This must be a follower-side transaction with already known hybrid time.
-    VLOG_WITH_PREFIX(1) << "AddPending(" << *ht << ")";
+    VLOG_WITH_PREFIX(kNormalVLogLevel) << "AddPending(" << *ht << ")";
   } else {
     // Otherwise this is a new transaction and we must assign a new hybrid_time. We assign one in
     // the present.
     *ht = clock_->Now();
-    VLOG_WITH_PREFIX(1) << "AddPending(<invalid>), time from clock: " << *ht;
+    VLOG_WITH_PREFIX(kNormalVLogLevel) << "AddPending(<invalid>), time from clock: " << *ht;
   }
 
   if (!queue_.empty() && *ht <= queue_.back() && !aborted_.empty()) {
@@ -409,7 +414,7 @@ void MvccManager::AddPending(HybridTime* ht) {
 }
 
 void MvccManager::SetLastReplicated(HybridTime ht) {
-  VLOG_WITH_PREFIX(1) << __func__ << "(" << ht << ")";
+  VLOG_WITH_PREFIX(kNormalVLogLevel) << __func__ << "(" << ht << ")";
 
   {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -422,7 +427,7 @@ void MvccManager::SetLastReplicated(HybridTime ht) {
 }
 
 void MvccManager::SetPropagatedSafeTimeOnFollower(HybridTime ht) {
-  VLOG_WITH_PREFIX(1) << __func__ << "(" << ht << ")";
+  VLOG_WITH_PREFIX(kNormalVLogLevel) << __func__ << "(" << ht << ")";
 
   {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -441,10 +446,15 @@ void MvccManager::SetPropagatedSafeTimeOnFollower(HybridTime ht) {
   cond_.notify_all();
 }
 
+<<<<<<< Updated upstream
 // NO_THREAD_SAFETY_ANALYSIS because this analysis does not work with unique_lock.
 void MvccManager::UpdatePropagatedSafeTimeOnLeader(const FixedHybridTimeLease& ht_lease)
     NO_THREAD_SAFETY_ANALYSIS {
   VLOG_WITH_PREFIX(1) << __func__ << "(" << ht_lease << ")";
+=======
+void MvccManager::UpdatePropagatedSafeTimeOnLeader(HybridTime ht_lease) {
+  VLOG_WITH_PREFIX(kNormalVLogLevel) << __func__ << "(" << ht_lease << ")";
+>>>>>>> Stashed changes
 
   {
     std::unique_lock<std::mutex> lock(mutex_);
@@ -524,7 +534,7 @@ HybridTime MvccManager::SafeTimeForFollower(
   } else if (!cond_.wait_until(lock, deadline, predicate)) {
     return HybridTime::kInvalid;
   }
-  VLOG_WITH_PREFIX(1) << "SafeTimeForFollower(" << min_allowed
+  VLOG_WITH_PREFIX(kNormalVLogLevel) << "SafeTimeForFollower(" << min_allowed
                       << "), result = " << result.ToString();
   CHECK_GE(result.safe_time, max_safe_time_returned_for_follower_.safe_time)
       << InvariantViolationLogPrefix()
@@ -581,11 +591,12 @@ HybridTime MvccManager::DoGetSafeTime(const HybridTime min_allowed,
       result = time.is_valid() ? std::max(max_safe_time_returned_with_lease_.safe_time, time)
                                : clock_->Now();
       source = SafeTimeSource::kNow;
-      VLOG_WITH_PREFIX(2) << "DoGetSafeTime, Now: " << result;
+      VLOG_WITH_PREFIX(kDetailedVLogLevel) << "DoGetSafeTime, Now: " << result;
     } else {
       result = queue_.front().Decremented();
       source = SafeTimeSource::kNextInQueue;
-      VLOG_WITH_PREFIX(2) << "DoGetSafeTime, Queue front (decremented): " << result;
+      VLOG_WITH_PREFIX(kDetailedVLogLevel) << "DoGetSafeTime, Queue front (decremented): " 
+                                           << result;
     }
 
     if (has_lease && result > max_ht_lease_seen_) {
@@ -607,8 +618,8 @@ HybridTime MvccManager::DoGetSafeTime(const HybridTime min_allowed,
   } else if (!cond_.wait_until(*lock, deadline, predicate)) {
     return HybridTime::kInvalid;
   }
-  VLOG_WITH_PREFIX(1) << "DoGetSafeTime(" << min_allowed << ", "
-                      << ht_lease << "), result = " << result;
+  VLOG_WITH_PREFIX(kNormalVLogLevel) << "DoGetSafeTime(" << min_allowed << ", "
+                               << ht_lease << "), result = " << result;
 
   auto enforced_min_time = has_lease ? max_safe_time_returned_with_lease_.safe_time
                                      : max_safe_time_returned_without_lease_.safe_time;
@@ -634,12 +645,16 @@ HybridTime MvccManager::DoGetSafeTime(const HybridTime min_allowed,
 
 HybridTime MvccManager::LastReplicatedHybridTime() const {
   std::lock_guard<std::mutex> lock(mutex_);
+<<<<<<< Updated upstream
   VLOG_WITH_PREFIX(1) << __func__ << "(), result = " << last_replicated_;
   if (op_trace_) {
     op_trace_->Add(LastReplicatedHybridTimeTraceItem {
       .last_replicated = last_replicated_
     });
   }
+=======
+  VLOG_WITH_PREFIX(kNormalVLogLevel) << __func__ << "(), result = " << last_replicated_;
+>>>>>>> Stashed changes
   return last_replicated_;
 }
 

@@ -559,19 +559,32 @@ void MasterServiceImpl::ListMasterRaftPeers(
 void MasterServiceImpl::GetMasterRegistration(const GetMasterRegistrationRequestPB* req,
                                               GetMasterRegistrationResponsePB* resp,
                                               RpcContext rpc) {
+  LOG(INFO) << "DEBUG mbautin: GetMasterRegistration request: " << req->ShortDebugString();
+  LOG(INFO) << "DEBUG mbautin: FLAGS_master_slow_get_registration_probability=" 
+      << FLAGS_master_slow_get_registration_probability;
   // instance_id must always be set in order for status pages to be useful.
   if (RandomActWithProbability(FLAGS_master_slow_get_registration_probability)) {
+    LOG(INFO) << "DEBUG mbautin: sleeping for 20 seconds";
     std::this_thread::sleep_for(20s);
   }
+  LOG(INFO) << "DEBUG mbautin: I am at some line";
   resp->mutable_instance_id()->CopyFrom(server_->instance_pb());
+  LOG(INFO) << "DEBUG mbautin: I am at some line";
   CatalogManager::ScopedLeaderSharedLock l(server_->catalog_manager());
+  LOG(INFO) << "DEBUG mbautin: I am at some line";
   if (!l.CheckIsInitializedOrRespond(resp, &rpc)) {
+    LOG(INFO) << "DEBUG mbautin: I am at some line";
     return;
   }
+  LOG(INFO) << "DEBUG mbautin: I am at some line";
   Status s = server_->GetMasterRegistration(resp->mutable_registration());
+  LOG(INFO) << "DEBUG mbautin: I am at some line";
   CheckRespErrorOrSetUnknown(s, resp);
+  LOG(INFO) << "DEBUG mbautin: I am at some line";
   resp->set_role(server_->catalog_manager()->Role());
+  LOG(INFO) << "DEBUG mbautin: I am at some line";
   rpc.RespondSuccess();
+  LOG(INFO) << "DEBUG mbautin: I am at some line (responsed success)";
 }
 
 void MasterServiceImpl::DumpState(

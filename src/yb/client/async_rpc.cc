@@ -95,7 +95,15 @@ bool LocalTabletServerOnly(const InFlightOps& ops) {
           !FLAGS_forward_redis_requests);
 }
 
+<<<<<<< Updated upstream
 }
+=======
+// template<typename ErrorCode>
+// auto GetErrorForPgResponsePB(const Status& status, typename ErrorCode::Value default_value) {
+//   auto result = ErrorCode(status).value();
+//   return to_underlying(result) ? result : default_value;
+// }
+>>>>>>> Stashed changes
 
 AsyncRpcMetrics::AsyncRpcMetrics(const scoped_refptr<yb::MetricEntity>& entity)
     : remote_write_rpc_time(METRIC_handler_latency_yb_client_write_remote.Instantiate(entity)),
@@ -220,6 +228,7 @@ void AsyncRpc::Failed(const Status& status) {
         resp->set_status(status.IsTryAgain() ? PgsqlResponsePB::PGSQL_STATUS_RESTART_REQUIRED_ERROR
                                              : PgsqlResponsePB::PGSQL_STATUS_RUNTIME_ERROR);
         resp->set_error_message(error_message);
+<<<<<<< Updated upstream
         const uint8_t* pg_err_ptr = status.ErrorData(PgsqlErrorTag::kCategory);
         if (pg_err_ptr != nullptr) {
           resp->set_pg_error_code(static_cast<uint32_t>(PgsqlErrorTag::Decode(pg_err_ptr)));
@@ -231,6 +240,17 @@ void AsyncRpc::Failed(const Status& status) {
           resp->set_txn_error_code(static_cast<uint16_t>(TransactionErrorTag::Decode(txn_err_ptr)));
         } else {
           resp->set_txn_error_code(static_cast<uint16_t>(TransactionErrorCode::kNone));
+=======
+
+        auto pgsql_error = PgsqlError(status).value();
+        if (pgsql_error != YBPgErrorCode::YB_PG_SUCCESSFUL_COMPLETION) {
+          resp->set_pg_error_code(to_underlying(pgsql_error));
+        }
+
+        auto txn_error = TransactionError(status).value();
+        if (txn_error != TransactionErrorCode::kNone) {
+          resp->set_txn_error_code(to_underlying(txn_error));
+>>>>>>> Stashed changes
         }
         break;
       }
