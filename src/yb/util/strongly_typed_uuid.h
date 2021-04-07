@@ -39,7 +39,7 @@
   inline TypeName BOOST_PP_CAT(TryFullyDecode, TypeName)(const Slice& slice) { \
     return TypeName(yb::TryFullyDecodeUuid(slice)); \
   } \
-  inline Result<TypeName> BOOST_PP_CAT(Decode, TypeName)(Slice* slice) { \
+  inline Result<TypeName> BOOST_PP_CAT(DecodeAndConsume, TypeName)(Slice* slice) { \
     return TypeName(VERIFY_RESULT(yb::DecodeUuid(slice))); \
   }
 

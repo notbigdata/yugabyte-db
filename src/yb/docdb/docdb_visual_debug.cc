@@ -21,7 +21,7 @@ namespace docdb {
 // VirtualScreenIf
 // ------------------------------------------------------------------------------------------------
 
-void VirtualScreenIf::PutString(int top_row, int left_col, const std::string& s) {
+void VirtualScreenIf::PutString(int top_row, int left_col, const std::string& s, int wrap_indent) {
   int i = top_row;
   int j = left_col;
   for (char c : s) {
@@ -29,6 +29,10 @@ void VirtualScreenIf::PutString(int top_row, int left_col, const std::string& s)
       i++;
       j = left_col;
       continue;
+    }
+    if (wrap_indent >= 0 && j == width_) {
+      i++;
+      j = left_col + wrap_indent;
     }
     PutChar(i, j, c);
     j++;
@@ -44,15 +48,23 @@ VirtualWindow VirtualScreenIf::TopSection(int num_rows) {
 }
 
 VirtualWindow VirtualScreenIf::BottomSection(int num_rows) {
-  return SubWindow(num_rows, 0, height_ - num_rows, width_);
+  return SubWindow(height_ - num_rows, 0, num_rows, width_);
 }
 
 VirtualWindow VirtualScreenIf::LeftHalf() {
-  return SubWindow(0, 0, height_, width_ / 2);
+  return LeftSection(width_ / 2);
 }
 
 VirtualWindow VirtualScreenIf::RightHalf() {
-  return SubWindow(0, width_ / 2, height_, width_ - width_ / 2);
+  return RightSection(width_ - width_ / 2);
+}
+
+VirtualWindow VirtualScreenIf::LeftSection(int num_cols) {
+  return SubWindow(0, 0, height_, num_cols); 
+}
+
+VirtualWindow VirtualScreenIf::RightSection(int num_cols) {
+  return SubWindow(0, width_ - num_cols, height_, num_cols);
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -120,14 +132,15 @@ TextBasedAnimation::TextBasedAnimation(const std::string& base_dir)
     : base_dir_(base_dir) {
 }
 
-Status TextBasedAnimation::AddFrame(const VirtualScreen& screen) {
+Status TextBasedAnimation::AddFrame(const VirtualScreen& screen, std::string json_str) {
   if (!dir_created_) {
     RETURN_NOT_OK(Env::Default()->CreateDirs(base_dir_));
     dir_created_ = true;
   }
   string file_name = JoinPathSegments(base_dir_, StringPrintf("frame_%05d", n_frames_));
   n_frames_++;
-  return screen.SaveToFile(file_name);
+  RETURN_NOT_OK(screen.SaveToFile(file_name));
+  return WriteStringToFile(Env::Default(), json_str, file_name + ".json");
 }
 
 }  // namespace docdb

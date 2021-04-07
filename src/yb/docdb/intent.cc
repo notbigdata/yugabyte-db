@@ -31,6 +31,11 @@ Result<DecodedIntentKey> DecodeIntentKey(const Slice &encoded_intent_key) {
 
   int doc_ht_size = 0;
   RETURN_NOT_OK(DocHybridTime::CheckAndGetEncodedSize(intent_prefix, &doc_ht_size));
+  // The following 3 bytes are always present before the encoded hybrid time:
+  // This does not include the encoded SubDocKey without hybrid time. 
+  // - ValueType::kIntentTypeSet (1 byte)
+  // - intent type set (1 byte)
+  // - ValueType::kHybridTime (1 byte)
   if (intent_prefix.size() < doc_ht_size + 3) {
     return STATUS_FORMAT(
         Corruption, "Intent key is too short: $0 bytes", encoded_intent_key.size());
@@ -40,9 +45,10 @@ Result<DecodedIntentKey> DecodeIntentKey(const Slice &encoded_intent_key) {
       Slice(intent_prefix.data() + intent_prefix.size() + 3, doc_ht_size)));
   auto* prefix_end = intent_prefix.end();
 
-  if (prefix_end[2] != ValueTypeAsChar::kHybridTime)
+  if (prefix_end[2] != ValueTypeAsChar::kHybridTime) {
     return STATUS_FORMAT(Corruption, "Expecting hybrid time with ValueType $0, found $1",
         ValueType::kHybridTime, static_cast<ValueType>(prefix_end[2]));
+  }
 
   if (prefix_end[0] != ValueTypeAsChar::kIntentTypeSet) {
     if (prefix_end[0] == ValueTypeAsChar::kObsoleteIntentType) {
@@ -64,17 +70,19 @@ Result<DecodedIntentKey> DecodeIntentKey(const Slice &encoded_intent_key) {
   return result;
 }
 
-Result<TransactionId> DecodeTransactionIdFromIntentValue(Slice* intent_value) {
+Result<TransactionId> DecodeAndConsumeTransactionIdFromIntentValue(Slice* intent_value) {
   if (intent_value->empty()) {
     return STATUS_FORMAT(Corruption, "Expecting intent value to start with ValueType $0, but it is "
         "empty", ValueType::kTransactionId);
-  } else if (*intent_value->data() != ValueTypeAsChar::kTransactionId) {
+  } 
+  
+  if (*intent_value->data() != ValueTypeAsChar::kTransactionId) {
     return STATUS_FORMAT(Corruption, "Expecting intent key to start with ValueType $0, found $1",
         ValueType::kTransactionId, static_cast<ValueType>(*intent_value->data()));
-  } else {
-    intent_value->consume_byte();
   }
-  return DecodeTransactionId(intent_value);
+
+  intent_value->consume_byte();
+  return DecodeAndConsumeTransactionId(intent_value);
 }
 
 IntentTypeSet AllStrongIntents() {

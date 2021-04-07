@@ -37,7 +37,13 @@ inline std::ostream& operator<<(std::ostream& out, const DecodedIntentKey& decod
   return out << decoded_intent_key.ToString();
 }
 
-// Decodes intent RocksDB key.
+// Decodes an intent RocksDB key. encoded_intent_key is expected to have the following format:
+// - A SubDocKey without a hybrid time.
+//   (The intent_prefix slice field of the result will point this part.)
+// - kIntentTypeSet (1 byte)
+// - Intent type set (1 byte), with bits as described by the IntentType enum in value_type.h
+// - kHybridTime (1 byte)
+// - A hybrid time encoded as specified by DocHybridTime
 Result<DecodedIntentKey> DecodeIntentKey(const Slice &encoded_intent_key);
 
 // Decode intent RocksDB value.
@@ -50,7 +56,7 @@ CHECKED_STATUS DecodeIntentValue(
     Slice* body);
 
 // Decodes transaction ID from intent value. Consumes it from intent_value slice.
-Result<TransactionId> DecodeTransactionIdFromIntentValue(Slice* intent_value);
+Result<TransactionId> DecodeAndConsumeTransactionIdFromIntentValue(Slice* intent_value);
 
 // "Weak" intents are written for ancestor keys of a key that's being modified. For example, if
 // we're writing a.b.c with snapshot isolation, we'll write weak snapshot isolation intents for

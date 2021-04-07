@@ -52,7 +52,7 @@ Result<TransactionId> FullyDecodeTransactionId(const Slice& slice);
 
 // Decodes transaction id from slice which contains binary encoding. Consumes corresponding bytes
 // from slice.
-Result<TransactionId> DecodeTransactionId(Slice* slice);
+Result<TransactionId> DecodeAndConsumeTransactionId(Slice* slice);
 
 struct TransactionStatusResult {
   TransactionStatus status;

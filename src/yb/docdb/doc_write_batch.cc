@@ -103,9 +103,11 @@ Status DocWriteBatch::SeekToKeyPrefix(IntentAwareIterator* doc_iter, bool has_an
   // document/subdocument pointed to by key_prefix_ exists, or has been recently deleted.
   if (key_prefix_.IsPrefixOf(key_data.key)) {
     // No need to decode again if no merge records were encountered.
-    if (value != recent_value)
-      RETURN_NOT_OK(Value::DecodePrimitiveValueType(value, &(current_entry_.value_type),
-          /* merge flags */ nullptr, /* ttl */ nullptr, &(current_entry_.user_timestamp)));
+    if (value != recent_value) {
+      RETURN_NOT_OK(Value::DecodePrimitiveValueType(
+          value, &current_entry_.value_type, /* merge flags */ nullptr, /* ttl */ nullptr,
+          &current_entry_.user_timestamp));
+    }
     current_entry_.found_exact_key_prefix = key_prefix_ == key_data.key;
     current_entry_.doc_hybrid_time = key_data.write_time;
 
@@ -356,7 +358,7 @@ Status DocWriteBatch::SetPrimitive(const DocPath& doc_path,
           BloomFilterMode::USE_BLOOM_FILTER,
           doc_path.encoded_doc_key().AsSlice(),
           query_id,
-          /*txn_op_context*/ boost::none,
+          /* txn_op_context */ boost::none,
           deadline,
           read_ht);
     };

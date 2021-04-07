@@ -29,7 +29,8 @@ class VirtualScreenIf {
   virtual ~VirtualScreenIf() {}
   virtual void PutChar(int row, int column, char c) = 0;
 
-  void PutString(int top_row, int left_col, const std::string& s);
+  // wrap_indent < 0 means no wrap (just trim the text)
+  void PutString(int top_row, int left_col, const std::string& s, int wrap_indent = -1);
 
   template <class... Args>
   void PutFormat(int row, int column, const std::string& format, Args&&... args) {
@@ -43,6 +44,9 @@ class VirtualScreenIf {
 
   VirtualWindow TopSection(int num_rows);
   VirtualWindow BottomSection(int num_rows);
+  VirtualWindow LeftSection(int num_cols);
+  VirtualWindow RightSection(int num_cols);
+
   VirtualWindow LeftHalf();
   VirtualWindow RightHalf();
 
@@ -88,7 +92,7 @@ class VirtualScreen : public VirtualScreenIf {
 class TextBasedAnimation {
  public:
   TextBasedAnimation(const std::string& base_dir);
-  CHECKED_STATUS AddFrame(const VirtualScreen& screen);
+  CHECKED_STATUS AddFrame(const VirtualScreen& screen, std::string json_str);
 
  private:
   std::string base_dir_;

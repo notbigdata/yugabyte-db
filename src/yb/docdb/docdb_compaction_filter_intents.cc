@@ -117,7 +117,7 @@ rocksdb::FilterDecision DocDBIntentsCompactionFilter::Filter(
     if (compaction_start_time_ < write_time + FLAGS_aborted_intent_cleanup_ms * 1000) {
       return rocksdb::FilterDecision::kKeep;
     }
-    auto result = DecodeTransactionIdFromIntentValue(const_cast<Slice*>(&key));
+    auto result = DecodeAndConsumeTransactionIdFromIntentValue(const_cast<Slice*>(&key));
     if (!result.ok()) {
       LOG(ERROR) << "Could not decode Transaction metadata: " << result.status();
       return rocksdb::FilterDecision::kKeep;

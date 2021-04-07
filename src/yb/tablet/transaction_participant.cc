@@ -1029,7 +1029,7 @@ class TransactionParticipant::Impl : public RunningTransactionContext {
           break;
         }
         key.remove_prefix(1);
-        auto decode_id_result = DecodeTransactionId(&key);
+        auto decode_id_result = DecodeAndConsumeTransactionId(&key);
         if (!decode_id_result.ok()) {
           LOG_WITH_PREFIX(DFATAL)
               << "Failed to decode transaction id from: " << key.ToDebugHexString();

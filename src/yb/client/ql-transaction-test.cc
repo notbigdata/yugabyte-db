@@ -98,7 +98,8 @@ class QLTransactionTest : public TransactionTestBase {
 
   CHECKED_STATUS WaitIntentsCleaned() {
     return WaitFor(
-      [this] { return CountIntents(cluster_.get()) == 0; }, kIntentsCleanupTime, "Intents cleaned");
+      [this] { return CountIntents(cluster_.get()).first == 0; }, kIntentsCleanupTime, 
+      "Intents cleaned");
   }
 };
 
@@ -587,9 +588,9 @@ void QLTransactionTest::TestReadOnlyTablets(IsolationLevel isolation_level,
 
   // Verify intents were written if expected.
   if (written_intents_expected) {
-    ASSERT_GT(CountIntents(cluster_.get()), 0);
+    ASSERT_GT(CountIntents(cluster_.get()).first, 0);
   } else {
-    ASSERT_EQ(CountIntents(cluster_.get()), 0);
+    ASSERT_EQ(CountIntents(cluster_.get()).first, 0);
   }
 
   // Commit and verify transaction and intents were applied/cleaned up.
@@ -1641,7 +1642,7 @@ TEST_F_EX(QLTransactionTest, DeleteFlushedIntents, QLTransactionTestSingleTablet
   }
 
   ASSERT_OK(WaitFor([this] {
-    if (CountIntents(cluster_.get()) != 0) {
+    if (CountIntents(cluster_.get()).first != 0) {
       return false;
     }
 

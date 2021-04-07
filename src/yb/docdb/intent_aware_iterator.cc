@@ -13,17 +13,27 @@
 
 #include "yb/docdb/intent_aware_iterator.h"
 
+#include <rapidjson/stringbuffer.h>
+#include <rapidjson/prettywriter.h>
+
 #include <time.h>
 
 #include <future>
 #include <thread>
+#include <regex>
+
 #include <boost/optional/optional_io.hpp>
+
+#include <rapidjson/stringbuffer.h>
+#include <rapidjson/writer.h>
+#include <rapidjson/document.h>
 
 #include "yb/common/doc_hybrid_time.h"
 #include "yb/common/hybrid_time.h"
 #include "yb/common/transaction.h"
 
 #include "yb/docdb/conflict_resolution.h"
+#include "yb/docdb/doc_key.h"
 #include "yb/docdb/docdb.h"
 #include "yb/docdb/docdb_rocksdb_util.h"
 #include "yb/docdb/docdb-internal.h"
@@ -39,6 +49,8 @@
 #include "yb/util/path_util.h"
 #include "yb/util/tsan_util.h"
 #include "yb/util/scope_exit.h"
+
+#include "yb/common/json_util.h"
 
 using namespace std::literals;
 
@@ -269,7 +281,10 @@ Result<HybridTime> TransactionStatusCache::DoGetCommitTime(const TransactionId& 
 namespace {
 
 struct DecodeStrongWriteIntentResult {
+  // A slice pointing a prefix of intent_iter_->key() that is an encoded SubDocKey without a
+  // hybrid time.
   Slice intent_prefix;
+
   Slice intent_value;
   DocHybridTime value_time;
   IntentTypeSet intent_types;
@@ -304,7 +319,7 @@ Result<DecodeStrongWriteIntentResult> DecodeStrongWriteIntent(
   result.intent_types = decoded_intent_key.intent_types;
   if (result.intent_types.Test(IntentType::kStrongWrite)) {
     result.intent_value = intent_iter->value();
-    auto txn_id = VERIFY_RESULT(DecodeTransactionIdFromIntentValue(&result.intent_value));
+    auto txn_id = VERIFY_RESULT(DecodeAndConsumeTransactionIdFromIntentValue(&result.intent_value));
     result.same_transaction = txn_id == txn_op_context.transaction_id;
     if (result.intent_value.size() < 1 + sizeof(IntraTxnWriteId) ||
         result.intent_value[0] != ValueTypeAsChar::kWriteId) {
@@ -1094,6 +1109,11 @@ Result<HybridTime> IntentAwareIterator::FindOldestRecord(
   return result;
 }
 
+void IntentAwareIterator::SetUpperbound(const Slice& upperbound) {
+  VISUAL_DEBUG_CHECKPOINT_ENTER_LEAVE();
+  upperbound_ = upperbound;
+}
+
 Status IntentAwareIterator::FindLatestRecord(
     const Slice& key_without_ht,
     DocHybridTime* latest_record_ht,
@@ -1308,23 +1328,59 @@ std::string TrimStackTraceForVisualDebug(const std::string& stack_trace) {
   std::ostringstream out_string_stream;
   std::string line;
 
+  static const std::regex kTrimPrefixRE(R"#(^\s*@\s*0x[0-9a-f]+\s*)#");
+  static const std::regex kCoarseTimePointRE(
+      "std::chrono::time_point<yb::CoarseMonoClock, "
+      "std::chrono::duration<long, std::ratio<1l, 1000000000l> > >");
   while (std::getline(in_string_stream, line, '\n')) {
     if (line.find(
             "yb::rpc::ServicePoolImpl::Handle(shared_ptr<yb::rpc::InboundCall>)"
         ) != std::string::npos) {
       break;
     }
+    line = std::regex_replace(line, kTrimPrefixRE, "");
+    line = std::regex_replace(line, kCoarseTimePointRE, "CoarseTimePoint");
     out_string_stream << line << std::endl;
   }
   return out_string_stream.str();
 }
 
-// void DumpRocksDbToVirtualScreen(
-//     VirtualScreenIf* out,
-//     rocksdb::Iterator* main_iter,
-//     rocksdb::Iterator* iter_for_debug,
-//     StorageDbType storage_db_type) {
-// }
+void DumpRocksDbToVirtualScreen(
+    VirtualScreenIf* out,
+    rocksdb::Iterator* main_iter,
+    rocksdb::Iterator* iter_for_debug,
+    StorageDbType storage_db_type) {
+  if (!iter_for_debug) {
+    out->PutFormat(0, 0, "$0 visual debug iterator is not set", storage_db_type);
+    return;
+  }
+
+  int row = 1;
+  const bool main_iter_valid = main_iter->Valid();
+  int num_intent_kvs = 0;
+  iter_for_debug->SeekToFirst();
+  const auto iter_key_marker = Format("$0 ->", storage_db_type);
+  const int kIntentKeyColumn = 15;
+  while (row < out->height() && iter_for_debug->Valid()) {
+    num_intent_kvs++;
+    auto key_as_str_result = DocDBKeyToDebugStr(iter_for_debug->key(), storage_db_type);
+    string key_str;
+    if (key_as_str_result.ok()) {
+      key_str = *key_as_str_result;
+    } else {
+      key_str = Format(
+          "$0, status: $1",
+          FormatSliceAsStr(iter_for_debug->key()), key_as_str_result.status());
+    }
+    if (main_iter_valid && main_iter->key() == iter_for_debug->key()) {
+      out->PutString(row, 0, iter_key_marker);
+    }
+    out->PutString(row, kIntentKeyColumn, key_str);
+    row++;
+    iter_for_debug->Next();
+  }
+  out->PutFormat(0, 0, "$0 key/value records in $1 RocksDB", num_intent_kvs, storage_db_type);
+}
 
 }  // namespace
 
@@ -1333,58 +1389,73 @@ void IntentAwareIterator::VisualDebugCheckpointImpl(
     const Slice& message, const std::string& stack_trace, bool exiting_function) {
   VirtualScreen screen(80, 340);
 
-  const int kTopSectionRows = 33;
+  const int kTopSectionRows = 28;
+  auto top_section = screen.TopSection(kTopSectionRows);
+  const int kTopRightSectionWidth = 100;
+  auto top_left_section = top_section.LeftSection(screen.width() - kTopRightSectionWidth - 1);
+  auto top_right_section = top_section.RightSection(kTopRightSectionWidth);
 
   {
-    VirtualWindow top_section = screen.TopSection(kTopSectionRows);
+
     int row = 0;
-    top_section.PutFormat(row++, 0, "File: $0", file_name);
-    top_section.PutFormat(row++, 0, "Line: $0", line);
-    top_section.PutFormat(row++, 0, "Function: $0$1", exiting_function ? "Returning from " : "", func);
-    top_section.PutFormat(row++, 0, "Pretty function: $0", pretty_func);
+    top_left_section.PutFormat(row++, 0, "File: $0", file_name);
+    top_left_section.PutFormat(row++, 0, "Line: $0", line);
+    top_left_section.PutFormat(row++, 0, "Function: $0$1", exiting_function ? "Returning from " : "", func);
+    top_left_section.PutFormat(row++, 0, "Pretty function: $0", pretty_func);
     if (!message.empty()) {
-      top_section.PutFormat(row++, 0, "Message: $0", message);
+      top_left_section.PutFormat(row++, 0, "Message: $0", message);
     } else {
       row++;
     }
     row++;
-    top_section.PutString(row++, 0, "Stack trace:");
-    top_section.PutString(row++, 2, TrimStackTraceForVisualDebug(stack_trace));
+    top_left_section.PutString(row++, 0, "Stack trace:");
+    top_left_section.PutString(
+        row++, 2, TrimStackTraceForVisualDebug(stack_trace), 
+        /* wrap_indent */ 4);
   }
 
   VirtualWindow bottom_section = screen.BottomSection(screen.height() - kTopSectionRows);
-  auto window = bottom_section.LeftHalf();
-  if (visual_debug_intent_iter_) {
+  {
+    auto bottom_section_left_half = bottom_section.LeftHalf();
+    DumpRocksDbToVirtualScreen(
+        &bottom_section_left_half,
+        &intent_iter_, 
+        visual_debug_intent_iter_ ? &*visual_debug_intent_iter_ : nullptr,
+        StorageDbType::kIntents);
+  }
 
-    int row = 1;
-    const bool intent_iter_valid = intent_iter_.Valid();
-    int num_intent_kvs = 0;
-    visual_debug_intent_iter_->SeekToFirst();
-    static const auto kIntentIterCurKeyMarker = "Intent Iter ->"s;
-    const int kIntentKeyColumn = 15;
-    while (row < window.height() && visual_debug_intent_iter_->Valid()) {
-      num_intent_kvs++;
-      auto key_as_str_result = DocDBKeyToDebugStr(
-          visual_debug_intent_iter_->key(), StorageDbType::kIntents);
-      string key_str;
-      if (key_as_str_result.ok()) {
-        key_str = *key_as_str_result;
-      } else {
-        key_str = Format(
-            "$0, status: $1",
-            FormatSliceAsStr(visual_debug_intent_iter_->key()), key_as_str_result.status());
-      }
-      if (intent_iter_valid &&
-          intent_iter_.key() == visual_debug_intent_iter_->key()) {
-        window.PutString(row, 0, kIntentIterCurKeyMarker);
-      }
-      window.PutString(row, kIntentKeyColumn, key_str);
-      row++;
-      visual_debug_intent_iter_->Next();
-    }
-    window.PutFormat(0, 0, "$0 key/value records in intents RocksDB", num_intent_kvs);
-  } else {
-    window.PutString(0, 0, "visual_debug_intent_iter_ is not set");
+  {
+    auto bottom_section_right_half = bottom_section.RightHalf();
+    DumpRocksDbToVirtualScreen(
+        &bottom_section_right_half,
+        &iter_, 
+        visual_debug_regular_iter_ ? &*visual_debug_regular_iter_ : nullptr,
+        StorageDbType::kRegular);
+  }
+
+  {
+    std::ostringstream debug_ss;
+    debug_ss << "read_time_: " << read_time_.ToString() << std::endl;
+    debug_ss << "max_seen_ht_: " << max_seen_ht_ << std::endl;
+    debug_ss << "upperbound_ (decoded): " << BestEffortDocDBKeyToStr(upperbound_) << std::endl;
+    debug_ss << "upperbound_ (raw): " << FormatSliceAsStr(upperbound_) << std::endl;
+    debug_ss << "intent_upperbound_keybytes_: " << intent_upperbound_keybytes_ << std::endl;
+    debug_ss << "intent_upperbound_ (decoded): " << BestEffortDocDBKeyToStr(intent_upperbound_)
+             << std::endl;
+    debug_ss << "intent_upperbound_ (raw): " << FormatSliceAsStr(intent_upperbound_) << std::endl;
+    debug_ss << "resolved_intent_state_: " << resolved_intent_state_ << std::endl;
+    debug_ss << "resolved_intent_key_prefix_: " << resolved_intent_key_prefix_ << std::endl;
+    debug_ss << "resolved_intent_dht_: " << resolved_intent_txn_dht_ << std::endl;
+    debug_ss << "intent_dht_from_same_txn_: " << intent_dht_from_same_txn_ << std::endl;
+    debug_ss << "resolved_intent_sub_doc_key_encoded_: " 
+             << resolved_intent_sub_doc_key_encoded_ << std::endl;
+    debug_ss << "resolved_intent_value_: " << resolved_intent_value_ << std::endl;
+    debug_ss << "prefix_stack_.size(): " << prefix_stack_.size() << std::endl;
+    debug_ss << "skip_future_records_needed_: " << skip_future_records_needed_ << std::endl;
+    debug_ss << "skip_future_intents_needed_: " << skip_future_intents_needed_ << std::endl;
+    debug_ss << "seek_intent_iter_needed_: " << seek_intent_iter_needed_ << std::endl;
+
+    top_right_section.PutString(0, 0, debug_ss.str(), /* wrap_indent */ 4);
   }
 
   if (!visual_debug_animation_) {
@@ -1402,9 +1473,51 @@ void IntentAwareIterator::VisualDebugCheckpointImpl(
             FLAGS_TEST_intent_aware_iterator_visual_debug_output_dir,
             StringPrintf("%s_%p", time_buf, this)));
   }
-  CHECK_OK(visual_debug_animation_->AddFrame(screen));
+
+  rapidjson::Document d;
+  d.SetObject();
+  auto* json_allocator = &d.GetAllocator();
+
+  // d.AddMember("stackTrace", stack_trace, json_allocator);
+  rapidjson::Value code_location;
+  code_location.SetObject();
+  auto add_string_member = [json_allocator](rapidjson::Value* p, const char* k, std::string v) {
+    p->AddMember(
+        rapidjson::Value().SetString(k, *json_allocator),
+        rapidjson::Value().SetString(v.c_str(), *json_allocator),
+        *json_allocator);
+  };
+  auto add_int_member = [json_allocator](rapidjson::Value* p, const char* k, int v) {
+    p->AddMember(
+        rapidjson::Value().SetString(k, *json_allocator),
+        rapidjson::Value().SetInt(v),
+        *json_allocator);
+  };
+
+  add_string_member(&code_location, "fileName", file_name);
+  add_int_member(&code_location, "line", line);
+
+  code_location.AddMember(
+      rapidjson::Value().SetString("line", *json_allocator),
+      rapidjson::Value().SetString(file_name, *json_allocator),
+      *json_allocator);
+  // code_location.AddMember("function", std::string(func), json_allocator);
+  // code_location.AddMember("prettyFunction", std::string(pretty_func), json_allocator);
+  d.AddMember(
+      rapidjson::Value().SetString("codeLocation"),
+      code_location,
+      *json_allocator);
+
+  rapidjson::StringBuffer buffer;
+  rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(buffer);
+
+  d.Accept(writer);
+  auto json_str = std::string(buffer.GetString());
+
+  CHECK_OK(visual_debug_animation_->AddFrame(screen, json_str));
 }
 
 
 }  // namespace docdb
 }  // namespace yb
+*

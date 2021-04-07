@@ -41,7 +41,7 @@ Result<std::string> DocDBKeyToDebugStr(Slice key_slice, StorageDbType db_type) {
     case KeyType::kReverseTxnKey:
     {
       RETURN_NOT_OK(key_slice.consume_byte(ValueTypeAsChar::kTransactionId));
-      auto transaction_id = VERIFY_RESULT(DecodeTransactionId(&key_slice));
+      auto transaction_id = VERIFY_RESULT(DecodeAndConsumeTransactionId(&key_slice));
       if (key_slice.empty() || key_slice.size() > kMaxBytesPerEncodedHybridTime + 1) {
         return STATUS_FORMAT(
             Corruption,
@@ -70,7 +70,7 @@ Result<std::string> DocDBKeyToDebugStr(Slice key_slice, StorageDbType db_type) {
     case KeyType::kTransactionMetadata:
     {
       RETURN_NOT_OK(key_slice.consume_byte(ValueTypeAsChar::kTransactionId));
-      auto transaction_id = DecodeTransactionId(&key_slice);
+      auto transaction_id = DecodeAndConsumeTransactionId(&key_slice);
       RETURN_NOT_OK(transaction_id);
       return Format("TXN META $0", *transaction_id);
     }
@@ -88,7 +88,7 @@ Result<std::string> DocDBKeyToDebugStr(Slice key_slice, StorageDbType db_type) {
 Result<std::string> DocDBValueToDebugStr(Slice value_slice, const KeyType& key_type) {
   std::string prefix;
   if (key_type == KeyType::kIntentKey) {
-    auto txn_id_res = VERIFY_RESULT(DecodeTransactionIdFromIntentValue(&value_slice));
+    auto txn_id_res = VERIFY_RESULT(DecodeAndConsumeTransactionIdFromIntentValue(&value_slice));
     prefix = Format("TransactionId($0) ", txn_id_res);
     if (!value_slice.empty()) {
       RETURN_NOT_OK(value_slice.consume_byte(ValueTypeAsChar::kWriteId));

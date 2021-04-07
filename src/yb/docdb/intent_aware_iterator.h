@@ -180,9 +180,7 @@ class IntentAwareIterator {
   Result<HybridTime> FindOldestRecord(const Slice& key_without_ht,
                                       HybridTime min_hybrid_time);
 
-  void SetUpperbound(const Slice& upperbound) {
-    upperbound_ = upperbound;
-  }
+  void SetUpperbound(const Slice& upperbound);
 
   void DebugDump();
 
