@@ -1,5 +1,4 @@
-#!/usr/bin/env bash
-#
+#!/usr/bin/env python3
 # Copyright (c) Yugabyte, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
@@ -11,10 +10,23 @@
 # is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
 # or implied.  See the License for the specific language governing permissions and limitations
 # under the License.
-#
-set -euo pipefail
-. "${BASH_SOURCE%/*}/common-build-env.sh"
 
-activate_virtualenv
-set_pythonpath
-python3 "$YB_SRC_ROOT"/python/yb/run_pvs_studio_analyzer.py "$@"
+import os
+import yaml
+import subprocess
+
+from yb.common_util import YB_SRC_ROOT, get_thirdparty_dir
+
+
+def main():
+    fossa_yml_path = os.path.join(YB_SRC_ROOT, '.fossa.yml')
+    with open(fossa_yml_path) as fossa_yml_file:
+        fossa_yml_data = yaml.safe_load(fossa_yml_file)
+    thirdparty_dir = get_thirdparty_dir()
+    subprocess.check_call(
+        [os.path.join(thirdparty_dir, 'build_thirdparty.sh'),
+         '--download-extract-only'])
+
+
+if __name__ == '__main__':
+    main()

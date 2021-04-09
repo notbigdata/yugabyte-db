@@ -2095,6 +2095,16 @@ VIRTUALENV DEBUGGING
   export VIRTUAL_ENV
 }
 
+set_pythonpath() {
+  local new_entry=$YB_SRC_ROOT/python
+  if [[ -z ${PYTHONPATH:-} ]]; then
+    PYTHONPATH=$new_entry
+  else
+    PYTHONPATH=$new_entry:$PYTHONPATH
+  fi
+  export PYTHONPATH
+}
+
 log_file_existence() {
   expect_num_args 1 "$@"
   local file_name=$1
