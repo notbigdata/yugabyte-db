@@ -15,17 +15,27 @@ import os
 import yaml
 import subprocess
 
-from yb.common_util import YB_SRC_ROOT, get_thirdparty_dir
+from yb.common_util import YB_SRC_ROOT, get_thirdparty_dir, get_download_cache_dir
+
+from downloadutil.downloader import Downloader
+from downloadutil.download_config import DownloadConfig
 
 
 def main():
+    parser = argparse.ArgumentParser(
+        description='Run FOSSA analysis (open source license compliance).')
+    parser.add_argument('--verbose', action='store_true', help='Enable verbose output')
+    download_config = DownloadConfig(
+        verbose=True,
+        cache_dir_path=get_download_cache_dir()
+    )
+    downloader = Downloader(download_config)
+
     fossa_yml_path = os.path.join(YB_SRC_ROOT, '.fossa.yml')
     with open(fossa_yml_path) as fossa_yml_file:
         fossa_yml_data = yaml.safe_load(fossa_yml_file)
     thirdparty_dir = get_thirdparty_dir()
-    subprocess.check_call(
-        [os.path.join(thirdparty_dir, 'build_thirdparty.sh'),
-         '--download-extract-only'])
+
 
 
 if __name__ == '__main__':

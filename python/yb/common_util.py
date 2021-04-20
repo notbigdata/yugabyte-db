@@ -284,3 +284,7 @@ class EnvVarContext:
     def __exit__(self, exc_type, exc_val, exc_tb):
         for env_var_name, saved_value in self.saved_env_vars.items():
             dict_set_or_del(os.environ, env_var_name, saved_value)
+
+
+def get_download_cache_dir():
+    return os.path.expanduser('~/.cache/downloads')
