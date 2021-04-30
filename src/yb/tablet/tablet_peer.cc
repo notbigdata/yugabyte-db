@@ -205,7 +205,7 @@ Status TabletPeer::InitTabletPeer(
       return STATUS_FORMAT(
           IllegalState, "Invalid tablet state for init: $0", RaftGroupStatePB_Name(state));
     }
-    std::atomic_store_explicit(&tablet_, tablet, std::memory_order_release);
+    tablet_ = tablet;
     proxy_cache_ = proxy_cache;
     log_ = log;
     // "Publish" the log pointer so it can be retrieved using the log() accessor.
@@ -255,27 +255,24 @@ Status TabletPeer::InitTabletPeer(
       retryable_requests->SetMetricEntity(tablet->GetTabletMetricsEntity());
     }
 
-    atomic_store_explicit(
-        &consensus_,
-        RaftConsensus::Create(
-            options,
-            std::move(cmeta),
-            local_peer_pb_,
-            table_metric_entity,
-            tablet_metric_entity,
-            clock_,
-            this,
-            messenger,
-            proxy_cache_,
-            log_.get(),
-            server_mem_tracker,
-            tablet_->mem_tracker(),
-            mark_dirty_clbk_,
-            tablet_->table_type(),
-            raft_pool,
-            retryable_requests,
-            split_op_info),
-        std::memory_order_release);
+    consensus_ = RaftConsensus::Create(
+        options,
+        std::move(cmeta),
+        local_peer_pb_,
+        table_metric_entity,
+        tablet_metric_entity,
+        clock_,
+        this,
+        messenger,
+        proxy_cache_,
+        log_.get(),
+        server_mem_tracker,
+        tablet_->mem_tracker(),
+        mark_dirty_clbk_,
+        tablet_->table_type(),
+        raft_pool,
+        retryable_requests,
+        split_op_info);
     has_consensus_.store(true, std::memory_order_release);
 
     tablet_->SetHybridTimeLeaseProvider(std::bind(&TabletPeer::HybridTimeLease, this, _1, _2));
@@ -503,9 +500,7 @@ void TabletPeer::CompleteShutdown(IsDropTable is_drop_table) {
     std::lock_guard<simple_spinlock> lock(lock_);
     // Release mem tracker resources.
     has_consensus_.store(false, std::memory_order_release);
-    std::atomic_store_explicit(&consensus_, nullptr, std::memory_order_release);
     prepare_thread_.reset();
-    std::atomic_store_explicit(&tablet_, nullptr, std::memory_odrer_release);
     auto state = state_.load(std::memory_order_acquire);
     LOG_IF_WITH_PREFIX(DFATAL, state != RaftGroupStatePB::QUIESCING) <<
         "Bad state when completing shutdown: " << RaftGroupStatePB_Name(state);
@@ -1213,7 +1208,11 @@ TableType TabletPeer::table_type() {
 }
 
 void TabletPeer::SetFailed(const Status& error) {
-  DCHECK(error_.get(std::memory_order_acquire) == nullptr);
+  auto old_error = std::unique_ptr<Status>(error_.release(std::memory_order_acq_rel));
+  LOG_IF(DFATAL, old_error != nullptr)
+      << "SetFailed called with error " << error << " but the error is already set to "
+      << *old_error;
+
   error_ = MakeAtomicUniquePtr<Status>(error);
   auto state = state_.load(std::memory_order_acquire);
   while (state != RaftGroupStatePB::FAILED && state != RaftGroupStatePB::QUIESCING &&
