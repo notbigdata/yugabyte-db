@@ -14,6 +14,8 @@
 #ifndef YB_CONSENSUS_CONSENSUS_FWD_H
 #define YB_CONSENSUS_CONSENSUS_FWD_H
 
+#include <memory>
+
 #include "yb/gutil/ref_counted.h"
 #include "yb/util/enums.h"
 #include "yb/util/strongly_typed_bool.h"
@@ -29,11 +31,16 @@ class Log;
 namespace consensus {
 
 class Consensus;
+using ConsensusPtr = std::shared_ptr<Consensus>;
+
 class ConsensusContext;
 class PeerProxyFactory;
 class PeerMessageQueue;
 class RaftConfigPB;
+
 class RaftConsensus;
+using RaftConsensusPtr = std::shared_ptr<RaftConsensus>;
+
 class ReplicateMsg;
 class ReplicateMsgsHolder;
 class RetryableRequests;

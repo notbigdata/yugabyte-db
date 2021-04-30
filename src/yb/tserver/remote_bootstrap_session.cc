@@ -97,11 +97,11 @@ RemoteBootstrapSession::~RemoteBootstrapSession() {
   } else {
     LOG(INFO) << "No checkpoint directory was created for this session";
   }
-
 }
 
 Status RemoteBootstrapSession::ChangeRole() {
-  CHECK(Succeeded());
+  RSTATUS_DCHECK(
+      Succeeded(), IllegalState, "ChangeRole invoked for an unsuccessful bootstrap session");
 
   shared_ptr<consensus::Consensus> consensus = tablet_peer_->shared_consensus();
   // This check fixes an issue with test TestDeleteTabletDuringRemoteBootstrap in which a tablet is
@@ -118,7 +118,7 @@ Status RemoteBootstrapSession::ChangeRole() {
   // If peer being bootstrapped is already a VOTER, don't send the ChangeConfig request. This could
   // happen when a tserver that is already a VOTER in the configuration tombstones its tablet, and
   // the leader starts bootstrapping it.
-  const consensus::RaftConfigPB config = tablet_peer_->RaftConfig();
+  const consensus::RaftConfigPB config = VERIFY_RESULT(tablet_peer_->RaftConfig());
   for (const RaftPeerPB& peer_pb : config.peers()) {
     if (peer_pb.permanent_uuid() != requestor_uuid_) {
       continue;

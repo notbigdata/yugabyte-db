@@ -172,13 +172,14 @@ class TabletPeer : public consensus::ConsensusContext,
   // Starts the TabletPeer, making it available for Write()s. If this
   // TabletPeer is part of a consensus configuration this will connect it to other peers
   // in the consensus configuration.
-  CHECKED_STATUS Start(const consensus::ConsensusBootstrapInfo& info);
+  CHECKED_STATUS Start(const consensus::ConsensusBootstrapInfo& info) EXCLUDES(lock_);
 
   // Starts shutdown process.
   // Returns true if shutdown was just initiated, false if shutdown was already running.
-  MUST_USE_RESULT bool StartShutdown();
+  MUST_USE_RESULT bool StartShutdown() EXCLUDES(lock_);
+
   // Completes shutdown process and waits for it's completeness.
-  void CompleteShutdown(IsDropTable is_drop_table = IsDropTable::kFalse);
+  void CompleteShutdown(IsDropTable is_drop_table = IsDropTable::kFalse) EXCLUDES(lock_);
 
   void Shutdown(IsDropTable is_drop_table = IsDropTable::kFalse);
 
@@ -232,7 +233,19 @@ class TabletPeer : public consensus::ConsensusContext,
   consensus::Consensus* consensus() const;
   consensus::RaftConsensus* raft_consensus() const;
 
+  consensus::RaftConsensusPtr shared_raft_consensus() const {
+    return std::atomic_load_explicit(&consensus_, std::memory_order_acquire);
+  }
+
   std::shared_ptr<consensus::Consensus> shared_consensus() const;
+
+  Result<consensus::RaftConsensusPtr> shared_raft_consensus_must_be_set() const {
+    auto consensus = shared_raft_consensus();
+    if (!consensus) {
+      return STATUS_FORMAT(IllegalState, "Consensus is not set in tablet $0", tablet_id());
+    }
+    return consensus;
+  }
 
   Tablet* tablet() const {
     std::lock_guard<simple_spinlock> lock(lock_);
@@ -240,8 +253,16 @@ class TabletPeer : public consensus::ConsensusContext,
   }
 
   TabletPtr shared_tablet() const {
-    std::lock_guard<simple_spinlock> lock(lock_);
-    return tablet_;
+    return std::atomic_load_explicit(&tablet_, std::memory_order_acquire);
+  }
+
+  Result<TabletPtr> shared_tablet_must_be_set() const {
+    auto tablet = shared_tablet();
+    if (!tablet) {
+      return STATUS_FORMAT(IllegalState, "Tablet is not set in tablet peer for tablet id $0",
+                           tablet_id())
+    }
+    return tablet;
   }
 
   const RaftGroupStatePB state() const {
@@ -251,7 +272,7 @@ class TabletPeer : public consensus::ConsensusContext,
   const TabletDataState data_state() const;
 
   // Returns the current Raft configuration.
-  const consensus::RaftConfigPB RaftConfig() const;
+  Result<consensus::RaftConfigPB> RaftConfig() const;
 
   TabletStatusListener* status_listener() const {
     return status_listener_.get();
@@ -435,9 +456,9 @@ class TabletPeer : public consensus::ConsensusContext,
   scoped_refptr<log::Log> log_;
   std::atomic<log::Log*> log_atomic_{nullptr};
 
-  TabletPtr tablet_;
+  TabletPtr tablet_ GUARDED_BY(lock_);
   rpc::ProxyCache* proxy_cache_;
-  std::shared_ptr<consensus::RaftConsensus> consensus_;
+  consensus::RaftConsensusPtr consensus_ GUARDED_BY(lock_);
   gscoped_ptr<TabletStatusListener> status_listener_;
   simple_spinlock prepare_replicate_lock_;
 
@@ -451,7 +472,7 @@ class TabletPeer : public consensus::ConsensusContext,
   // We don't just use lock_ since the lifecycle operations may take a while
   // and we'd like other threads to be able to quickly poll the state_ variable
   // during them in order to reject RPCs, etc.
-  mutable simple_spinlock state_change_lock_;
+  mutable simple_spinlock state_change_lock_ ACQUIRED_BEFORE(lock_);
 
   std::unique_ptr<Preparer> prepare_thread_;
 
