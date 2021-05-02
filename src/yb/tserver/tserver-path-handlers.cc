@@ -251,7 +251,7 @@ void HandleConsensusStatusPage(
     const std::string& tablet_id, const tablet::TabletPeerPtr& peer,
     const Webserver::WebRequest& req, Webserver::WebResponse* resp) {
   std::stringstream *output = &resp->output;
-  shared_ptr<consensus::Consensus> consensus = peer->shared_consensus();
+  shared_ptr<consensus::Consensus> consensus = peer->shared_consensus_nullable();
   if (!consensus) {
     *output << "Tablet " << EscapeForHtmlToString(tablet_id) << " not running";
     return;
@@ -265,7 +265,7 @@ void HandleTransactionsPage(
     const std::string& tablet_id, const tablet::TabletPeerPtr& peer,
     const Webserver::WebRequest& req, Webserver::WebResponse* resp) {
   std::stringstream *output = &resp->output;
-  auto tablet = peer->shared_tablet();
+  auto tablet = peer->shared_tablet_nullable();
   if (!tablet) {
     *output << "Tablet " << EscapeForHtmlToString(tablet_id) << " not running";
     return;
@@ -610,7 +610,8 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& re
     string table_name = status.table_name();
     string table_id = status.table_id();
     string tablet_id_or_link;
-    if (peer->tablet() != nullptr) {
+    auto tablet = peer->shared_tablet_nullable();
+    if (tablet) {
       tablet_id_or_link = TabletLink(id);
     } else {
       tablet_id_or_link = EscapeForHtmlToString(id);
@@ -623,11 +624,10 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& re
                             ->PartitionDebugString(*peer->status_listener()->partition(),
                                                    *peer->tablet_metadata()->schema());
 
-    auto tablet = peer->shared_tablet();
     uint64_t num_sst_files = (tablet) ? tablet->GetCurrentVersionNumSSTFiles() : 0;
 
     // TODO: would be nice to include some other stuff like memory usage
-    shared_ptr<consensus::Consensus> consensus = peer->shared_consensus();
+    auto consensus = peer->shared_consensus_nullable();
     (*output) << Substitute(
         // Namespace, Table name, UUID of table, tablet id, partition
         "<tr><td>$0</td><td>$1</td><td>$2</td><td>$3</td><td>$4</td>"

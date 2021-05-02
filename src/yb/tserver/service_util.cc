@@ -56,7 +56,7 @@ void SetupErrorAndRespond(TabletServerErrorPB* error,
 }
 
 Result<int64_t> LeaderTerm(const tablet::TabletPeer& tablet_peer) {
-  std::shared_ptr<consensus::Consensus> consensus = tablet_peer.shared_consensus();
+  std::shared_ptr<consensus::Consensus> consensus = tablet_peer.shared_consensus_nullable();
   if (!consensus) {
     auto state = tablet_peer.state();
     if (state != tablet::RaftGroupStatePB::SHUTDOWN) {
@@ -103,7 +103,7 @@ void LeaderTabletPeer::FillTabletPeer(TabletPeerTablet source) {
 bool LeaderTabletPeer::FillTerm(TabletServerErrorPB* error, rpc::RpcContext* context) {
   auto leader_term = LeaderTerm(*peer);
   if (!leader_term.ok()) {
-    auto tablet = peer->shared_tablet();
+    auto tablet = peer->shared_tablet_nullable();
     if (tablet) {
       // It could happen that tablet becomes nullptr due to shutdown.
       tablet->metrics()->not_leader_rejections->Increment();
