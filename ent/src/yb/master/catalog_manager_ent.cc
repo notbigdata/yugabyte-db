@@ -392,9 +392,9 @@ Status CatalogManager::CreateNonTransactionAwareSnapshot(
   return Status::OK();
 }
 
-void CatalogManager::Submit(std::unique_ptr<tablet::Operation> operation, int64_t leader_term) {
-  operation->state()->SetTablet(tablet_peer()->tablet());
-  tablet_peer()->Submit(std::move(operation), leader_term);
+Status CatalogManager::Submit(std::unique_ptr<tablet::Operation> operation, int64_t leader_term) {
+  operation->state()->SetTablet(VERIFY_RESULT(tablet_peer()->tablet_must_be_set()));
+  return tablet_peer()->Submit(std::move(operation), leader_term);
 }
 
 Result<SysRowEntries> CatalogManager::CollectEntries(
@@ -1420,12 +1420,12 @@ void CatalogManager::SendDeleteTabletSnapshotRequest(const scoped_refptr<TabletI
 }
 
 Status CatalogManager::CreateSysCatalogSnapshot(const tablet::CreateSnapshotData& data) {
-  return tablet_peer()->tablet()->snapshots().Create(data);
+  return VERIFY_RESULT(tablet_peer()->shared_tablet_must_be_set())->snapshots().Create(data);
 }
 
 Status CatalogManager::RestoreSysCatalog(SnapshotScheduleRestoration* restoration) {
   // Restore master snapshot and load it to RocksDB.
-  auto& tablet = *tablet_peer()->tablet();
+  auto tablet = VERIFY_RESULT(tablet_peer()->shared_tablet_must_be_set());
   auto dir = VERIFY_RESULT(tablet.snapshots().RestoreToTemporary(
       restoration->snapshot_id, restoration->restore_at));
   rocksdb::Options rocksdb_options;
@@ -1521,7 +1521,7 @@ int64_t CatalogManager::LeaderTerm() {
   if (!peer) {
     return false;
   }
-  auto consensus = peer->shared_consensus();
+  auto consensus = peer->shared_consensus_nullable();
   if (!consensus) {
     return false;
   }

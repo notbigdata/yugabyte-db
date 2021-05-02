@@ -103,7 +103,7 @@ Status RemoteBootstrapSession::ChangeRole() {
   RSTATUS_DCHECK(
       Succeeded(), IllegalState, "ChangeRole invoked for an unsuccessful bootstrap session");
 
-  shared_ptr<consensus::Consensus> consensus = tablet_peer_->shared_consensus();
+  auto consensus = VERIFY_RESULT(tablet_peer_->shared_consensus_must_be_set());
   // This check fixes an issue with test TestDeleteTabletDuringRemoteBootstrap in which a tablet is
   // tombstoned while the bootstrap is happening. This causes the peer's consensus object to be
   // null.
@@ -167,7 +167,7 @@ Status RemoteBootstrapSession::ChangeRole() {
 }
 
 Status RemoteBootstrapSession::SetInitialCommittedState() {
-  shared_ptr <consensus::Consensus> consensus = tablet_peer_->shared_consensus();
+  auto consensus = tablet_peer_->shared_consensus_nullable();
   if (!consensus) {
     tablet::RaftGroupStatePB tablet_state = tablet_peer_->state();
     return STATUS(IllegalState,
@@ -236,10 +236,7 @@ Status RemoteBootstrapSession::Init() {
   // Get the latest opid in the log at this point in time so we can re-anchor.
   auto last_logged_opid = tablet_peer_->GetLatestLogEntryOpId();
 
-  auto tablet = tablet_peer_->shared_tablet();
-  if (PREDICT_FALSE(!tablet)) {
-    return STATUS(IllegalState, "Tablet is not running");
-  }
+  auto tablet = VERIFY_RESULT(tablet_peer_->shared_tablet_must_be_set());
 
   MonoTime now = MonoTime::Now();
   auto* kv_store = tablet_superblock_.mutable_kv_store();

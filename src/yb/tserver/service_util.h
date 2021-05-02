@@ -140,7 +140,7 @@ Result<TabletPeerTablet> LookupTabletPeerOrRespond(
     return s;
   }
 
-  result.tablet = result.tablet_peer->shared_tablet();
+  result.tablet = result.tablet_peer->shared_tablet_nullable();
   if (!result.tablet) {
     Status s = STATUS(IllegalState,
                       "Tablet not running",

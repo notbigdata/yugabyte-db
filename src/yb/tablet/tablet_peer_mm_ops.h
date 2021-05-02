@@ -33,6 +33,8 @@
 #ifndef YB_TABLET_TABLET_PEER_MM_OPS_H_
 #define YB_TABLET_TABLET_PEER_MM_OPS_H_
 
+#include <memory>
+
 #include "yb/tablet/maintenance_manager.h"
 #include "yb/tablet/tablet_peer.h"
 #include "yb/util/stopwatch.h"
@@ -51,7 +53,7 @@ namespace tablet {
 // Only one LogGC op can run at a time.
 class LogGCOp : public MaintenanceOp {
  public:
-  explicit LogGCOp(TabletPeer* tablet_peer);
+  explicit LogGCOp(const TabletPeer& tablet_peer, const TabletPtr& tablet);
 
   virtual void UpdateStats(MaintenanceOpStats* stats) override;
 
@@ -64,7 +66,8 @@ class LogGCOp : public MaintenanceOp {
   virtual scoped_refptr<AtomicGauge<uint32_t> > RunningGauge() const override;
 
  private:
-  TabletPeer *const tablet_peer_;
+
+  std::weak_ptr<TabletPeer> weak_tablet_peer_;
   scoped_refptr<Histogram> log_gc_duration_;
   scoped_refptr<AtomicGauge<uint32_t> > log_gc_running_;
   mutable Semaphore sem_;

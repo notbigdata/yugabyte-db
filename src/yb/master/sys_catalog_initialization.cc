@@ -131,7 +131,7 @@ Status RestoreInitialSysCatalogSnapshot(
 
   TabletSnapshotOpResponsePB tablet_snapshot_resp;
   auto tx_state = std::make_unique<SnapshotOperationState>(
-      sys_catalog_tablet_peer->tablet(), &tablet_snapshot_req);
+      VERIFY_RESULT(sys_catalog_tablet_peer->tablet_must_be_set()), &tablet_snapshot_req);
 
   CountDownLatch latch(1);
   tx_state->set_completion_callback(

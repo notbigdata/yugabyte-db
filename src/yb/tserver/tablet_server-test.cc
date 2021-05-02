@@ -276,10 +276,11 @@ TEST_F(TabletServerTest, TestInsert) {
   WriteResponsePB resp;
   RpcController controller;
 
-  std::shared_ptr<TabletPeer> tablet;
+  std::shared_ptr<TabletPeer> tablet_peer;
   ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet));
+  auto tablet = ASSERT_RESULT(tablet_peer->shared_tablet_must_be_set());
   scoped_refptr<Counter> rows_inserted =
-      METRIC_rows_inserted.Instantiate(tablet->tablet()->GetTabletMetricsEntity());
+      METRIC_rows_inserted.Instantiate(tablet->GetTabletMetricsEntity());
   ASSERT_EQ(0, rows_inserted->value());
   tablet.reset();
 
@@ -582,7 +583,8 @@ TEST_F(TabletServerTest, TestDeleteTablet) {
   // Put some data in the tablet. We flush and insert more rows to ensure that
   // there is data both in the MRS and on disk.
   ASSERT_NO_FATALS(InsertTestRowsRemote(0, 1, 1));
-  ASSERT_OK(tablet_peer_->tablet()->Flush(tablet::FlushMode::kSync));
+  auto tablet = ASSERT_RESULT(tablet_peer_->shared_tablet_must_be_set());
+  ASSERT_OK(tablet->Flush(tablet::FlushMode::kSync));
   ASSERT_NO_FATALS(InsertTestRowsRemote(0, 2, 1));
 
   // Drop any local references to the tablet from within this test,

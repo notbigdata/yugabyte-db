@@ -170,7 +170,7 @@ Result<bool> GetPgIndexStatus(
       GetPgsqlTableId(VERIFY_RESULT(GetPgsqlDatabaseOid(idx_id)), kPgIndexTableOid);
 
   const tablet::Tablet* catalog_tablet =
-      catalog_manager->sys_catalog()->tablet_peer()->tablet();
+      VERIFY_RESULT(catalog_manager->sys_catalog()->tablet_peer()->tablet_must_be_set());
   const Schema& pg_index_schema =
       VERIFY_RESULT(catalog_tablet->metadata()->GetTableInfo(pg_index_id))->schema;
 

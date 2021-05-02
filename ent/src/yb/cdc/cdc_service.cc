@@ -396,8 +396,7 @@ void CDCServiceImpl::GetChanges(const GetChangesRequestPB* req,
   RPC_STATUS_RETURN_ERROR(s, resp->mutable_error(), CDCErrorPB::INTERNAL_ERROR, context);
 
   {
-    std::shared_ptr<consensus::Consensus> shared_consensus = tablet_peer->shared_consensus();
-
+    auto shared_consensus = tablet_peer->shared_consensus_nullable();
     RPC_CHECK_NE_AND_RETURN_ERROR(shared_consensus, nullptr,
         STATUS_SUBSTITUTE(InternalError, "Failed to get tablet $0 peer consensus",
             req->tablet_id()),

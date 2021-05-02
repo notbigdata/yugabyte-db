@@ -706,7 +706,9 @@ Status CatalogManager::ElectedAsLeaderCb() {
 
 Status CatalogManager::WaitUntilCaughtUpAsLeader(const MonoDelta& timeout) {
   string uuid = master_->fs_manager()->uuid();
-  Consensus* consensus = tablet_peer()->consensus();
+  auto tablet_peer = tablet_peer();
+  auto consensus = VERIFY_RESULT(tablet_peer->shared_consensus_must_be_set());
+  auto tablet = VERIFY_RESULT(tablet_peer()->shared_tablet_must_be_set());
   ConsensusStatePB cstate = consensus->ConsensusState(CONSENSUS_CONFIG_ACTIVE);
   if (!cstate.has_leader_uuid() || cstate.leader_uuid() != uuid) {
     return STATUS_SUBSTITUTE(IllegalState,
@@ -716,11 +718,11 @@ Status CatalogManager::WaitUntilCaughtUpAsLeader(const MonoDelta& timeout) {
   // Wait for all transactions to be committed.
   const CoarseTimePoint deadline = CoarseMonoClock::now() + timeout;
   {
-    tablet::HistoryCutoffPropagationDisabler disabler(tablet_peer()->tablet()->RetentionPolicy());
+    tablet::HistoryCutoffPropagationDisabler disabler(tablet->RetentionPolicy());
     RETURN_NOT_OK(tablet_peer()->operation_tracker()->WaitForAllToFinish(timeout));
   }
 
-  RETURN_NOT_OK(tablet_peer()->consensus()->WaitForLeaderLeaseImprecise(deadline));
+  RETURN_NOT_OK(consensus->WaitForLeaderLeaseImprecise(deadline));
   return Status::OK();
 }
 
@@ -1069,11 +1071,16 @@ bool CatalogManager::StartRunningInitDbIfNeeded(int64_t term) {
     Status status = PgWrapper::InitDbForYSQL(master_addresses_str, "/tmp");
 
     if (FLAGS_create_initial_sys_catalog_snapshot && status.ok()) {
-      Status write_snapshot_status = initial_snapshot_writer_->WriteSnapshot(
-          sys_catalog_->tablet_peer()->tablet(),
-          FLAGS_initial_sys_catalog_snapshot_path);
-      if (!write_snapshot_status.ok()) {
-        status = write_snapshot_status;
+      auto tablet = sys_catalog_->tablet_peer()->shared_tablet_nullable();
+      if (!tablet) {
+        status = STATUS(IllegalState, "System catalog tablet is not running");
+      } else {
+        Status write_snapshot_status = initial_snapshot_writer_->WriteSnapshot(
+            tablet,
+            FLAGS_initial_sys_catalog_snapshot_path);
+        if (!write_snapshot_status.ok()) {
+          status = write_snapshot_status;
+        }
       }
     }
     Status finish_status = InitDbFinished(status, term);

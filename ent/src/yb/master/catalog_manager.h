@@ -255,7 +255,7 @@ class CatalogManager : public yb::master::CatalogManager, SnapshotCoordinatorCon
 
   const Schema& schema() override;
 
-  void Submit(std::unique_ptr<tablet::Operation> operation, int64_t leader_term) override;
+  Status Submit(std::unique_ptr<tablet::Operation> operation, int64_t leader_term) override;
 
   void SendCreateTabletSnapshotRequest(const scoped_refptr<TabletInfo>& tablet,
                                        const std::string& snapshot_id,

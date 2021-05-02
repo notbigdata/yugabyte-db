@@ -96,7 +96,7 @@ ScopedLeaderSharedLock::ScopedLeaderSharedLock(
   }
 
   // Check if the catalog manager is the leader.
-  Consensus* consensus = catalog_->sys_catalog_->tablet_peer()->consensus();
+  auto consensus = VERIFY_RESULT(catalog_->sys_catalog_->tablet_peer()->consensus_must_be_set());
   ConsensusStatePB cstate = consensus->ConsensusState(CONSENSUS_CONFIG_COMMITTED);
   if (PREDICT_FALSE(!cstate.has_leader_uuid() || cstate.leader_uuid() != uuid)) {
     leader_status_ = STATUS_FORMAT(IllegalState,

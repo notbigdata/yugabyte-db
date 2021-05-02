@@ -722,8 +722,6 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   DISALLOW_COPY_AND_ASSIGN(RaftConsensus);
 };
 
-using RaftConsensusPtr = std::shared_ptr<RaftConsensus>;
-
 }  // namespace consensus
 }  // namespace yb
 

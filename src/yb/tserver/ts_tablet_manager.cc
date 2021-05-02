@@ -306,15 +306,25 @@ constexpr int32_t kDefaultTserverBlockCacheSizePercentage = 50;
 void TSTabletManager::VerifyTabletData() {
   LOG_WITH_PREFIX(INFO) << "Beginning tablet data verification checks";
   for (const TabletPeerPtr& peer : GetTabletPeers()) {
+    auto tablet_id = peer->tablet_id();
     if (peer->state() == RUNNING) {
       if (PREDICT_FALSE(FLAGS_skip_tablet_data_verification)) {
         LOG_WITH_PREFIX(INFO)
-            << Format("Skipped tablet data verification check on $0", peer->tablet_id());
+            << "Skipped tablet data verification check on " << tablet_id;
       } else {
-        Status s = peer->tablet()->VerifyDataIntegrity();
-        if (!s.ok()) {
-          LOG(WARNING) << "Tablet data integrity verification failed on " << peer->tablet_id()
-                       << ": " << s;
+        auto tablet_result = peer->shared_tablet_must_be_set();
+        if (tablet_result.ok()) {
+          auto tablet = *tablet_result;
+          Status s = tablet->VerifyDataIntegrity();
+          if (!s.ok()) {
+            LOG_WITH_PREFIX(WARNING)
+                << "Tablet data integrity verification failed on " << tablet_id
+                << ": " << s;
+          }
+        } else {
+          LOG_WITH_PREFIX(WARNING)
+              << "Could not get tablet from TabletPeer for tablet id " << tablet_id
+              << ": " << tablet_result.status();
         }
       }
     }
@@ -810,7 +820,7 @@ Status TSTabletManager::ApplyTabletSplit(
 
   if (raft_log == nullptr) {
     auto tablet_peer = VERIFY_RESULT(LookupTablet(tablet_id));
-    raft_log = tablet_peer->raft_consensus()->log().get();
+    raft_log = VERIFY_RESULT(tablet_peer->raft_consensus_must_be_set())->log().get();
   }
 
   MAYBE_FAULT(FLAGS_TEST_fault_crash_in_split_before_log_flushed);
@@ -1100,7 +1110,13 @@ Status TSTabletManager::StartRemoteBootstrap(const StartRemoteBootstrapRequestPB
       tablet_peer->error(), tablet_peer, meta, fs_manager_->uuid(),
       "Remote bootstrap: OpenTablet() failed", this));
 
-  auto status = rb_client->VerifyChangeRoleSucceeded(tablet_peer->shared_consensus());
+  auto shared_consensus_result = tablet_peer->shared_consensus_must_be_set();
+  Status status;
+  if (!shared_consensus_result.ok()) {
+    status = shared_consensus_result.status();
+  } else {
+    status = rb_client->VerifyChangeRoleSucceeded(shared_consensus_result);
+  }
   if (!status.ok()) {
     // If for some reason this tserver wasn't promoted (e.g. from PRE-VOTER to VOTER), the leader
     // will find out and do the CHANGE_CONFIG.

@@ -64,21 +64,26 @@ using strings::Substitute;
 // LogGCOp.
 //
 
-LogGCOp::LogGCOp(TabletPeer* tablet_peer)
-    : MaintenanceOp(
-          StringPrintf("LogGCOp(%s)", tablet_peer->tablet()->tablet_id().c_str()),
+LogGCOp::LogGCOp(const TabletPtr& tablet_peer, const TabletPeer& tablet)
+    : weak_tablet_peer_(tablet_peer),
+      MaintenanceOp(
+          StringPrintf("LogGCOp(%s)", tablet->tablet_id().c_str()),
           MaintenanceOp::LOW_IO_USAGE),
-      tablet_peer_(tablet_peer),
       log_gc_duration_(
-          METRIC_log_gc_duration.Instantiate(tablet_peer->tablet()->GetTableMetricsEntity())),
+          METRIC_log_gc_duration.Instantiate(tablet->GetTableMetricsEntity())),
       log_gc_running_(
-          METRIC_log_gc_running.Instantiate(tablet_peer->tablet()->GetTableMetricsEntity(), 0)),
+          METRIC_log_gc_running.Instantiate(tablet->GetTableMetricsEntity(), 0)),
       sem_(1) {}
 
 void LogGCOp::UpdateStats(MaintenanceOpStats* stats) {
   int64_t retention_size;
 
-  if (!tablet_peer_->GetGCableDataSize(&retention_size).ok()) {
+  auto tablet_peer = weak_tablet_peer_.lock();
+  if (!tablet_peer) {
+    LOG(INFO) << __PRETTY_FUNCTION__ << ": tablet peer already destroyed, doing nothing.";
+    return;
+  }
+  if (!tablet_peer->GetGCableDataSize(&retention_size).ok()) {
     return;
   }
   stats->set_logs_retained_bytes(retention_size);
@@ -92,7 +97,13 @@ bool LogGCOp::Prepare() {
 void LogGCOp::Perform() {
   CHECK(!sem_.try_lock());
 
-  Status s = tablet_peer_->RunLogGC();
+  auto tablet_peer = weak_tablet_peer_.lock();
+  if (!tablet_peer) {
+    LOG(INFO) << __PRETTY_FUNCTION__ << ": tablet peer already destroyed, doing nothing.";
+    return;
+  }
+
+  Status s = tablet_peer->RunLogGC();
   if (!s.ok()) {
     s = s.CloneAndPrepend("Unexpected error while running Log GC from TabletPeer");
     LOG(ERROR) << s.ToString();

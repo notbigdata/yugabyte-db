@@ -135,7 +135,8 @@ struct TabletOnDiskSizeInfo {
 class TabletPeer : public consensus::ConsensusContext,
                    public TransactionParticipantContext,
                    public TransactionCoordinatorContext,
-                   public WriteOperationContext {
+                   public WriteOperationContext,
+                   public std::enable_shared_from_this<TabletPeer> {
  public:
   typedef std::map<int64_t, int64_t> MaxIdxToSegmentSizeMap;
 
@@ -230,40 +231,32 @@ class TabletPeer : public consensus::ConsensusContext,
   // Returns false if it is preferable to don't apply write operation.
   bool ShouldApplyWrite() override;
 
-  consensus::Consensus* consensus() const;
-  consensus::RaftConsensus* raft_consensus() const;
+  // These functions can return nullptr.
+  // consensus::RaftConsensusPtr shared_raft_consensus() const;
+  // consensus::ConsensusPtr shared_consensus() const;
 
-  consensus::RaftConsensusPtr shared_raft_consensus() const {
-    return std::atomic_load_explicit(&consensus_, std::memory_order_acquire);
-  }
+  // TabletPtr shared_tablet() const;
 
-  std::shared_ptr<consensus::Consensus> shared_consensus() const;
+  Result<TabletPtr> shared_tablet_must_be_set() const;
+  TabletPtr shared_tablet_nullable() const;
 
-  Result<consensus::RaftConsensusPtr> shared_raft_consensus_must_be_set() const {
-    auto consensus = shared_raft_consensus();
-    if (!consensus) {
-      return STATUS_FORMAT(IllegalState, "Consensus is not set in tablet $0", tablet_id());
-    }
-    return consensus;
-  }
+  Result<Tablet*> tablet_must_be_set() const;
 
-  Tablet* tablet() const {
-    std::lock_guard<simple_spinlock> lock(lock_);
-    return tablet_.get();
-  }
+  Result<consensus::ConsensusPtr> shared_consensus_must_be_set() const;
+  consensus::ConsensusPtr shared_consensus_nullable() const;
 
-  TabletPtr shared_tablet() const {
-    return std::atomic_load_explicit(&tablet_, std::memory_order_acquire);
-  }
+  Result<consensus::RaftConsensusPtr> shared_raft_consensus_must_be_set() const;
+  Result<consensus::Consensus*> consensus_must_be_set() const;
+  Result<consensus::RaftConsensus*> raft_consensus_must_be_set() const;
 
-  Result<TabletPtr> shared_tablet_must_be_set() const {
-    auto tablet = shared_tablet();
-    if (!tablet) {
-      return STATUS_FORMAT(IllegalState, "Tablet is not set in tablet peer for tablet id $0",
-                           tablet_id())
-    }
-    return tablet;
-  }
+  // Tablet* tablet() const {
+  //   std::lock_guard<simple_spinlock> lock(lock_);
+  //   return tablet_.get();
+  // }
+
+  // TabletPtr shared_tablet() const {
+  //   return std::atomic_load_explicit(&tablet_, std::memory_order_acquire);
+  // }
 
   const RaftGroupStatePB state() const {
     return state_.load(std::memory_order_acquire);
@@ -437,18 +430,27 @@ class TabletPeer : public consensus::ConsensusContext,
 
   virtual std::unique_ptr<Operation> CreateOperation(consensus::ReplicateMsg* replicate_msg);
 
+  Status CheckTabletAndConsensusAreSet() const;
+
   const RaftGroupMetadataPtr meta_;
 
   const std::string tablet_id_;
 
   const consensus::RaftPeerPB local_peer_pb_;
 
-  // The atomics state_, error_ and has_consensus_ maintain information about the tablet peer.
+  // The atomics state_, error_, and has_tablet_and_consensus_ maintain information about the tablet
+  // peer that we would like to access without locking.
+  //
   // While modifying the other fields in tablet peer, state_ is modified last.
   // error_ is set before state_ is set to an error state.
+  //
+  // Once has_tablet_and_consensus_ is set to true, we guarantee that we are never modifying the
+  // shared pointers tablet_ and consensus_ and that those refcounts are held for the rest of the
+  // lifetime of the TabletPeer instance.
+
   std::atomic<enum RaftGroupStatePB> state_;
   AtomicUniquePtr<Status> error_;
-  std::atomic<bool> has_consensus_ = {false};
+  std::atomic<bool> has_tablet_and_consensus_{false};
 
   OperationTracker operation_tracker_;
   OperationOrderVerifier operation_order_verifier_;
@@ -457,6 +459,14 @@ class TabletPeer : public consensus::ConsensusContext,
   std::atomic<log::Log*> log_atomic_{nullptr};
 
   TabletPtr tablet_ GUARDED_BY(lock_);
+
+  // Once we set these atomics, we guarantee that we are holding a refcount to the corresponding
+  // shared pointers at least until the TabletPeer instance itself is destructed. So in methods
+  // of TabletPeer that are called on a valid TabletPeer instance, we should be able to read these
+  // atomics and safely access the objects that they point to.
+  std::atomic<Tablet*> atomic_tablet_{nullptr};
+  std::atomic<consensus::RaftConsensus*> atomic_raft_consensus_{nullptr};
+
   rpc::ProxyCache* proxy_cache_;
   consensus::RaftConsensusPtr consensus_ GUARDED_BY(lock_);
   gscoped_ptr<TabletStatusListener> status_listener_;
@@ -489,7 +499,8 @@ class TabletPeer : public consensus::ConsensusContext,
   Callback<void(std::shared_ptr<consensus::StateChangeContext> context)> mark_dirty_clbk_;
 
   // List of maintenance operations for the tablet that need information that only the peer
-  // can provide.
+  // can provide. These operations are owned by the maintenance manager.
+  // TODO: we should not be using raw pointers here.
   std::vector<MaintenanceOp*> maintenance_ops_;
 
   // Cache the permanent of the tablet UUID to retrieve it without a lock in the common case.

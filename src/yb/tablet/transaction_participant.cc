@@ -1430,7 +1430,7 @@ class TransactionParticipant::Impl
       if (!*safe_time) {
         *safe_time = participant_context->SafeTimeForTransactionParticipant();
       }
-      return *safe_time >= required_safe_time;
+      return safe_time->is_valid() && *safe_time >= required_safe_time;
     }
   };
 

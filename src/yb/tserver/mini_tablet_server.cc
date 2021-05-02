@@ -210,10 +210,11 @@ Status MiniTabletServer::FlushTablets(tablet::FlushMode mode, tablet::FlushFlags
     return Status::OK();
   }
   return ForAllTablets(this, [mode, flags](TabletPeer* tablet_peer) -> Status {
-    if (!tablet_peer->tablet()) {
+    auto tablet = tablet_peer->shared_tablet_nullable();
+    if (!tablet) {
       return Status::OK();
     }
-    return tablet_peer->tablet()->Flush(mode, flags);
+    return tablet->Flush(mode, flags);
   });
 }
 
@@ -222,8 +223,9 @@ Status MiniTabletServer::CompactTablets() {
     return Status::OK();
   }
   return ForAllTablets(this, [](TabletPeer* tablet_peer) {
-    if (tablet_peer->tablet()) {
-      tablet_peer->tablet()->ForceRocksDBCompactInTest();
+    auto tablet = tablet_peer->shared_tablet_nullable();
+    if (tablet) {
+      tablet->ForceRocksDBCompactInTest();
     }
     return Status::OK();
   });

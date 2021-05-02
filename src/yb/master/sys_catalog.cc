@@ -364,7 +364,7 @@ void SysCatalogTable::SysCatalogStateChanged(
     const string& tablet_id,
     std::shared_ptr<StateChangeContext> context) {
   CHECK_EQ(tablet_id, tablet_peer()->tablet_id());
-  consensus::ConsensusPtr consensus = tablet_peer()->shared_consensus();
+  auto consensus = tablet_peer()->shared_consensus_nullable();
   if (!consensus) {
     LOG_WITH_PREFIX(WARNING) << "Received notification of tablet state change "
                              << "but tablet no longer running. Tablet ID: "
@@ -643,7 +643,7 @@ CHECKED_STATUS SysCatalogTable::SyncWrite(SysCatalogWriter* writer) {
 
   auto latch = std::make_shared<CountDownLatch>(1);
   auto operation_state = std::make_unique<tablet::WriteOperationState>(
-      tablet_peer()->tablet(), &writer->req(), resp.get());
+      VERIFY_RESULT(tablet_peer()->tablet_must_be_set()), &writer->req(), resp.get());
   operation_state->set_completion_callback(
       tablet::MakeLatchOperationCompletionCallback(latch, resp));
 
@@ -762,7 +762,7 @@ Status SysCatalogTable::ReadYsqlCatalogVersion(TableId ysql_catalog_table_id,
                                                uint64_t *catalog_version,
                                                uint64_t *last_breaking_version) {
   TRACE_EVENT0("master", "ReadYsqlCatalogVersion");
-  const tablet::TabletPtr tablet = tablet_peer()->shared_tablet();
+  const tablet::TabletPtr tablet = VERIFY_RESULT(tablet_peer()->shared_tablet_must_be_set());
   const auto* meta = tablet->metadata();
   const std::shared_ptr<tablet::TableInfo> ysql_catalog_table_info =
       VERIFY_RESULT(meta->GetTableInfo(ysql_catalog_table_id));
@@ -811,7 +811,7 @@ Status SysCatalogTable::ReadYsqlCatalogVersion(TableId ysql_catalog_table_id,
 Result<shared_ptr<TablespaceIdToReplicationInfoMap>> SysCatalogTable::ReadPgTablespaceInfo() {
   TRACE_EVENT0("master", "ReadPgTablespaceInfo");
 
-  const tablet::TabletPtr tablet = tablet_peer()->shared_tablet();
+  const tablet::TabletPtr tablet = VERIFY_RESULT(tablet_peer()->shared_tablet_must_be_set());
 
   const auto& pg_tablespace_info =
       VERIFY_RESULT(tablet->metadata()->GetTableInfo(kPgTablespaceTableId));
@@ -891,7 +891,7 @@ Status SysCatalogTable::ReadPgClassInfo(
     return STATUS(InternalError, "table_to_tablespace_map not initialized");
   }
 
-  const tablet::TabletPtr tablet = tablet_peer()->shared_tablet();
+  const tablet::TabletPtr tablet = VERIFY_RESULT(tablet_peer()->shared_tablet_must_be_set());
 
   const auto& pg_table_id = GetPgsqlTableId(database_oid, kPgClassTableOid);
   const auto& table_info = VERIFY_RESULT(
@@ -1076,7 +1076,7 @@ Status SysCatalogTable::CopyPgsqlTables(
       "size mismatch between source tables and target tables");
 
   int batch_count = 0, total_count = 0, total_bytes = 0;
-  const tablet::TabletPtr tablet = tablet_peer()->shared_tablet();
+  const tablet::TabletPtr tablet = VERIFY_RESULT(tablet_peer()->shared_tablet_must_be_set());
   const auto* meta = tablet->metadata();
   for (int i = 0; i < source_table_ids.size(); ++i) {
     auto& source_table_id = source_table_ids[i];
