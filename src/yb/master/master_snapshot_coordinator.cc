@@ -58,7 +58,7 @@ namespace {
 YB_DEFINE_ENUM(Bound, (kFirst)(kLast));
 YB_DEFINE_ENUM(RestorePhase, (kInitial)(kPostSysCatalogLoad));
 
-void SubmitWrite(
+CHECKED_STATUS SubmitWrite(
     docdb::KeyValueWriteBatchPB&& write_batch, int64_t leader_term,
     SnapshotCoordinatorContext* context,
     const std::shared_ptr<Synchronizer>& synchronizer = nullptr) {
@@ -74,7 +74,7 @@ void SubmitWrite(
   auto operation = std::make_unique<tablet::WriteOperation>(
       std::move(state), yb::OpId::kUnknownTerm, ScopedOperation(),
       CoarseMonoClock::now() + FLAGS_sys_catalog_write_timeout_ms * 1ms, /* context */ nullptr);
-  context->Submit(std::move(operation), leader_term);
+  return context->Submit(std::move(operation), leader_term);
 }
 
 struct NoOp {
@@ -407,7 +407,7 @@ class MasterSnapshotCoordinator::Impl {
 
     docdb::KeyValueWriteBatchPB write_batch;
     RETURN_NOT_OK(schedule.StoreToWriteBatch(&write_batch));
-    SubmitWrite(std::move(write_batch), leader_term, &context_, synchronizer);
+    RETURN_NOT_OK(SubmitWrite(std::move(write_batch), leader_term, &context_, synchronizer));
     RETURN_NOT_OK(synchronizer->WaitUntil(ToSteady(deadline)));
 
     return schedule.id();
@@ -701,20 +701,19 @@ class MasterSnapshotCoordinator::Impl {
     return snapshot ? snapshot->snapshot_hybrid_time() : HybridTime::kInvalid;
   }
 
-  void DeleteSnapshot(int64_t leader_term, const TxnSnapshotId& snapshot_id) {
+  Status DeleteSnapshot(int64_t leader_term, const TxnSnapshotId& snapshot_id) {
     docdb::KeyValueWriteBatchPB write_batch;
 
     auto encoded_key = EncodedSnapshotKey(snapshot_id, &context_);
     if (!encoded_key.ok()) {
-      LOG(DFATAL) << "Failed to encode id for deletion: " << encoded_key.status();
-      return;
+      RSTATUS_DCHECK(encoded_key.status().CloneAndPrepend("Failed to encode id for deletion"));
     }
     auto pair = write_batch.add_write_pairs();
     pair->set_key(encoded_key->AsSlice().cdata(), encoded_key->size());
     char value = { docdb::ValueTypeAsChar::kTombstone };
     pair->set_value(&value, 1);
 
-    SubmitWrite(std::move(write_batch), leader_term, &context_);
+    return SubmitWrite(std::move(write_batch), leader_term, &context_);
   }
 
   CHECKED_STATUS ExecuteScheduleOperation(
@@ -815,7 +814,7 @@ class MasterSnapshotCoordinator::Impl {
     context_.Submit(std::move(operation), leader_term);
   }
 
-  void SubmitRestore(const TxnSnapshotId& snapshot_id, HybridTime restore_at,
+  Status SubmitRestore(const TxnSnapshotId& snapshot_id, HybridTime restore_at,
                      const TxnSnapshotRestorationId& restoration_id, int64_t leader_term,
                      const std::shared_ptr<Synchronizer>& synchronizer) {
     auto operation_state = std::make_unique<tablet::SnapshotOperationState>(nullptr);
@@ -832,7 +831,7 @@ class MasterSnapshotCoordinator::Impl {
         tablet::WeakSynchronizerOperationCompletionCallback>(synchronizer));
     auto operation = std::make_unique<tablet::SnapshotOperation>(std::move(operation_state));
 
-    context_.Submit(std::move(operation), leader_term);
+    return context_.Submit(std::move(operation), leader_term);
   }
 
   void DeleteSnapshotAborted(

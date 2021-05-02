@@ -393,7 +393,8 @@ Status CatalogManager::CreateNonTransactionAwareSnapshot(
 }
 
 Status CatalogManager::Submit(std::unique_ptr<tablet::Operation> operation, int64_t leader_term) {
-  operation->state()->SetTablet(VERIFY_RESULT(tablet_peer()->tablet_must_be_set()));
+  operation->state()->SetTablet(
+      VERIFY_RESULT(sys_catalog_tablet_peer()->tablet_must_be_set()));
   return tablet_peer()->Submit(std::move(operation), leader_term);
 }
 

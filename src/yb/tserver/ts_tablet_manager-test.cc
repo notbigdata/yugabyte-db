@@ -131,7 +131,7 @@ class TsTabletManagerTest : public YBTest {
     RETURN_NOT_OK(tablet_peer->WaitUntilConsensusRunning(
           MonoDelta::FromMilliseconds(kConsensusRunningWaitMs)));
 
-    return tablet_peer->consensus()->EmulateElection();
+    return VERIFY_RESULT(tablet_peer->shared_consensus_must_be_set())->EmulateElection();
   }
 
  protected:
@@ -149,7 +149,8 @@ TEST_F(TsTabletManagerTest, TestCreateTablet) {
   // Create a new tablet.
   std::shared_ptr<TabletPeer> peer;
   ASSERT_OK(CreateNewTablet(kTableId, kTabletId, schema_, &peer));
-  ASSERT_EQ(kTabletId, peer->tablet()->tablet_id());
+  auto tablet = ASSERT_RESULT(peer->shared_tablet_must_be_set());
+  ASSERT_EQ(kTabletId, tablet->tablet_id());
   peer.reset();
 
   // Re-load the tablet manager from the filesystem.

@@ -187,7 +187,8 @@ class RemoteBootstrapTest : public YBTabletTest {
       if (FLAGS_quick_leader_election_on_create) {
         return tablet_peer_->LeaderStatus() == consensus::LeaderStatus::LEADER_AND_READY;
       }
-      RETURN_NOT_OK(tablet_peer_->consensus()->EmulateElection());
+      auto consensus = VERIFY_RESULT(tablet_peer_->shared_consensus_must_be_set());
+      RETURN_NOT_OK(consensus->EmulateElection());
       return true;
     }, MonoDelta::FromMilliseconds(500), "If quick leader elections enabled, wait for peer to be a "
                                          "leader, otherwise emulate.");
@@ -208,7 +209,8 @@ class RemoteBootstrapTest : public YBTabletTest {
       WriteResponsePB resp;
       CountDownLatch latch(1);
 
-      auto state = std::make_unique<WriteOperationState>(tablet_peer_->tablet(), &req, &resp);
+      auto tablet = ASSERT_RESULT(tablet_peer_->shared_tablet_must_be_set());
+      auto state = std::make_unique<WriteOperationState>(tablet, &req, &resp);
       state->set_completion_callback(tablet::MakeLatchOperationCompletionCallback(&latch, &resp));
       tablet_peer_->WriteAsync(
           std::move(state), kLeaderTerm, CoarseTimePoint::max() /* deadline */);

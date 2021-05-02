@@ -1364,7 +1364,7 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   std::unique_ptr<ClusterLoadBalancer> load_balance_policy_;
 
   // Tablet peer for the sys catalog tablet's peer.
-  const std::shared_ptr<tablet::TabletPeer> tablet_peer() const;
+  const std::shared_ptr<tablet::TabletPeer> sys_catalog_tablet_peer() const;
 
   // Use the Raft config that has been bootstrapped to update the in-memory state of master options
   // and also the on-disk state of the consensus meta object.

@@ -64,15 +64,15 @@ using strings::Substitute;
 // LogGCOp.
 //
 
-LogGCOp::LogGCOp(const TabletPtr& tablet_peer, const TabletPeer& tablet)
-    : weak_tablet_peer_(tablet_peer),
-      MaintenanceOp(
+LogGCOp::LogGCOp(
+    const TabletPeerPtr& tablet_peer,
+    const TabletPtr& tablet)
+    : MaintenanceOp(
           StringPrintf("LogGCOp(%s)", tablet->tablet_id().c_str()),
           MaintenanceOp::LOW_IO_USAGE),
-      log_gc_duration_(
-          METRIC_log_gc_duration.Instantiate(tablet->GetTableMetricsEntity())),
-      log_gc_running_(
-          METRIC_log_gc_running.Instantiate(tablet->GetTableMetricsEntity(), 0)),
+      weak_tablet_peer_(tablet_peer),
+      log_gc_duration_(METRIC_log_gc_duration.Instantiate(tablet->GetTableMetricsEntity())),
+      log_gc_running_(METRIC_log_gc_running.Instantiate(tablet->GetTableMetricsEntity(), 0)),
       sem_(1) {}
 
 void LogGCOp::UpdateStats(MaintenanceOpStats* stats) {

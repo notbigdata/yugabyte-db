@@ -346,7 +346,6 @@ std::reference_wrapper<T> WrapMove(const Result<T&>& result) {
 #define VERIFY_RESULT(expr) \
   RESULT_CHECKER_HELPER(expr, RETURN_NOT_OK(__result))
 
-
 // Helper version of VERIFY_RESULT which returns reference instead of std::reference_wrapper.
 #define VERIFY_RESULT_REF(expr) \
   VERIFY_RESULT(expr).get()

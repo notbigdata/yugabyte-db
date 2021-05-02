@@ -148,7 +148,11 @@ int64_t GetTargetBlockCacheSize(const int32_t default_block_cache_size_percentag
 }
 
 size_t GetLogCacheSize(tablet::TabletPeer* peer) {
-  return down_cast<consensus::RaftConsensus*>(peer->consensus())->LogCacheSize();
+  auto consensus = peer->shared_raft_consensus_nullable();
+  if (!consensus) {
+    return 0;
+  }
+  return consensus->LogCacheSize();
 }
 
 }  // namespace

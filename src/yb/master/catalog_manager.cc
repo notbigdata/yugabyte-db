@@ -706,9 +706,9 @@ Status CatalogManager::ElectedAsLeaderCb() {
 
 Status CatalogManager::WaitUntilCaughtUpAsLeader(const MonoDelta& timeout) {
   string uuid = master_->fs_manager()->uuid();
-  auto tablet_peer = tablet_peer();
+  auto tablet_peer = sys_catalog_tablet_peer();
   auto consensus = VERIFY_RESULT(tablet_peer->shared_consensus_must_be_set());
-  auto tablet = VERIFY_RESULT(tablet_peer()->shared_tablet_must_be_set());
+  auto tablet = VERIFY_RESULT(tablet_peer->shared_tablet_must_be_set());
   ConsensusStatePB cstate = consensus->ConsensusState(CONSENSUS_CONFIG_ACTIVE);
   if (!cstate.has_leader_uuid() || cstate.leader_uuid() != uuid) {
     return STATUS_SUBSTITUTE(IllegalState,
@@ -719,7 +719,7 @@ Status CatalogManager::WaitUntilCaughtUpAsLeader(const MonoDelta& timeout) {
   const CoarseTimePoint deadline = CoarseMonoClock::now() + timeout;
   {
     tablet::HistoryCutoffPropagationDisabler disabler(tablet->RetentionPolicy());
-    RETURN_NOT_OK(tablet_peer()->operation_tracker()->WaitForAllToFinish(timeout));
+    RETURN_NOT_OK(tablet_peer->operation_tracker()->WaitForAllToFinish(timeout));
   }
 
   RETURN_NOT_OK(consensus->WaitForLeaderLeaseImprecise(deadline));
@@ -727,7 +727,7 @@ Status CatalogManager::WaitUntilCaughtUpAsLeader(const MonoDelta& timeout) {
 }
 
 void CatalogManager::LoadSysCatalogDataTask() {
-  auto consensus = tablet_peer()->shared_consensus();
+  auto consensus = sys_catalog_tablet_peer()->shared_consensus();
   const int64_t term = consensus->ConsensusState(CONSENSUS_CONFIG_ACTIVE).current_term();
   Status s = WaitUntilCaughtUpAsLeader(
       MonoDelta::FromMilliseconds(FLAGS_master_failover_catchup_timeout_ms));
@@ -1076,7 +1076,7 @@ bool CatalogManager::StartRunningInitDbIfNeeded(int64_t term) {
         status = STATUS(IllegalState, "System catalog tablet is not running");
       } else {
         Status write_snapshot_status = initial_snapshot_writer_->WriteSnapshot(
-            tablet,
+            tablet.get(),
             FLAGS_initial_sys_catalog_snapshot_path);
         if (!write_snapshot_status.ok()) {
           status = write_snapshot_status;
@@ -1216,7 +1216,8 @@ Status CatalogManager::PrepareSysCatalogTable(int64_t term) {
     tablet->mutable_metadata()->CommitMutation();
   }
 
-  system_tablets_[kSysCatalogTabletId] = sys_catalog_->tablet_peer_->shared_tablet();
+  system_tablets_[kSysCatalogTabletId] =
+      VERIFY_RESULT(sys_catalog_->tablet_peer_->shared_tablet_must_be_set());
 
   return Status::OK();
 }
@@ -1463,10 +1464,7 @@ Status CatalogManager::CheckIsLeaderAndReady() const {
     return STATUS_SUBSTITUTE(IllegalState,
         "Catalog manager of $0 is in shell mode, not the leader", uuid);
   }
-  Consensus* consensus = tablet_peer()->consensus();
-  if (consensus == nullptr) {
-    return STATUS(IllegalState, "Consensus has not been initialized yet");
-  }
+  Consensus consensus = VERIFY_RESULT(tablet_peer()->shared_consensus_must_be_set();
   ConsensusStatePB cstate = consensus->ConsensusState(CONSENSUS_CONFIG_COMMITTED);
   if (PREDICT_FALSE(!cstate.has_leader_uuid() || cstate.leader_uuid() != uuid)) {
     return STATUS_SUBSTITUTE(IllegalState,
@@ -1480,7 +1478,7 @@ Status CatalogManager::CheckIsLeaderAndReady() const {
   return Status::OK();
 }
 
-const std::shared_ptr<tablet::TabletPeer> CatalogManager::tablet_peer() const {
+const std::shared_ptr<tablet::TabletPeer> CatalogManager::sys_catalog_tablet_peer() const {
   return sys_catalog_->tablet_peer();
 }
 
@@ -7263,7 +7261,7 @@ Status CatalogManager::StartRemoteBootstrap(const StartRemoteBootstrapRequestPB&
   // CatalogManager::GetTabletPeer will always return an error, and the consensus will never get
   // updated.
   auto status = rb_client->VerifyChangeRoleSucceeded(
-      sys_catalog_->tablet_peer()->shared_consensus());
+      VERIFY_RESULT(sys_catalog_->tablet_peer()->shared_consensus_must_be_set()));
 
   if (!status.ok()) {
     LOG_WITH_PREFIX(WARNING) << "Remote bootstrap finished. "
@@ -8407,7 +8405,7 @@ Status CatalogManager::GetTableLocations(
 
 Status CatalogManager::GetCurrentConfig(consensus::ConsensusStatePB* cpb) const {
   auto tablet_peer = sys_catalog_->tablet_peer();
-  auto consensus = tablet_peer ? tablet_peer->shared_consensus() : nullptr;
+  auto consensus = tablet_peer ? tablet_peer->shared_consensus_nullable() : nullptr;
   if (!consensus) {
     std::string uuid = master_->fs_manager()->uuid();
     return STATUS_FORMAT(IllegalState, "Node $0 peer not initialized.", uuid);
@@ -9157,7 +9155,8 @@ Status CatalogManager::SysCatalogRespectLeaderAffinity() {
         req.set_new_leader_uuid(master.instance_id().permanent_uuid());
 
         consensus::LeaderStepDownResponsePB resp;
-        RETURN_NOT_OK(tablet_peer->consensus()->StepDown(&req, &resp));
+        auto consensus = VERIFY_RESULT(tablet_peer->shared_consensus_must_be_set());
+        RETURN_NOT_OK(consensus->StepDown(&req, &resp));
         if (resp.has_error()) {
           YB_LOG_WITH_PREFIX_EVERY_N_SECS(INFO, 10) << "Step down failed: "
                                                     << resp.error().status().message();

@@ -265,7 +265,7 @@ class OperationDriver : public RefCountedThreadSafe<OperationDriver>,
 
   // A copy of the operation's OpId, set when the operation first
   // receives one from Consensus and uninitialized until then.
-  // TODO(todd): we have three separate copies of this now -- in OperationState,
+  // TODO: we have three separate copies of this now -- in OperationState,
   // CommitMsg, and here... we should be able to consolidate!
   boost::atomic<yb::OpId> op_id_copy_{yb::OpId::Invalid()};
 

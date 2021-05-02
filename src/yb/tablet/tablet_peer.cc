@@ -333,9 +333,10 @@ Result<FixedHybridTimeLease> TabletPeer::HybridTimeLease(
 }
 
 Result<HybridTime> TabletPeer::PreparePeerRequest() {
-  auto leader_term = shared_consensus()->GetLeaderState(/* allow_stale= */ true).term;
+  auto tablet = VERIFY_RESULT(shared_tablet_must_be_set());
+  auto leader_term = VERIFY_RESULT(shared_consensus_must_be_set())->GetLeaderState(
+      /* allow_stale= */ true).term;
   if (leader_term >= 0) {
-    auto tablet = VERIFY_RESULT(tablet_must_be_set());
     auto last_write_ht = tablet->mvcc_manager()->LastReplicatedHybridTime();
     auto propagated_history_cutoff =
         tablet->RetentionPolicy()->HistoryCutoffToPropagate(last_write_ht);
@@ -343,7 +344,8 @@ Result<HybridTime> TabletPeer::PreparePeerRequest() {
     if (propagated_history_cutoff) {
       VLOG_WITH_PREFIX(2) << "Propagate history cutoff: " << propagated_history_cutoff;
 
-      auto state = std::make_unique<HistoryCutoffOperationState>(tablet_.get());
+      auto state = std::make_unique<HistoryCutoffOperationState>(
+          VERIFY_RESULT(tablet_must_be_set()));
       auto request = state->AllocateRequest();
       request->set_history_cutoff(propagated_history_cutoff.ToUint64());
 
@@ -359,7 +361,7 @@ Result<HybridTime> TabletPeer::PreparePeerRequest() {
   // Get the current majority-replicated HT leader lease without any waiting.
   auto ht_lease = VERIFY_RESULT(HybridTimeLease(
       /* min_allowed= */ HybridTime::kMin, /* deadline */ CoarseTimePoint::max()));
-  return tablet_->mvcc_manager()->SafeTime(ht_lease);
+  return tablet->mvcc_manager()->SafeTime(ht_lease);
 }
 
 void TabletPeer::MajorityReplicated() {
@@ -370,33 +372,30 @@ void TabletPeer::MajorityReplicated() {
     return;
   }
 
-  tablet_->mvcc_manager()->UpdatePropagatedSafeTimeOnLeader(*ht_lease);
+  auto tablet = CHECK_RESULT(shared_tablet_must_be_set());
+  tablet->mvcc_manager()->UpdatePropagatedSafeTimeOnLeader(*ht_lease);
 }
 
 void TabletPeer::ChangeConfigReplicated(const RaftConfigPB& config) {
-  tablet_->mvcc_manager()->SetLeaderOnlyMode(config.peers_size() == 1);
+  auto tablet = CHECK_RESULT(shared_tablet_must_be_set());
+  tablet->mvcc_manager()->SetLeaderOnlyMode(config.peers_size() == 1);
 }
 
 uint64_t TabletPeer::NumSSTFiles() {
-  return tablet_->GetCurrentVersionNumSSTFiles();
+  auto tablet = shared_tablet_nullable();
+  if (!tablet) {
+    return 0;
+  }
+  return tablet->GetCurrentVersionNumSSTFiles();
 }
 
 void TabletPeer::ListenNumSSTFilesChanged(std::function<void()> listener) {
-  tablet_->ListenNumSSTFilesChanged(std::move(listener));
+  CHECK_RESULT(shared_tablet_must_be_set())->ListenNumSSTFilesChanged(std::move(listener));
 }
 
 Status TabletPeer::Start(const ConsensusBootstrapInfo& bootstrap_info) {
-  consensus::RaftConsensusPtr consensus = shared_consensus();
-  if (!consensus) {
-    return STATUS_FORMAT(
-        IllegalState, "Consensus object is not set when starting tablet $0", tablet_id());
-  }
-
-  TabletPtr tablet;
-  if (!tablet) {
-    return STATUS(
-        IllegalState, "Tablet object is not set when starting tablet $0", tablet_id());
-  }
+  auto consensus = VERIFY_RESULT(shared_consensus_must_be_set());
+  auto tablet = VERIFY_RESULT(shared_tablet_must_be_set());
 
   {
     std::lock_guard<simple_spinlock> state_change_lock(state_change_lock_);
@@ -430,11 +429,7 @@ Status TabletPeer::Start(const ConsensusBootstrapInfo& bootstrap_info) {
 }
 
 Result<consensus::RaftConfigPB> TabletPeer::RaftConfig() const {
-  auto consensus = shared_consensus();
-  if (!consensus) {
-    return STATUS_FORMAT(
-        IllegalState, "Cannot get Raft config: consensus is not set for tablet $0", tablet_id());
-  }
+  auto consensus = VERIFY_RESULT(shared_consensus_must_be_set());
   return consensus->CommittedConfig();
 }
 
@@ -442,9 +437,12 @@ bool TabletPeer::StartShutdown() {
   LOG_WITH_PREFIX(INFO) << "Initiating TabletPeer shutdown";
 
   {
+    // Even though we don't need the lock to call shared_tablet_nullable(), we still acquire the
+    // lock because there might be other reasons we rely on this during shutdown.
     std::lock_guard<decltype(lock_)> lock(lock_);
-    if (tablet_) {
-      tablet_->StartShutdown();
+    auto tablet = shared_tablet_nullable();
+    if (tablet) {
+      tablet->StartShutdown();
     }
   }
 
@@ -469,7 +467,7 @@ bool TabletPeer::StartShutdown() {
   // indirectly end up calling into the log, which we are about to shut down.
   UnregisterMaintenanceOps();
 
-  auto consensus = shared_consensus();
+  auto consensus = shared_consensus_nullable();
   if (consensus) {
     consensus->Shutdown();
   }
@@ -496,8 +494,9 @@ void TabletPeer::CompleteShutdown(IsDropTable is_drop_table) {
 
   VLOG_WITH_PREFIX(1) << "Shut down!";
 
-  if (tablet_) {
-    tablet_->CompleteShutdown(is_drop_table);
+  auto tablet = shared_tablet_nullable();
+  if (tablet) {
+    tablet->CompleteShutdown(is_drop_table);
   }
 
   // Only mark the peer as SHUTDOWN when all other components have shut down.
@@ -588,8 +587,11 @@ Status TabletPeer::WaitUntilConsensusRunning(const MonoDelta& timeout) {
           Substitute("The tablet is already shutting down or shutdown. State: $0",
                      RaftGroupStatePB_Name(cached_state)));
     }
-    if (cached_state == RaftGroupStatePB::RUNNING && shared_consensus()->IsRunning()) {
-      break;
+    if (cached_state == RaftGroupStatePB::RUNNING) {
+      auto consensus = shared_consensus_nullable();
+      if (consensus && consensus->IsRunning()) {
+        break;
+      }
     }
     MonoTime now(MonoTime::Now());
     MonoDelta elapsed(now.GetDeltaSince(start));
@@ -646,14 +648,14 @@ void TabletPeer::Submit(std::unique_ptr<Operation> operation, int64_t term) {
 void TabletPeer::SubmitUpdateTransaction(
     std::unique_ptr<UpdateTxnOperationState> state, int64_t term) {
   if (!state->tablet()) {
-    state->SetTablet(tablet());
+    state->SetTablet(CHECK_RESULT(tablet_must_be_set()));
   }
   auto operation = std::make_unique<tablet::UpdateTxnOperation>(std::move(state));
   Submit(std::move(operation), term);
 }
 
 HybridTime TabletPeer::SafeTimeForTransactionParticipant() {
-  auto tablet = tablet_myst_be_set();
+  auto tablet = tablet_must_be_set();
   if (!tablet)
     return HybridTime::kInvalid;
   return shared_tablet()->mvcc_manager()->SafeTimeForFollower(
@@ -972,62 +974,68 @@ Status TabletPeer::reset_cdc_min_replicated_index_if_stale() {
   return Status::OK();
 }
 
-std::unique_ptr<Operation> TabletPeer::CreateOperation(consensus::ReplicateMsg* replicate_msg) {
-  switch (replicate_msg->op_type()) {
+#define ENSURE_PB_FIELD_IS_SET(pb_field_name) \
+    RSTATUS_DCHECK( \
+        replicate_msg->BOOST_PP_CAT(has_, pb_field_name)(), \
+        IllegalState, \
+        Format("A $0 operation must have the $1 field set", \
+               consensus::OperationType_Name(op_type), \
+               BOOST_PP_STRINGIZE(pp_field_name)))
+
+Result<std::unique_ptr<Operation>> TabletPeer::CreateOperation(
+    consensus::ReplicateMsg* replicate_msg) {
+  auto op_type = replicate_msg->op_type();
+  switch (op_type) {
     case consensus::WRITE_OP:
-      DCHECK(replicate_msg->has_write_request()) << "WRITE_OP replica"
-          " operation must receive a WriteRequestPB";
+      ENSURE_PB_FIELD_IS_SET(write_request);
       // We use separate preparing token only on leader, so here it could be empty.
       return std::make_unique<WriteOperation>(
           std::make_unique<WriteOperationState>(tablet()), yb::OpId::kUnknownTerm,
           ScopedOperation(), CoarseTimePoint::max(), this);
 
     case consensus::CHANGE_METADATA_OP:
-      DCHECK(replicate_msg->has_change_metadata_request()) << "CHANGE_METADATA_OP replica"
-          " operation must receive an ChangeMetadataRequestPB";
+      ENSURE_PB_FIELD_IS_SET(change_metadata_request);
       return std::make_unique<ChangeMetadataOperation>(
           std::make_unique<ChangeMetadataOperationState>(tablet(), log()));
 
     case consensus::UPDATE_TRANSACTION_OP:
-      DCHECK(replicate_msg->has_transaction_state()) << "UPDATE_TRANSACTION_OP replica"
-          " operation must receive an TransactionStatePB";
+      ENSURE_PB_FIELD_IS_SET(transaction_state);
       return std::make_unique<UpdateTxnOperation>(
           std::make_unique<UpdateTxnOperationState>(tablet()));
 
     case consensus::TRUNCATE_OP:
-      DCHECK(replicate_msg->has_truncate_request()) << "TRUNCATE_OP replica"
-          " operation must receive an TruncateRequestPB";
+      ENSURE_PB_FIELD_IS_SET(truncate_request);
       return std::make_unique<TruncateOperation>(
           std::make_unique<TruncateOperationState>(tablet()));
 
     case consensus::SNAPSHOT_OP:
-       DCHECK(replicate_msg->has_snapshot_request()) << "SNAPSHOT_OP replica"
-          " operation must receive an TabletSnapshotOpRequestPB";
+      ENSURE_PB_FIELD_IS_SET(snapshot_request);
       return std::make_unique<SnapshotOperation>(
           std::make_unique<SnapshotOperationState>(tablet()));
 
     case consensus::HISTORY_CUTOFF_OP:
-       DCHECK(replicate_msg->has_history_cutoff()) << "HISTORY_CUTOFF_OP replica"
-          " transaction must receive an HistoryCutoffPB";
+      ENSURE_PB_FIELD_IS_SET(history_cutoff);
       return std::make_unique<HistoryCutoffOperation>(
           std::make_unique<HistoryCutoffOperationState>(tablet()));
 
     case consensus::SPLIT_OP:
-       DCHECK(replicate_msg->has_split_request()) << "SPLIT_OP replica"
-          " operation must receive an SplitOpRequestPB";
+      ENSURE_PB_FIELD_IS_SET(split_request);
       return std::make_unique<SplitOperation>(
           std::make_unique<SplitOperationState>(tablet(), raft_consensus(), tablet_splitter_));
 
     case consensus::UNKNOWN_OP: FALLTHROUGH_INTENDED;
     case consensus::NO_OP: FALLTHROUGH_INTENDED;
     case consensus::CHANGE_CONFIG_OP:
-      FATAL_INVALID_ENUM_VALUE(consensus::OperationType, replicate_msg->op_type());
+      FATAL_INVALID_ENUM_VALUE(consensus::OperationType, op_type);
   }
-  FATAL_INVALID_ENUM_VALUE(consensus::OperationType, replicate_msg->op_type());
+  FATAL_INVALID_ENUM_VALUE(consensus::OperationType, op_type);
 }
+
+#undef ENSURE_PB_FIELD_IS_SET
 
 Status TabletPeer::StartReplicaOperation(
     const scoped_refptr<ConsensusRound>& round, HybridTime propagated_safe_time) {
+  auto tablet = VERIFY_RESULT(shared_tablet_must_be_set());
   RaftGroupStatePB value = state();
   if (value != RaftGroupStatePB::RUNNING && value != RaftGroupStatePB::BOOTSTRAPPING) {
     return STATUS(IllegalState, RaftGroupStatePB_Name(value));
@@ -1037,8 +1045,8 @@ Status TabletPeer::StartReplicaOperation(
   DCHECK(replicate_msg->has_hybrid_time());
   auto operation = CreateOperation(replicate_msg);
 
-  // TODO(todd) Look at wiring the stuff below on the driver
   OperationState* state = operation->state();
+
   // It's imperative that we set the round here on any type of operation, as this
   // allows us to keep the reference to the request in the round instead of copying it.
   state->set_consensus_round(round);
@@ -1047,7 +1055,7 @@ Status TabletPeer::StartReplicaOperation(
   clock_->Update(ht);
 
   // This sets the monotonic counter to at least replicate_msg.monotonic_counter() atomically.
-  tablet_->UpdateMonotonicCounter(replicate_msg->monotonic_counter());
+  tablet->UpdateMonotonicCounter(replicate_msg->monotonic_counter());
 
   auto operation_type = operation->operation_type();
   OperationDriverPtr driver = VERIFY_RESULT(NewReplicaOperationDriver(&operation));
@@ -1057,7 +1065,7 @@ Status TabletPeer::StartReplicaOperation(
       std::bind(&OperationDriver::ReplicationFinished, driver.get(), _1, _2, _3));
 
   if (propagated_safe_time) {
-    driver->SetPropagatedSafeTime(propagated_safe_time, tablet_->mvcc_manager());
+    driver->SetPropagatedSafeTime(propagated_safe_time, tablet->mvcc_manager());
   }
 
   if (operation_type == OperationType::kWrite ||

@@ -1,3 +1,4 @@
+
 // Licensed to the Apache Software Foundation (ASF) under one
 // or more contributor license agreements.  See the NOTICE file
 // distributed with this work for additional information
@@ -95,7 +96,7 @@ class RemoteBootstrapTest : public TabletServerTestBase {
         InsertTestRowsRemote(0, row_id, kIncr);
         auto tablet_result = tablet_peer_->shared_tablet_must_be_set();
         ASSERT_OK(tablet_result);
-        ASSERT_OK(*tablet_result->Flush(tablet::FlushMode::kSync));
+        ASSERT_OK((*tablet_result)->Flush(tablet::FlushMode::kSync));
         ASSERT_OK(tablet_peer_->log()->AllocateSegmentAndRollOver());
       }
     }
@@ -107,11 +108,11 @@ class RemoteBootstrapTest : public TabletServerTestBase {
   }
 
   std::string GetTableId() const {
-    return tablet_peer_->tablet()->metadata()->table_id();
+    return CHECK_RESULT(tablet_peer_->shared_tablet_must_be_set())->metadata()->table_id();
   }
 
   const std::string& GetTabletId() const {
-    return tablet_peer_->tablet()->tablet_id();
+    return tablet_peer_->tablet_id();
   }
 
   log::LogAnchor anchor_;

@@ -231,12 +231,6 @@ class TabletPeer : public consensus::ConsensusContext,
   // Returns false if it is preferable to don't apply write operation.
   bool ShouldApplyWrite() override;
 
-  // These functions can return nullptr.
-  // consensus::RaftConsensusPtr shared_raft_consensus() const;
-  // consensus::ConsensusPtr shared_consensus() const;
-
-  // TabletPtr shared_tablet() const;
-
   Result<TabletPtr> shared_tablet_must_be_set() const;
   TabletPtr shared_tablet_nullable() const;
 
@@ -244,6 +238,7 @@ class TabletPeer : public consensus::ConsensusContext,
 
   Result<consensus::ConsensusPtr> shared_consensus_must_be_set() const;
   consensus::ConsensusPtr shared_consensus_nullable() const;
+  consensus::RaftConsensusPtr shared_raft_consensus_nullable() const;
 
   Result<consensus::RaftConsensusPtr> shared_raft_consensus_must_be_set() const;
   Result<consensus::Consensus*> consensus_must_be_set() const;
@@ -428,7 +423,7 @@ class TabletPeer : public consensus::ConsensusContext,
 
   scoped_refptr<OperationDriver> CreateOperationDriver();
 
-  virtual std::unique_ptr<Operation> CreateOperation(consensus::ReplicateMsg* replicate_msg);
+  virtual Result<std::unique_ptr<Operation>> CreateOperation(consensus::ReplicateMsg* replicate_msg);
 
   Status CheckTabletAndConsensusAreSet() const;
 
@@ -459,13 +454,6 @@ class TabletPeer : public consensus::ConsensusContext,
   std::atomic<log::Log*> log_atomic_{nullptr};
 
   TabletPtr tablet_ GUARDED_BY(lock_);
-
-  // Once we set these atomics, we guarantee that we are holding a refcount to the corresponding
-  // shared pointers at least until the TabletPeer instance itself is destructed. So in methods
-  // of TabletPeer that are called on a valid TabletPeer instance, we should be able to read these
-  // atomics and safely access the objects that they point to.
-  std::atomic<Tablet*> atomic_tablet_{nullptr};
-  std::atomic<consensus::RaftConsensus*> atomic_raft_consensus_{nullptr};
 
   rpc::ProxyCache* proxy_cache_;
   consensus::RaftConsensusPtr consensus_ GUARDED_BY(lock_);
