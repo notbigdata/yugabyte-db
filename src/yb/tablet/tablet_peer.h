@@ -209,7 +209,7 @@ class TabletPeer : public consensus::ConsensusContext,
   std::unique_ptr<UpdateTxnOperationState> CreateUpdateTransactionState(
       tserver::TransactionStatePB* request) override;
 
-  void SubmitUpdateTransaction(
+  Status SubmitUpdateTransaction(
       std::unique_ptr<UpdateTxnOperationState> state, int64_t term) override;
 
   HybridTime SafeTimeForTransactionParticipant() override;

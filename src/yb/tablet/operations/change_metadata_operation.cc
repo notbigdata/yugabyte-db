@@ -235,7 +235,7 @@ CHECKED_STATUS SyncReplicateChangeMetadataOperation(
     tablet::TabletPeer* tablet_peer,
     int64_t term) {
   auto operation_state = std::make_unique<ChangeMetadataOperationState>(
-      VERIFY_RESULT(tablet_peer->shared_tablet_must_be_set()), tablet_peer->log(), req);
+      VERIFY_RESULT(tablet_peer->tablet_must_be_set()), tablet_peer->log(), req);
 
   Synchronizer synchronizer;
 

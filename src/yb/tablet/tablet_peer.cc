@@ -611,6 +611,12 @@ void TabletPeer::WriteAsync(
     state->CompleteWithStatus(STATUS(IllegalState, "Write while not leader"));
     return;
   }
+  auto tablet_result = shared_tablet_must_be_set();
+  if (!tablet_result.ok()) {
+    state->CompleteWithStatus(tablet_result.status());
+    return;
+  }
+  TabletPtr tablet = tablet_result.get();
 
   ScopedOperation preparing_token(&preparing_operations_counter_);
   auto status = CheckRunning();
@@ -621,12 +627,13 @@ void TabletPeer::WriteAsync(
 
   auto operation = std::make_unique<WriteOperation>(
       std::move(state), term, std::move(preparing_token), deadline, this);
-  tablet_->AcquireLocksAndPerformDocOperations(std::move(operation));
+  tablet->AcquireLocksAndPerformDocOperations(std::move(operation));
 }
 
 Result<HybridTime> TabletPeer::ReportReadRestart() {
-  tablet_->metrics()->restart_read_requests->Increment();
-  return tablet_->SafeTime(RequireLease::kTrue);
+  auto tablet = VERIFY_RESULT(shared_tablet_must_be_set());
+  tablet->metrics()->restart_read_requests->Increment();
+  return tablet->SafeTime(RequireLease::kTrue);
 }
 
 void TabletPeer::Submit(std::unique_ptr<Operation> operation, int64_t term) {
@@ -645,10 +652,11 @@ void TabletPeer::Submit(std::unique_ptr<Operation> operation, int64_t term) {
   }
 }
 
-void TabletPeer::SubmitUpdateTransaction(
+Status TabletPeer::SubmitUpdateTransaction(
     std::unique_ptr<UpdateTxnOperationState> state, int64_t term) {
+  auto tablet = VERIFY_RESULT(shared_tablet_must_be_set());
   if (!state->tablet()) {
-    state->SetTablet(CHECK_RESULT(tablet_must_be_set()));
+    state->SetTablet(tablet.get());
   }
   auto operation = std::make_unique<tablet::UpdateTxnOperation>(std::move(state));
   Submit(std::move(operation), term);
@@ -1091,18 +1099,6 @@ bool TabletPeer::ShouldApplyWrite() {
   return tablet_->ShouldApplyWrite();
 }
 
-// std::shared_ptr<consensus::Consensus> TabletPeer::shared_raft_consensus() const
-//     NO_THREAD_SAFETY_ANALYSIS {
-//   if (!has_tablet_and_consensus_->load(std::memory_order_acquire)) {
-//     return nullptr;
-//   }
-//   return consensus_;
-// }
-
-// shared_ptr<consensus::Consensus> TabletPeer::shared_consensus() const {
-//   return shared_raft_consensus();
-// }
-
 Result<TabletPtr> TabletPeer::shared_tablet_must_be_set() const NO_THREAD_SAFETY_ANALYSIS {
   RETURN_NOT_OK(CheckTabletAndConsensusAreSet());
   return tablet_;
@@ -1128,11 +1124,17 @@ Result<consensus::ConsensusPtr> TabletPeer::shared_consensus_must_be_set() const
 
 consensus::ConsensusPtr TabletPeer::shared_consensus_nullable() const
     NO_THREAD_SAFETY_ANALYSIS {
+  return static_pointer_
+}
+A
+consensus::RaftConsensusPtr TabletPeer::shared_raft_consensus_nullable() const
+    NO_THREAD_SAFETY_ANALYSIS {
   if (!has_tablet_and_consensus_.load(std::memory_order_acquire)) {
     return nullptr;
   }
   return consensus_;
 }
+
 
 Result<consensus::RaftConsensusPtr> TabletPeer::raft_consensus_must_be_set() const
     NO_THREAD_SAFETY_ANALYSIS{

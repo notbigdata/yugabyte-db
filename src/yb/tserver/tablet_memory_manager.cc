@@ -277,8 +277,12 @@ void TabletMemoryManager::LogCacheGC(MemTracker* log_cache_mem_tracker, size_t b
     if (GetLogCacheSize(peer.get()) <= 0) {
       continue;
     }
-    size_t evicted = down_cast<consensus::RaftConsensus*>(
-        peer->consensus())->EvictLogCache(bytes_to_evict - total_evicted);
+    auto consensus_result = peer->shared_raft_consensus_must_be_set();
+    if (!consensus_result.ok()) {
+      LOG(WARNING) << consensus_result.status()
+      continue;
+    }
+    size_t evicted = (*consensus_result)->EvictLogCache(bytes_to_evict - total_evicted);
     total_evicted += evicted;
     if (total_evicted >= bytes_to_evict) {
       break;

@@ -253,7 +253,7 @@ void HandleConsensusStatusPage(
   std::stringstream *output = &resp->output;
   shared_ptr<consensus::Consensus> consensus = peer->shared_consensus_nullable();
   if (!consensus) {
-    *output << "Tablet " << EscapeForHtmlToString(tablet_id) << " not running";
+    *output << GetTabletNotRunningMessage(tablet_id);
     return;
   }
 
@@ -314,13 +314,22 @@ void DumpRocksDB(const char* title, rocksdb::DB* db, std::ostream* out) {
   }
 }
 
+std::string GetTabletNotRunningMessage(const TabletId& tablet_id) {
+  return "Tablet " << EscapeForHtmlToString(tablet_id) << " not running";
+}
+
 void HandleRocksDBPage(
     const std::string& tablet_id, const tablet::TabletPeerPtr& peer,
     const Webserver::WebRequest& req, Webserver::WebResponse* resp) {
   std::stringstream *output = &resp->output;
   *output << "<h1>RocksDB for Tablet " << EscapeForHtmlToString(tablet_id) << "</h1>" << std::endl;
 
-  auto doc_db = peer->tablet()->doc_db();
+  auto tablet = peer->shared_tablet_nullable()
+  if (!tablet) {
+    *output << GetTabletNotRunningMessage(tablet_id);
+    return;
+  }
+  auto doc_db = tablet->doc_db();
   DumpRocksDB("Regular", doc_db.regular, output);
   DumpRocksDB("Intents", doc_db.intents, output);
 }
@@ -415,6 +424,7 @@ void TabletServerPathHandlers::HandleOperationsPage(const Webserver::WebRequest&
   for (const std::shared_ptr<TabletPeer>& peer : peers) {
     vector<OperationStatusPB> inflight;
 
+    auto tablet = peer->shared_tablet_nullable();
     if (peer->tablet() == nullptr) {
       continue;
     }
