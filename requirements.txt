@@ -1,4 +1,4 @@
-PyYAML
+ruamel.yaml
 six
 yugabyte_pycommon
 compiledb
@@ -8,3 +8,5 @@ boto
 overrides
 downloadutil
 semantic-version
+pygithub
+mypy

@@ -1,0 +1,41 @@
+sha: e9d7e847bae537ca19172f2255cc0de3184b84da
+archives:
+  - os_type: centos7
+    compiler_type: clang11
+    tag: v20210511021408-e9d7e847ba-centos7-clang11
+  - os_type: centos7
+    compiler_type: clang12
+    tag: v20210511021405-e9d7e847ba-centos7-clang12
+  - os_type: centos7
+    compiler_type: clang7
+    tag: v20210511021408-e9d7e847ba-centos7-clang7
+  - os_type: centos7
+    compiler_type: gcc5
+    tag: v20210511021407-e9d7e847ba-centos7-linuxbrew-gcc5
+  - os_type: centos7
+    compiler_type: gcc8
+    tag: v20210511021416-e9d7e847ba-centos7-gcc8
+  - os_type: centos7
+    compiler_type: gcc9
+    tag: v20210511021404-e9d7e847ba-centos7-gcc9
+  - os_type: macos
+    compiler_type: clang
+    tag: v20210511021358-e9d7e847ba-macos
+  - os_type: ubuntu1804
+    compiler_type: clang10
+    tag: v20210511021417-e9d7e847ba-ubuntu1804-clang10
+  - os_type: ubuntu1804
+    compiler_type: clang11
+    tag: v20210511021404-e9d7e847ba-ubuntu1804-clang11
+  - os_type: ubuntu1804
+    compiler_type: gcc7
+    tag: v20210511021417-e9d7e847ba-ubuntu1804-gcc7
+  - os_type: ubuntu1804
+    compiler_type: gcc8
+    tag: v20210511021411-e9d7e847ba-ubuntu1804-gcc8
+  - os_type: ubuntu2004
+    compiler_type: clang11
+    tag: v20210511021358-e9d7e847ba-ubuntu2004-clang11
+  - os_type: ubuntu2004
+    compiler_type: gcc9
+    tag: v20210511021353-e9d7e847ba-ubuntu2004-gcc9

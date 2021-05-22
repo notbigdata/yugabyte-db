@@ -177,8 +177,12 @@ readonly -a VALID_COMPILER_TYPES=(
   gcc
   gcc8
   gcc9
+  clang7
+  clang8
+  clang9
   clang10
   clang11
+  clang12
   zapcc
 )
 make_regex_from_list VALID_COMPILER_TYPES "${VALID_COMPILER_TYPES[@]}"
@@ -257,24 +261,25 @@ readonly -a MVN_OPTS_TO_DOWNLOAD_ALL_DEPS=(
 is_clean_build=false
 
 # A human-readable description of how we set the respective variables.
-yb_thirdparty_dir_where_from=""
+yb_thirdparty_dir_origin=""
+
 if [[ -n ${YB_THIRDPARTY_DIR:-} ]]; then
-  yb_thirdparty_dir_where_from=" (from environment)"
+  yb_thirdparty_dir_origin=" (from environment)"
 fi
 
-yb_thirdparty_url_where_from=""
+yb_thirdparty_url_origin=""
 if [[ -n ${YB_THIRDPARTY_URL:-} ]]; then
-  yb_thirdparty_url_where_from=" (from environment)"
+  yb_thirdparty_url_origin=" (from environment)"
 fi
 
-yb_linuxbrew_dir_where_from=""
+yb_linuxbrew_dir_origin=""
 if [[ -n ${YB_LINUXBREW_DIR:-} ]]; then
-  yb_linuxbrew_dir_where_from=" (from environment)"
+  yb_linuxbrew_dir_origin=" (from environment)"
 fi
 
-yb_llvm_toolchain_dir_where_from=""
+yb_llvm_toolchain_dir_origin=""
 if [[ -n ${YB_LLVM_TOOLCHAIN_DIR:-} ]]; then
-  yb_llvm_toolchain_dir_where_from=" (from environment)"
+  yb_llvm_toolchain_dir_origin=" (from environment)"
 fi
 
 # To deduplicate Maven arguments
@@ -283,6 +288,11 @@ yb_mvn_parameters_already_set=false
 # -------------------------------------------------------------------------------------------------
 # Functions
 # -------------------------------------------------------------------------------------------------
+
+yb_activate_debug_mode() {
+  PS4='[${BASH_SOURCE[0]}:${LINENO} ${FUNCNAME[0]:-}] '
+  set -x
+}
 
 normalize_build_type() {
   if [[ -z ${build_type:-} ]]; then
@@ -949,6 +959,7 @@ find_compiler_by_type() {
         cxx_executable=$(which g++-9)
       fi
     ;;
+    # This is the old Linuxbrew-based Clang 7 build type.
     clang)
       if [[ -n ${YB_CLANG_PREFIX:-} ]]; then
         if [[ ! -d $YB_CLANG_PREFIX/bin ]]; then
@@ -984,7 +995,7 @@ find_compiler_by_type() {
       cc_executable+=${YB_CLANG_SUFFIX:-}
       cxx_executable+=${YB_CLANG_SUFFIX:-}
     ;;
-    clang10|clang11)
+    clang*)
       if [[ -n ${YB_LLVM_TOOLCHAIN_DIR:-} ]]; then
         cc_executable=$YB_LLVM_TOOLCHAIN_DIR/bin/clang
         cxx_executable=$YB_LLVM_TOOLCHAIN_DIR/bin/clang++
@@ -1149,18 +1160,22 @@ download_thirdparty() {
           "'$extracted_dir'"
   fi
   export YB_THIRDPARTY_DIR=$extracted_dir
-  yb_thirdparty_dir_where_from=" (downloaded from $YB_THIRDPARTY_URL)"
+  yb_thirdparty_dir_origin=" (downloaded from $YB_THIRDPARTY_URL)"
   save_thirdparty_info_to_build_dir
 
   if ! is_centos; then
     return
   fi
+  download_toolchain
+}
 
+download_toolchain() {
   local toolchain_url_path=""
   local toolchain_dir_parent=""
   local is_linuxbrew=false
 
-  if [[ ${YB_THIRDPARTY_URL##*/} == *linuxbrew* ]]; then
+  if [[ -f $YB_THIRDPARTY_DIR/linuxbrew_url.txt ||
+        -n ${YB_THIRDPARTY_URL:-} && ${YB_THIRDPARTY_URL##*/} == *linuxbrew* ]]; then
     # Only attempt to download Linuxbrew if the third-party tarball name explicitly mentions it.
     # Read a linuxbrew_url.txt file in the third-party directory that we downloaded, and follow that
     # link to download and install the appropriate Linuxbrew package.
@@ -1196,7 +1211,7 @@ download_thirdparty() {
                 "'$extracted_dir'"
         fi
         export YB_LINUXBREW_DIR=$extracted_dir
-        yb_linuxbrew_dir_where_from=" (downloaded from $toolchain_url)"
+        yb_linuxbrew_dir_origin=" (downloaded from $toolchain_url)"
         save_brew_path_to_build_dir
       fi
 
@@ -1208,7 +1223,7 @@ download_thirdparty() {
                 "to '$extracted_dir'"
         fi
         export YB_LLVM_TOOLCHAIN_DIR=$extracted_dir
-        yb_llvm_toolchain_dir_where_from=" (downloaded from $toolchain_url)"
+        yb_llvm_toolchain_dir_origin=" (downloaded from $toolchain_url)"
         save_llvm_toolchain_path_to_build_dir
       fi
     elif "$is_linuxbrew"; then
@@ -1370,7 +1385,7 @@ detect_linuxbrew() {
   if ! "$is_clean_build" && [[ -n ${BUILD_ROOT:-} && -f $BUILD_ROOT/linuxbrew_path.txt ]]; then
     YB_LINUXBREW_DIR=$(<"$BUILD_ROOT/linuxbrew_path.txt")
     export YB_LINUXBREW_DIR
-    yb_linuxbrew_dir_where_from=" (from file '$BUILD_ROOT/linuxbrew_path.txt')"
+    yb_linuxbrew_dir_origin=" (from file '$BUILD_ROOT/linuxbrew_path.txt')"
     return
   fi
 
@@ -1403,7 +1418,7 @@ detect_linuxbrew() {
     local linuxbrew_dir
     for linuxbrew_dir in "${candidates[@]}"; do
       if try_set_linuxbrew_dir "$linuxbrew_dir"; then
-        yb_linuxbrew_dir_where_from=" (from '$version_file')"
+        yb_linuxbrew_dir_origin=" (from '$version_file')"
         return
       fi
     done
@@ -1414,7 +1429,7 @@ detect_linuxbrew() {
     install_linuxbrew "$linuxbrew_version"
   fi
   if try_set_linuxbrew_dir "$linuxbrew_local_dir"; then
-    yb_linuxbrew_dir_where_from=" (local installation)"
+    yb_linuxbrew_dir_origin=" (local installation)"
   else
     if [[ ${#candidates[@]} -gt 0 ]]; then
       log "Could not find Linuxbrew in any of these directories: ${candidates[*]}."
@@ -1435,7 +1450,7 @@ detect_llvm_toolchain() {
      [[ -n ${BUILD_ROOT:-} && -f $BUILD_ROOT/llvm_path.txt ]]; then
     YB_LLVM_TOOLCHAIN_DIR=$(<"$BUILD_ROOT/llvm_path.txt")
     export YB_LLVM_TOOLCHAIN_DIR
-    yb_llvm_toolchain_dir_where_from=" (from file '$BUILD_ROOT/llvm_path.txt')"
+    yb_llvm_toolchain_dir_origin=" (from file '$BUILD_ROOT/llvm_path.txt')"
   fi
 }
 
@@ -1805,7 +1820,11 @@ find_or_download_thirdparty() {
   if [[ -z ${YB_COMPILER_TYPE:-} ]]; then
     fatal "YB_COMPILER_TYPE is not set"
   fi
-  if ! "$is_clean_build"; then
+
+  if "$is_clean_build"; then
+    log "This is a clean build, not loading thirdparty URL or path from files in the build" \
+        "directory."
+  else
     if [[ -f $BUILD_ROOT/thirdparty_url.txt ]]; then
       local thirdparty_url_from_file
       thirdparty_url_from_file=$(<"$BUILD_ROOT/thirdparty_url.txt")
@@ -1815,7 +1834,7 @@ find_or_download_thirdparty() {
               "'$BUILD_ROOT/thirdparty_url.txt' contains '$thirdparty_url_from_file'"
       fi
       export YB_THIRDPARTY_URL=$thirdparty_url_from_file
-      yb_thirdparty_url_where_from=" (from file '$BUILD_ROOT/thirdparty_url.txt')"
+      yb_thirdparty_url_origin=" (from file '$BUILD_ROOT/thirdparty_url.txt')"
       if [[ ${YB_DOWNLOAD_THIRDPARTY:-} == "0" ]]; then
         fatal "YB_DOWNLOAD_THIRDPARTY is explicitly set to 0 but file" \
               "$BUILD_ROOT/thirdparty_url.txt exists"
@@ -1832,16 +1851,26 @@ find_or_download_thirdparty() {
               "'$BUILD_ROOT/thirdparty_path.txt' contains '$thirdparty_dir_from_file'"
       fi
       export YB_THIRDPARTY_DIR=$thirdparty_dir_from_file
-      yb_thirdparty_dir_where_from=" (from file '$BUILD_ROOT/thirdparty_path.txt')"
+      yb_thirdparty_dir_origin=" (from file '$BUILD_ROOT/thirdparty_path.txt')"
     fi
   fi
 
-  if [[ -n ${YB_THIRDPARTY_DIR:-} && -d $YB_THIRDPARTY_DIR ]]; then
-    export YB_THIRDPARTY_DIR
-    if ! using_default_thirdparty_dir; then
-      export NO_REBUILD_THIRDPARTY=1
+  if [[ -n ${YB_THIRDPARTY_DIR:-} ]]; then
+    if [[ -d $YB_THIRDPARTY_DIR ]]; then
+      export YB_THIRDPARTY_DIR
+      if ! using_default_thirdparty_dir; then
+        export NO_REBUILD_THIRDPARTY=1
+      fi
+      # For local third-party builds we might need to download the toolchain referenced by the
+      # third-party directory.
+      download_toolchain
+      return
     fi
-    return
+
+    if [[ ! $YB_THIRDPARTY_DIR == $OPT_YB_BUILD_DIR/* ]]; then
+      fatal "YB_THIRDPARTY_DIR is set to '$YB_THIRDPARTY_DIR' but it is not within" \
+            "'$OPT_YB_BUILD_DIR' so we would not be able to download it."
+    fi
   fi
 
   # Even if YB_THIRDPARTY_DIR is set but it does not exist, it is possible that we need to download
@@ -1859,7 +1888,7 @@ find_or_download_thirdparty() {
 
   if [[ -z ${YB_THIRDPARTY_DIR:-} ]]; then
     export YB_THIRDPARTY_DIR=$YB_SRC_ROOT/thirdparty
-    yb_thirdparty_dir_where_from=" (default)"
+    yb_thirdparty_dir_origin=" (default)"
   fi
   save_thirdparty_info_to_build_dir
 }
@@ -1867,15 +1896,15 @@ find_or_download_thirdparty() {
 log_thirdparty_and_toolchain_details() {
   (
     echo "Details of third-party dependencies:"
-    echo "    YB_THIRDPARTY_DIR: ${YB_THIRDPARTY_DIR:-undefined}$yb_thirdparty_dir_where_from"
+    echo "    YB_THIRDPARTY_DIR: ${YB_THIRDPARTY_DIR:-undefined}$yb_thirdparty_dir_origin"
     if is_linux && [[ -n ${YB_LINUXBREW_DIR:-} ]]; then
-      echo "    YB_LINUXBREW_DIR: $YB_LINUXBREW_DIR$yb_linuxbrew_dir_where_from"
+      echo "    YB_LINUXBREW_DIR: $YB_LINUXBREW_DIR$yb_linuxbrew_dir_origin"
     fi
     if [[ -n ${YB_LLVM_TOOLCHAIN_DIR:-} ]]; then
-      echo "    YB_LLVM_TOOLCHAIN_DIR: $YB_LLVM_TOOLCHAIN_DIR$yb_llvm_toolchain_dir_where_from"
+      echo "    YB_LLVM_TOOLCHAIN_DIR: $YB_LLVM_TOOLCHAIN_DIR$yb_llvm_toolchain_dir_origin"
     fi
     if [[ -n ${YB_THIRDPARTY_URL:-} ]]; then
-      echo "    YB_THIRDPARTY_URL: $YB_THIRDPARTY_URL$yb_thirdparty_url_where_from"
+      echo "    YB_THIRDPARTY_URL: $YB_THIRDPARTY_URL$yb_thirdparty_url_origin"
     fi
     if [[ -n ${YB_DOWNLOAD_THIRDPARTY:-} ]]; then
       echo "    YB_DOWNLOAD_THIRDPARTY: $YB_DOWNLOAD_THIRDPARTY"
@@ -2313,40 +2342,26 @@ update_submodules() {
 set_prebuilt_thirdparty_url() {
   expect_vars_to_be_set YB_COMPILER_TYPE build_type
   if [[ ${YB_DOWNLOAD_THIRDPARTY:-} == "1" ]]; then
-    local auto_thirdparty_url=""
-    local thirdparty_url_file=$YB_BUILD_SUPPORT_DIR/thirdparty_url_${short_os_name}
-    if [[ ${YB_COMPILER_TYPE} =~ ^.*[0-9]+$ ]]; then
-      # For compiler types like gcc9 or clang11, append the compiler type to the file path.
-      thirdparty_url_file+="_${YB_COMPILER_TYPE}"
+    local thirdparty_url_file_path="$BUILD_ROOT/thirdparty_url.txt"
+    if [[ -f $thirdparty_url_file_path ]]; then
+      rm -f "$thirdparty_url_file_path"
     fi
-    if [[ $YB_COMPILER_TYPE == "clang" && ( $build_type == "asan" || $build_type == "tsan" ) ]]
-    then
-      thirdparty_url_file+="_sanitizers"
-    fi
-    thirdparty_url_file+=.txt
-    if [[ -f $thirdparty_url_file ]]; then
-      auto_thirdparty_url=$( read_file_and_trim "$thirdparty_url_file" )
-      if [[ $auto_thirdparty_url != http://* && $auto_thirdparty_url != https://* ]]; then
-        fatal "Invalid third-party URL: '$auto_thirdparty_url' (expected http:// or https://)." \
-              "From file: $thirdparty_url_file."
-      fi
-    elif [[ -z ${YB_THIRDPARTY_URL:-} ]]; then
-      log "$thirdparty_url_file file not found, and YB_THIRDPARTY_URL not set."
-      log "Cannot download pre-built third-party dependencies. Continuing without downloading."
-      export YB_THIRDPARTY_URL=""
-      export YB_DOWNLOAD_THIRDPARTY=0
-      return
-    fi
-
     if [[ -z ${YB_THIRDPARTY_URL:-} ]]; then
-      export YB_THIRDPARTY_URL=$auto_thirdparty_url
-      log "Setting third-party URL to $auto_thirdparty_url"
-      save_var_to_file_in_build_dir "$YB_THIRDPARTY_URL" thirdparty_url.txt
-    elif [[ -n $auto_thirdparty_url ]]; then
-      if [[ $auto_thirdparty_url != "$YB_THIRDPARTY_URL" ]]; then
-        log "YB_THIRDPARTY_URL is already set to $YB_THIRDPARTY_URL, not trying to set it to" \
-            "the default value of $auto_thirdparty_url"
+      "$YB_BUILD_SUPPORT_DIR/thirdparty_tool" \
+          --save-download-url-to-file "$thirdparty_url_file_path" \
+          --compiler-type "$YB_COMPILER_TYPE"
+      YB_THIRDPARTY_URL=$(<"$BUILD_ROOT/thirdparty_url.txt")
+      export YB_THIRDPARTY_URL
+      yb_thirdparty_url_origin=" (determined automatically based on the OS and compiler type)"
+      if [[ -z $YB_THIRDPARTY_URL ]]; then
+        fatal "Could not automatically determine the third-party archive URL to download."
       fi
+      log "Setting third-party URL to $YB_THIRDPARTY_URL"
+
+      save_var_to_file_in_build_dir "$YB_THIRDPARTY_URL" thirdparty_url.txt
+    else
+      log "YB_THIRDPARTY_URL is already set to $YB_THIRDPARTY_URL, not trying to set it" \
+          "automatically"
     fi
   fi
 }
