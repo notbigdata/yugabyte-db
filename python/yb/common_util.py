@@ -373,5 +373,5 @@ def load_yaml_file(yaml_path: str) -> Any:
 
 def write_yaml_file(content: Any, output_file_path: str) -> None:
     yaml = get_ruamel_yaml_instance()
-    with open(output_file_path, 'w' ) as output_file:
+    with open(output_file_path, 'w') as output_file:
         yaml.dump(content, output_file)
