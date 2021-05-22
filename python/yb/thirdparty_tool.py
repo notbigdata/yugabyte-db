@@ -30,7 +30,7 @@ from github.GitRelease import GitRelease
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 
-from yb.common_util import init_env, YB_SRC_ROOT, read_file, write_yaml_file
+from yb.common_util import init_env, YB_SRC_ROOT, read_file, load_yaml_file, write_yaml_file
 from yb.os_detection import get_short_os_name
 
 
@@ -249,9 +249,7 @@ def update_archive_metadata_file(github_token_file: Optional[str]) -> None:
 
 
 def load_metadata() -> Dict[str, Any]:
-    yaml = get_ruamel_yaml_instance()
-    with open(get_archive_metadata_file_path()) as archive_metadata_file:
-        return yaml.load(archive_metadata_file)
+    return load_yaml_file(get_archive_metadata_file_path())
 
 
 def get_download_url(metadata: Dict[str, Any], compiler_type: str) -> str:
