@@ -10,3 +10,4 @@ downloadutil
 semantic-version
 pygithub
 mypy
+packaging

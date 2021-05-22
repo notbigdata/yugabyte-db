@@ -356,9 +356,22 @@ def get_download_cache_dir() -> str:
     return os.path.expanduser('~/.cache/downloads')
 
 
-def load_yaml_file(yaml_path: str) -> Any:
+def get_ruamel_yaml_instance():
     # Import the ruamel.yaml module locally so that the common_util module is still usable outside
     # of any virtualenv.
+    import ruamel.yaml
     yaml = ruamel.yaml.YAML()
+    yaml.indent(sequence=4, offset=2)
+    return yaml
+
+
+def load_yaml_file(yaml_path: str) -> Any:
+    yaml = get_ruamel_yaml_instance()
     with open(yaml_path) as yaml_file:
         return yaml.load(yaml_file)
+
+
+def write_yaml_file(content: Any, output_file_path: str) -> None:
+    yaml = get_ruamel_yaml_instance()
+    with open(output_file_path, 'w' ) as output_file:
+        yaml.dump(content, output_file)

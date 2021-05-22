@@ -22,18 +22,15 @@ import sys
 import re
 import os
 import logging
-import ruamel.yaml
 import argparse
 
 from github import Github
 from github.GitRelease import GitRelease
 
-from ruamel.yaml import YAML
-
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 
-from yb.common_util import init_env, YB_SRC_ROOT, read_file
+from yb.common_util import init_env, YB_SRC_ROOT, read_file, write_yaml_file
 from yb.os_detection import get_short_os_name
 
 
@@ -201,12 +198,6 @@ def get_github_token(token_file_path: Optional[str]) -> Optional[str]:
     return github_token
 
 
-def get_yaml() -> YAML:
-    yaml = ruamel.yaml.YAML()
-    yaml.indent(sequence=4, offset=2)
-    return yaml
-
-
 def update_archive_metadata_file(github_token_file: Optional[str]) -> None:
     archive_metadata_path = get_archive_metadata_file_path()
     logging.info(f"Updating third-party archive metadata file in {archive_metadata_path}")
@@ -251,16 +242,14 @@ def update_archive_metadata_file(github_token_file: Optional[str]) -> None:
     for yb_thirdparty_release in releases_for_one_commit:
         new_metadata['archives'].append(yb_thirdparty_release.as_dict())
 
-    yaml = get_yaml()
-    with open(archive_metadata_path, 'w') as archive_metadata_file:
-        yaml.dump(new_metadata, archive_metadata_file)
+    write_yaml_file(new_metadata, archive_metadata_path)
     logging.info(
         f"Wrote information for {len(releases_for_one_commit)} pre-built yugabyte-db-thirdparty "
         f"archives to {archive_metadata_path}.")
 
 
 def load_metadata() -> Dict[str, Any]:
-    yaml = get_yaml()
+    yaml = get_ruamel_yaml_instance()
     with open(get_archive_metadata_file_path()) as archive_metadata_file:
         return yaml.load(archive_metadata_file)
 
