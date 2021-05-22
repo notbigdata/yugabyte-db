@@ -24,6 +24,6 @@ jobs:
   - os: macos
     compiler: clang
     build_type: release
-  - os: ubuntu1804
+  - os: ubuntu18.04
     compiler: gcc
     build_type: debug

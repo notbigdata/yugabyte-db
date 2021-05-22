@@ -31,7 +31,11 @@ def get_short_os_name() -> str:
             version_id = kvs.get('VERSION_ID')
             if name and version_id:
                 os_name = name.split()[0].lower()
-                os_version = version_id.split('.')[0]
+                if os_name == 'ubuntu':
+                    # For Ubuntu we will keep the full version, such as 18.04.
+                    os_version = version_id
+                else:
+                    os_version = version_id.split('.')[0]
             else:
                 raise ValueError(
                     f"Could not determine OS name and version from the contents of "
