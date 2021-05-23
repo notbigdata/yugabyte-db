@@ -147,6 +147,7 @@ class YBDependenciesRelease:
     def __str__(self) -> str:
         return str(self.as_dict())
 
+
 class ReleaseGroup:
     sha: str
     releases: List[YBDependenciesRelease]
