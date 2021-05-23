@@ -40,12 +40,18 @@ NUM_TOP_COMMITS = 10
 
 DOWNLOAD_URL_PREFIX = 'https://github.com/yugabyte/yugabyte-db-thirdparty/releases/download/'
 TAG_RE = re.compile(
-    r'^v(?P<timestamp>[0-9]+)-'
-    r'(?P<sha_prefix>[0-9a-f]+)-'
-    r'(?P<os>(?:ubuntu|centos|macos|alpine)[a-z0-9.]*)'
-    r'(?P<is_linuxbrew>-linuxbrew)?'  # The final question mark is important.
-    r'(?P<compiler_type>-(?:gcc|clang)[a-z0-9.]+)?'
+    r'^v(?:(?P<branch_name>[0-9.]+)-)?'
+    r'(?P<timestamp>[0-9]+)-'
+    r'(?P<sha_prefix>[0-9a-f]+)'
+    r'(?:-(?P<architecture>x86_64|arm64))?'
+    r'(?:-(?P<os>(?:ubuntu|centos|macos|alpine)[a-z0-9.]*))'
+    r'(?:-(?P<is_linuxbrew>linuxbrew))?'
+    # "devtoolset" really means just "gcc" here. We should replace it with "gcc" in release names.
+    r'(?:-(?P<compiler_type>(?:gcc|clang|devtoolset-?)[a-z0-9.]+))?'
     r'$')
+
+# We will store the SHA1 to be used for the local third-party checkout under this key.
+SHA_FOR_LOCAL_CHECKOUT_KEY = 'sha_for_local_checkout'
 
 
 def get_archive_name_from_tag(tag: str) -> str:
@@ -54,7 +60,7 @@ def get_archive_name_from_tag(tag: str) -> str:
 
 class YBDependenciesRelease:
 
-    FIELDS_TO_PERSIST = ['os_type', 'compiler_type', 'tag']
+    FIELDS_TO_PERSIST = ['os_type', 'compiler_type', 'tag', 'sha']
 
     github_release: GitRelease
     sha: str
@@ -64,32 +70,13 @@ class YBDependenciesRelease:
     compiler_type: str
     os_type: str
     tag: str
+    branch_name: Optional[str]
 
     def __init__(self, github_release: GitRelease) -> None:
         self.github_release = github_release
         self.sha = self.github_release.target_commitish
 
-    def validate_url(self) -> None:
-        asset_urls = [asset.browser_download_url for asset in self.github_release.get_assets()]
-        assert(len(asset_urls) == 2)
-        non_checksum_urls = [url for url in asset_urls if not url.endswith('.sha256')]
-        assert(len(non_checksum_urls) == 1)
-        self.url = non_checksum_urls[0]
-        if not self.url.startswith(DOWNLOAD_URL_PREFIX):
-            raise ValueError(
-                f"Expected archive download URL to start with {DOWNLOAD_URL_PREFIX}, found "
-                f"{self.url}")
-
-        url_suffix = self.url[len(DOWNLOAD_URL_PREFIX):]
-        url_suffix_components = url_suffix.split('/')
-        assert(len(url_suffix_components) == 2)
-        tag = url_suffix_components[0]
-        archive_basename = url_suffix_components[1]
-        expected_basename = get_archive_name_from_tag(tag)
-        if archive_basename != expected_basename:
-            raise ValueError(
-                f"Expected archive name based on tag: {expected_basename}, "
-                f"actual name: {archive_basename}, url: {self.url}")
+        tag = self.github_release.tag_name
         tag_match = TAG_RE.match(tag)
         if not tag_match:
             raise ValueError(f"Could not parse tag: {tag}, does not match regex: {TAG_RE}")
@@ -109,6 +96,9 @@ class YBDependenciesRelease:
         compiler_type = group_dict.get('compiler_type')
         if compiler_type is None and self.os_type == 'macos':
             compiler_type = 'clang'
+        if compiler_type is None and self.is_linuxbrew:
+            compiler_type = 'gcc'
+
         if compiler_type is None:
             raise ValueError(
                 f"Could not determine compiler type from tag {tag}. Matches: {group_dict}.")
@@ -116,12 +106,46 @@ class YBDependenciesRelease:
         self.tag = tag
         self.compiler_type = compiler_type
 
+        branch_name = group_dict.get('branch_name')
+        if branch_name is not None:
+            branch_name = branch_name.rstrip('-')
+        self.branch_name = branch_name
+
+    def validate_url(self) -> None:
+        asset_urls = [asset.browser_download_url for asset in self.github_release.get_assets()]
+
+        assert(len(asset_urls) == 2)
+        non_checksum_urls = [url for url in asset_urls if not url.endswith('.sha256')]
+        assert(len(non_checksum_urls) == 1)
+        self.url = non_checksum_urls[0]
+        if not self.url.startswith(DOWNLOAD_URL_PREFIX):
+            raise ValueError(
+                f"Expected archive download URL to start with {DOWNLOAD_URL_PREFIX}, found "
+                f"{self.url}")
+
+        url_suffix = self.url[len(DOWNLOAD_URL_PREFIX):]
+        url_suffix_components = url_suffix.split('/')
+        assert(len(url_suffix_components) == 2)
+
+        archive_basename = url_suffix_components[1]
+        expected_basename = get_archive_name_from_tag(self.tag)
+        if archive_basename != expected_basename:
+            raise ValueError(
+                f"Expected archive name based on tag: {expected_basename}, "
+                f"actual name: {archive_basename}, url: {self.url}")
+
     def as_dict(self) -> Dict[str, str]:
         return {k: getattr(self, k) for k in self.FIELDS_TO_PERSIST}
 
     def get_sort_key(self) -> List[str]:
         return [getattr(self, k) for k in self.FIELDS_TO_PERSIST]
 
+    def is_consistent_with_yb_version(self, yb_version: str) -> bool:
+        return (self.branch_name is None or
+                yb_version.startswith((self.branch_name + '.', self.branch_name + '-')))
+
+    def __str__(self) -> str:
+        return str(self.as_dict())
 
 class ReleaseGroup:
     sha: str
@@ -133,13 +157,13 @@ class ReleaseGroup:
         self.releases = []
         self.creation_timestamps = []
 
-    def add_release(self, release: GitRelease) -> None:
-        if release.target_commitish != self.sha:
+    def add_release(self, release: YBDependenciesRelease) -> None:
+        if release.sha != self.sha:
             raise ValueError(
                 f"Adding a release with wrong SHA. Expected: {self.sha}, got: "
-                f"{release.target_commitish}.")
-        self.releases.append(YBDependenciesRelease(release))
-        self.creation_timestamps.append(release.created_at)
+                f"{release.sha}.")
+        self.releases.append(release)
+        self.creation_timestamps.append(release.github_release.created_at)
 
     def get_max_creation_timestamp(self) -> datetime:
         return max(self.creation_timestamps)
@@ -172,6 +196,9 @@ def parse_args() -> argparse.Namespace:
         help='Compiler type, to help us decide which third-party archive to choose. '
              'The default value is determined by the YB_COMPILER_TYPE environment variable.',
         default=os.getenv('YB_COMPILER_TYPE'))
+    parser.add_argument(
+        '--verbose',
+        help='Verbose debug information')
 
     if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
@@ -199,6 +226,8 @@ def get_github_token(token_file_path: Optional[str]) -> Optional[str]:
 
 
 def update_archive_metadata_file(github_token_file: Optional[str]) -> None:
+    yb_version = read_file(os.path.join(YB_SRC_ROOT, 'version.txt')).strip()
+
     archive_metadata_path = get_archive_metadata_file_path()
     logging.info(f"Updating third-party archive metadata file in {archive_metadata_path}")
 
@@ -206,13 +235,38 @@ def update_archive_metadata_file(github_token_file: Optional[str]) -> None:
     repo = github_client.get_repo('yugabyte/yugabyte-db-thirdparty')
 
     releases_by_commit: Dict[str, ReleaseGroup] = {}
+
+    num_skipped_old_tag_format = 0
+    num_skipped_wrong_branch = 0
+    num_releases_found = 0
     for release in repo.get_releases():
         sha: str = release.target_commitish
         assert(isinstance(sha, str))
+        tag_name = release.tag_name
+        if len(tag_name.split('-')) <= 2:
+            logging.debug(f"Skipping release tag: {tag_name} (old format, too few components)")
+            num_skipped_old_tag_format += 1
+            continue
+
+        yb_dep_release = YBDependenciesRelease(release)
+        if not yb_dep_release.is_consistent_with_yb_version(yb_version):
+            logging.debug(f"Skipping release tag: {tag_name} (does not match version {yb_version}")
+            num_skipped_wrong_branch += 1
+            continue
+
         if sha not in releases_by_commit:
             releases_by_commit[sha] = ReleaseGroup(sha)
-        releases_by_commit[sha].add_release(release)
 
+        num_releases_found += 1
+        logging.info(f"Found release: {yb_dep_release}")
+        releases_by_commit[sha].add_release(yb_dep_release)
+
+    if num_skipped_old_tag_format > 0:
+        logging.info(f"Skipped {num_skipped_old_tag_format} releases due to old tag format")
+    if num_skipped_wrong_branch > 0:
+        logging.info(f"Skipped {num_skipped_wrong_branch} releases due to branch mismatch")
+    logging.info(
+        f"Found {num_releases_found} releases for {len(releases_by_commit)} different commits")
     latest_group_by_max = max(
         releases_by_commit.values(), key=ReleaseGroup.get_max_creation_timestamp)
     latest_group_by_min = max(
@@ -230,7 +284,7 @@ def update_archive_metadata_file(github_token_file: Optional[str]) -> None:
         f"Released at: {latest_group.get_max_creation_timestamp()}.")
 
     new_metadata: Dict[str, Any] = {
-        'sha': sha,
+        SHA_FOR_LOCAL_CHECKOUT_KEY: sha,
         'archives': []
     }
     releases_for_one_commit = latest_group.releases
@@ -281,14 +335,14 @@ def get_download_url(metadata: Dict[str, Any], compiler_type: str) -> str:
 
 
 def main() -> None:
-    init_env(verbose=False)
     args = parse_args()
+    init_env(verbose=args.verbose)
     if args.update:
         update_archive_metadata_file(args.github_token_file)
         return
     metadata = load_metadata()
     if args.get_sha1:
-        print(metadata['sha'])
+        print(metadata[SHA_FOR_LOCAL_CHECKOUT_KEY])
         return
 
     if args.save_download_url_to_file:
