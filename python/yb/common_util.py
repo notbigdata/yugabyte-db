@@ -22,6 +22,7 @@ import sys
 import json
 import subprocess
 import shlex
+import io
 
 import typing
 from typing import (
@@ -356,10 +357,10 @@ def get_download_cache_dir() -> str:
     return os.path.expanduser('~/.cache/downloads')
 
 
-def get_ruamel_yaml_instance():
+def get_ruamel_yaml_instance() -> Any:
     # Import the ruamel.yaml module locally so that the common_util module is still usable outside
     # of any virtualenv.
-    import ruamel.yaml
+    import ruamel.yaml  # type: ignore
     yaml = ruamel.yaml.YAML()
     yaml.indent(sequence=4, offset=2)
     return yaml
@@ -375,3 +376,10 @@ def write_yaml_file(content: Any, output_file_path: str) -> None:
     yaml = get_ruamel_yaml_instance()
     with open(output_file_path, 'w') as output_file:
         yaml.dump(content, output_file)
+
+
+def to_yaml_str(content: Any) -> str:
+    out = io.StringIO()
+    yaml = get_ruamel_yaml_instance()
+    yaml.dump(content, out)
+    return out.getvalue()

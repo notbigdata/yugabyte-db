@@ -30,7 +30,8 @@ from github.GitRelease import GitRelease
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 
-from yb.common_util import init_env, YB_SRC_ROOT, read_file, load_yaml_file, write_yaml_file
+from yb.common_util import (
+    init_env, YB_SRC_ROOT, read_file, load_yaml_file, write_yaml_file, to_yaml_str)
 from yb.os_detection import get_short_os_name
 
 
@@ -53,9 +54,19 @@ TAG_RE = re.compile(
 # We will store the SHA1 to be used for the local third-party checkout under this key.
 SHA_FOR_LOCAL_CHECKOUT_KEY = 'sha_for_local_checkout'
 
+UBUNTU_OS_TYPE_RE = re.compile(r'^(ubuntu)([0-9]{2})([0-9]{2})$')
+
 
 def get_archive_name_from_tag(tag: str) -> str:
     return f'yugabyte-db-thirdparty-{tag}.tar.gz'
+
+
+def adjust_os_type(os_type: str) -> str:
+    match = UBUNTU_OS_TYPE_RE.match(os_type)
+    if match:
+        # Convert e.g. ubuntu2004 -> ubuntu20.04 for clarity.
+        return f'{match.group(1)}{match.group(2)}.{match.group(3)}'
+    return os_type
 
 
 class YBDependenciesRelease:
@@ -90,7 +101,7 @@ class YBDependenciesRelease:
                 f"SHA corresponding to the release/tag: {self.sha}.")
 
         self.timestamp = group_dict['timestamp']
-        self.os_type = group_dict['os']
+        self.os_type = adjust_os_type(group_dict['os'])
         self.is_linuxbrew = bool(group_dict.get('is_linuxbrew'))
 
         compiler_type = group_dict.get('compiler_type')
@@ -310,8 +321,9 @@ def load_metadata() -> Dict[str, Any]:
 def get_download_url(metadata: Dict[str, Any], compiler_type: str) -> str:
     short_os_name = get_short_os_name()
 
-    candidates: List[str] = []
-    for archive in metadata['archives']:
+    candidates: List[Any] = []
+    available_archives = metadata['archives']
+    for archive in available_archives:
         if archive['os_type'] == short_os_name and archive['compiler_type'] == compiler_type:
             candidates.append(archive)
 
@@ -326,6 +338,7 @@ def get_download_url(metadata: Dict[str, Any], compiler_type: str) -> str:
                 "This will change when we update the compiler.")
             return get_download_url(metadata, 'gcc5')
 
+        logging.info(f"Available release archives:\n{to_yaml_str(available_archives)}")
         raise ValueError(
             f"Could not find a third-party release archive to download for OS type "
             f"{short_os_name} and compiler type {compiler_type}.")
