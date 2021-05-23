@@ -214,7 +214,7 @@ if is_mac; then
     readonly FLOCK_MSG="File locked"
   else
     readonly FLOCK="/usr/bin/true"
-    readonly FLOCK_MSG="Skipped file lock"
+    readonly FLOCK_MSG="Skipped file lock on macOS"
   fi
 else
   readonly FLOCK="/usr/bin/flock"
@@ -1123,7 +1123,7 @@ download_and_extract_archive() {
       (
         "$FLOCK" -w "$YB_DOWNLOAD_LOCK_TIMEOUT_SEC" 200
         if [[ ! -d $dest_dir && ! -L $dest_dir ]]; then
-          log "[Host $(hostname)] $FLOCK_MSG $lock_path, proceeding with archive installation."
+          log "[Host $(hostname)] $FLOCK_MSG: $lock_path, proceeding with archive installation."
           (
             set -x
             "$YB_SRC_ROOT/python/yb/download_and_extract_archive.py" \
