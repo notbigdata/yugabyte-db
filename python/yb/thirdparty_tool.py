@@ -209,6 +209,10 @@ def parse_args() -> argparse.Namespace:
              'The default value is determined by the YB_COMPILER_TYPE environment variable.',
         default=os.getenv('YB_COMPILER_TYPE'))
     parser.add_argument(
+        '--os-type',
+        help='Operating system type, to help us decide which third-party archive to choose. '
+             'The default value is determined automatically based on the current OS.')
+    parser.add_argument(
         '--verbose',
         help='Verbose debug information')
 
@@ -318,13 +322,17 @@ def load_metadata() -> Dict[str, Any]:
     return load_yaml_file(get_archive_metadata_file_path())
 
 
-def get_download_url(metadata: Dict[str, Any], compiler_type: str) -> str:
-    short_os_name = get_short_os_name()
+def get_download_url(
+        metadata: Dict[str, Any],
+        compiler_type: str,
+        os_type: Optional[str]) -> str:
+    if not os_type:
+        os_type = get_short_os_name()
 
     candidates: List[Any] = []
     available_archives = metadata['archives']
     for archive in available_archives:
-        if archive['os_type'] == short_os_name and archive['compiler_type'] == compiler_type:
+        if archive['os_type'] == os_type and archive['compiler_type'] == compiler_type:
             candidates.append(archive)
 
     if len(candidates) == 1:
@@ -332,20 +340,21 @@ def get_download_url(metadata: Dict[str, Any], compiler_type: str) -> str:
         return f'{DOWNLOAD_URL_PREFIX}{tag}/{get_archive_name_from_tag(tag)}'
 
     if not candidates:
-        if short_os_name == 'centos7' and compiler_type == 'gcc':
+        if os_type == 'centos7' and compiler_type == 'gcc':
             logging.info(
                 "Assuming that the compiler type of 'gcc' means 'gcc5'. "
-                "This will change when we update the compiler.")
-            return get_download_url(metadata, 'gcc5')
+                "This will change when we stop using Linuxbrew and update the compiler.")
+            return get_download_url(metadata, 'gcc5', os_type)
 
         logging.info(f"Available release archives:\n{to_yaml_str(available_archives)}")
         raise ValueError(
-            f"Could not find a third-party release archive to download for OS type "
-            f"{short_os_name} and compiler type {compiler_type}.")
+            "Could not find a third-party release archive to download for OS type "
+            f"'{os_type}' and compiler type '{compiler_type}'. "
+            "Please see the list of available thirdparty archives above.")
 
     raise ValueError(
         f"Found too many third-party release archives to download for OS type "
-        f"{short_os_name} and compiler type {compiler_type}: {candidates}.")
+        f"{os_type} and compiler type matching {compiler_type}: {candidates}.")
 
 
 def main() -> None:
@@ -362,7 +371,10 @@ def main() -> None:
     if args.save_download_url_to_file:
         if not args.compiler_type:
             raise ValueError("Compiler type not specified")
-        url = get_download_url(metadata, args.compiler_type)
+        url = get_download_url(
+            metadata=metadata,
+            compiler_type=args.compiler_type,
+            os_type=args.os_type)
         if url is None:
             raise RuntimeError("Could not determine download URL")
         logging.info(f"Download URL for the third-party dependencies: {url}")
