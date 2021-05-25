@@ -86,7 +86,7 @@ static struct InitModule {
 namespace base {
 namespace internal {
 
-void SpinLockDelay(volatile Atomic32 *w, int32 value, int loop) {
+inline void SpinLockDelay(volatile Atomic32 *w, int32 value, int loop) {
   if (loop != 0) {
     int save_errno = errno;
     struct timespec tm;
@@ -108,7 +108,7 @@ void SpinLockDelay(volatile Atomic32 *w, int32 value, int loop) {
   }
 }
 
-void SpinLockWake(volatile Atomic32 *w, bool all) {
+inline void SpinLockWake(volatile Atomic32 *w, bool all) {
   if (have_futex) {
     sys_futex(reinterpret_cast<int *>(const_cast<Atomic32 *>(w)),
               FUTEX_WAKE | futex_private_flag, all? INT_MAX : 1, 0);

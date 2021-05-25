@@ -54,7 +54,7 @@ endif
 ifndef YB_BUILD_ROOT
 $(error YB_BUILD_ROOT is not set)
 endif
-LIBS += -L$(YB_BUILD_ROOT)/lib -lyb_util -lyb_pggate -lyb_common
+LIBS += -L$(YB_BUILD_ROOT)/lib -lyb_pggate -lyb_common -lyb_util -lgutil -L/opt/yb-build/thirdparty/yugabyte-db-thirdparty-v20210517205733-6a4d8d4628-centos7-linuxbrew-gcc5/installed/uninstrumented/lib -lprotobuf -lglog -lgflags
 
 CCLD = $(CXX)
 

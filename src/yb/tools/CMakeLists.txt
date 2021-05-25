@@ -127,6 +127,7 @@ add_library(yb-generate_partitions bulk_load_utils.cc yb-generate_partitions.cc)
 target_link_libraries(yb-generate_partitions
   yb_client
   yb_util
+  icudata
   master_proto
 )
 
@@ -179,7 +180,7 @@ ADD_YB_TEST(ysck_remote-test)
 ADD_YB_TEST(yb-admin-snapshot-schedule-test)
 ADD_YB_TEST_DEPENDENCIES(yb-admin-snapshot-schedule-test
   yb-admin)
-target_link_libraries(yb-admin-snapshot-schedule-test cql_test_util)
+YB_TEST_TARGET_LINK_LIBRARIES(yb-admin-snapshot-schedule-test cql_test_util)
 ADD_YB_TEST(yb-admin-test)
 ADD_YB_TEST_DEPENDENCIES(yb-admin-test
   yb-admin)

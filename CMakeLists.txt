@@ -561,10 +561,12 @@ if ("${YB_BUILD_TYPE}" MATCHES "^(asan|tsan)$")
   endif()
 endif()
 
-set(BUILD_SHARED_LIBS ON)
+set(BUILD_SHARED_LIBS OFF)
+set(LINK_SEARCH_START_STATIC ON)
+set(LINK_SEARCH_END_STATIC ON)
 
 # Position independent code is only necessary when producing shared objects.
-ADD_CXX_FLAGS(-fPIC)
+#ADD_CXX_FLAGS(-fPIC)
 
 # where to put generated archives (.a files)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/lib")
@@ -597,20 +599,39 @@ function(ADD_THIRDPARTY_LIB LIB_NAME)
     message(SEND_ERROR "Error: unrecognized arguments: ${ARG_UNPARSED_ARGUMENTS}")
   endif()
 
-  if(NOT ARG_SHARED_LIB)
-    if(NOT ARG_STATIC_LIB)
-      message(FATAL_ERROR "No static or shared library provided for ${LIB_NAME}")
+  if(ARG_STATIC_LIB)
+    if(NOT ARG_STATIC_LIB MATCHES "^.*[.]a$")
+      message(FATAL_ERROR "Invalid static library, expected to end with .a: ${ARG_STATIC_LIB}")
     endif()
     add_library(${LIB_NAME} STATIC IMPORTED)
     set_target_properties(${LIB_NAME}
-      PROPERTIES IMPORTED_LOCATION "${ARG_STATIC_LIB}")
+        PROPERTIES IMPORTED_LOCATION "${ARG_STATIC_LIB}")
     message("Added static library dependency ${LIB_NAME}: ${ARG_STATIC_LIB}")
   else()
+    if(NOT ARG_SHARED_LIB)
+      message(FATAL_ERROR "No static or shared library provided for ${LIB_NAME}")
+    endif()
     add_library(${LIB_NAME} SHARED IMPORTED)
     set_target_properties(${LIB_NAME}
       PROPERTIES IMPORTED_LOCATION "${ARG_SHARED_LIB}")
     message("Added shared library dependency ${LIB_NAME}: ${ARG_SHARED_LIB}")
   endif()
+
+  # if(NOT ARG_SHARED_LIB)
+  #   if(NOT ARG_STATIC_LIB)
+  #     message(FATAL_ERROR "No static or shared library provided for ${LIB_NAME}")
+  #   endif()
+  #   add_library(${LIB_NAME} STATIC IMPORTED)
+  #   set_target_properties(${LIB_NAME}
+  #     PROPERTIES IMPORTED_LOCATION "${ARG_STATIC_LIB}")
+  #   message("Added static library dependency ${LIB_NAME}: ${ARG_STATIC_LIB}")
+  # else()
+  #   add_library(${LIB_NAME} SHARED IMPORTED)
+  #   set_target_properties(${LIB_NAME}
+  #     PROPERTIES IMPORTED_LOCATION "${ARG_SHARED_LIB}")
+  #   message("Added shared library dependency ${LIB_NAME}: ${ARG_SHARED_LIB}")
+  # endif()
+
 
   if(ARG_DEPS)
     set_target_properties(${LIB_NAME}
@@ -670,6 +691,9 @@ endif()
 # -------------------------------------------------------------------------------------------------
 
 include(YugabyteFindThirdParty)
+
+ADD_LINKER_FLAGS("-fuse-ld=lld")
+ADD_CXX_FLAGS("-flto")
 
 ############################################################
 # Linker setup

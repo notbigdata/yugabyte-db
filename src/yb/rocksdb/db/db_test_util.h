@@ -85,11 +85,11 @@ class UniverseKeyManager;
 
 namespace rocksdb {
 
-uint64_t TestGetTickerCount(const Options& options, Tickers ticker_type) {
+inline uint64_t TestGetTickerCount(const Options& options, Tickers ticker_type) {
   return options.statistics->getTickerCount(ticker_type);
 }
 
-void TestResetTickerCount(const Options& options, Tickers ticker_type) {
+inline void TestResetTickerCount(const Options& options, Tickers ticker_type) {
   return options.statistics->setTickerCount(ticker_type, 0);
 }
 

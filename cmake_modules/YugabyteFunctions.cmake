@@ -354,6 +354,7 @@ macro(YB_SETUP_CLANG THIRDPARTY_BUILD_TYPE)
   if(NOT EXISTS "${LIBCXX_DIR}/lib")
     message(FATAL_ERROR "libc++ library directory does not exist: '${LIBCXX_DIR}/lib'")
   endif()
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -lc++abi")
 endmacro()
 
 # This is a macro because we need to call functions that set flags on the parent scope.

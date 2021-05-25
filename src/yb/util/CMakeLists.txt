@@ -268,6 +268,7 @@ set(UTIL_LIBS
   cds
   icui18n
   icuuc
+  icudata
   crcutil
   crypt_blowfish
   gflags
