@@ -927,40 +927,26 @@ find_compiler_by_type() {
       cc_executable+=${YB_GCC_SUFFIX:-}
       cxx_executable+=${YB_GCC_SUFFIX:-}
     ;;
-    # TODO mbautin: remove repetition in handling of various versions of GCC.
-    # TODO mbautin: do we actually need separate YB_GCC<n>_PREFIX environment variables?
-    gcc8)
-      if is_centos; then
-        cc_executable=/opt/rh/devtoolset-8/root/usr/bin/gcc
-        cxx_executable=/opt/rh/devtoolset-8/root/usr/bin/g++
-      elif [[ -n ${YB_GCC8_PREFIX:-} ]]; then
-        if [[ ! -d $YB_GCC8_PREFIX/bin ]]; then
-          fatal "Directory YB_GCC_PREFIX/bin ($YB_GCC_PREFIX/bin) does not exist"
-        fi
-        cc_executable=$YB_GCC8_PREFIX/bin/gcc-8
-        cxx_executable=$YB_GCC8_PREFIX/bin/g++-8
-      else
-        # shellcheck disable=SC2230
-        cc_executable=$(which gcc-8)
-        # shellcheck disable=SC2230
-        cxx_executable=$(which g++-8)
+    gcc*)
+      local gcc_major_version=${YB_COMPILER_TYPE#gcc}
+      if [[ ! $gcc_major_version =~ ^[0-9]+$ ]]; then
+        fatal "Invalid GCC major version: '$gcc_major_version'" \
+              "(from compiler type '$YB_COMPILER_TYPE')."
       fi
-    ;;
-    gcc9)
       if is_centos; then
-        cc_executable=/opt/rh/devtoolset-9/root/usr/bin/gcc
-        cxx_executable=/opt/rh/devtoolset-9/root/usr/bin/g++
-      elif [[ -n ${YB_GCC9_PREFIX:-} ]]; then
-        if [[ ! -d $YB_GCC9_PREFIX/bin ]]; then
-          fatal "Directory YB_GCC_PREFIX/bin ($YB_GCC_PREFIX/bin) does not exist"
+        local gcc_bin_dir
+        if [[ -d /opt/rh/gcc-toolset-$gcc_major_version ]]; then
+          gcc_bin_dir=/opt/rh/gcc-toolset-$gcc_major_version/root/usr/bin
+        else
+          gcc_bin_dir=/opt/rh/devtoolset-$gcc_major_version/root/usr/bin
         fi
-        cc_executable=$YB_GCC9_PREFIX/bin/gcc-9
-        cxx_executable=$YB_GCC9_PREFIX/bin/g++-9
+        cc_executable=$gcc_bin_dir/gcc
+        cxx_executable=$gcc_bin_dir/g++
       else
         # shellcheck disable=SC2230
-        cc_executable=$(which gcc-9)
+        cc_executable=$(which "gcc-$gcc_major_version")
         # shellcheck disable=SC2230
-        cxx_executable=$(which g++-9)
+        cxx_executable=$(which "g++-$gcc_major_version")
       fi
     ;;
     # This is the old Linuxbrew-based Clang 7 build type.
