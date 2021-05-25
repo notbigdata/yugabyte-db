@@ -173,10 +173,14 @@ readonly -a VALID_CMAKE_BUILD_TYPES=(
 make_regex_from_list VALID_CMAKE_BUILD_TYPES "${VALID_CMAKE_BUILD_TYPES[@]}"
 
 readonly -a VALID_COMPILER_TYPES=(
-  clang
   gcc
+  gcc5
+  gcc6
+  gcc7
   gcc8
   gcc9
+  gcc10
+  clang
   clang7
   clang8
   clang9
