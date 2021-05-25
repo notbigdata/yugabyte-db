@@ -378,6 +378,8 @@ def main() -> None:
         if url is None:
             raise RuntimeError("Could not determine download URL")
         logging.info(f"Download URL for the third-party dependencies: {url}")
+        output_file_dir = os.path.dirname(os.path.abspath(args.save_download_url_to_file))
+        os.makedirs(output_file_dir, exist_ok=True)
         with open(args.save_download_url_to_file, 'w') as output_file:
             output_file.write(url)
 
