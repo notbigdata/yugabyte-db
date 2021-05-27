@@ -134,6 +134,8 @@ set(MASTER_DEPS
   version_info_proto
   yb_pggate_flags
   yb_pggate
+  # TODO: this should come in as a transitive dependency through icuuc (or maybe yb_util).
+  icudata
 )
 
 ADD_YB_LIBRARY(master

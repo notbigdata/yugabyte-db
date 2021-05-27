@@ -235,17 +235,17 @@ ifeq ($(PORTNAME), hpux)
   endif
 endif
 
-ifeq ($(PORTNAME), linux)
-  LINK.shared		= $(COMPILER) -shared
-  ifdef soname
-    LINK.shared		+= -Wl,-soname,$(soname)
-  endif
-  BUILD.exports		= ( echo '{ global:'; $(AWK) '/^[^\#]/ {printf "%s;\n",$$1}' $<; echo ' local: *; };' ) >$@
-  exports_file		= $(SHLIB_EXPORTS:%.txt=%.list)
-  ifneq (,$(exports_file))
-    LINK.shared		+= -Wl,--version-script=$(exports_file)
-  endif
-endif
+#ifeq ($(PORTNAME), linux)
+#  LINK.shared		= $(COMPILER) -shared
+#  ifdef soname
+#    LINK.shared		+= -Wl,-soname,$(soname)
+#  endif
+#  BUILD.exports		= ( echo '{ global:'; $(AWK) '/^[^\#]/ {printf "%s;\n",$$1}' $<; echo ' local: *; };' ) >$@
+#  exports_file		= $(SHLIB_EXPORTS:%.txt=%.list)
+#  ifneq (,$(exports_file))
+#    LINK.shared		+= -Wl,--version-script=$(exports_file)
+#  endif
+#endif
 
 ifeq ($(PORTNAME), solaris)
   ifeq ($(GCC), yes)
@@ -283,18 +283,20 @@ endif
 ## BUILD
 ##
 
-.PHONY: all-lib all-static-lib all-shared-lib
+#.PHONY: all-lib all-static-lib all-shared-lib
+.PHONY: all-lib all-static-lib
 
-all-lib: all-shared-lib
-ifdef soname
-# no static library when building a dynamically loadable module
+#all-lib: all-shared-lib
 all-lib: all-static-lib
-all-lib: lib$(NAME).pc
-endif
+#ifdef soname
+# no static library when building a dynamically loadable module
+#all-lib: all-static-lib
+#all-lib: lib$(NAME).pc
+#endif
 
 all-static-lib: $(stlib)
 
-all-shared-lib: $(shlib)
+#all-shared-lib: $(shlib)
 
 # In this rule, "touch $@" works around a problem on some platforms wherein
 # ranlib updates the library file's mod time with a value calculated to
@@ -314,9 +316,16 @@ ifeq (,$(filter cygwin win32,$(PORTNAME)))
 ifneq ($(PORTNAME), aix)
 
 # Normal case
+#$(shlib): $(call expand_subsys,$(OBJS)) | $(SHLIB_PREREQS)
+#	$(LINK.shared) -o $@ $(call expand_subsys,$(OBJS)) $(LDFLAGS) $(LDFLAGS_SL) $(SHLIB_LINK)
+
 $(shlib): $(call expand_subsys,$(OBJS)) | $(SHLIB_PREREQS)
-	$(LINK.shared) -o $@ $(call expand_subsys,$(OBJS)) $(LDFLAGS) $(LDFLAGS_SL) $(SHLIB_LINK)
+	$(LINK.static) -o $@ $(call expand_subsys,$(OBJS)) $(LDFLAGS) $(LDFLAGS_SL)
+
+  # $(SHLIB_LINK)
+
 ifdef shlib_major
+
 # If we're using major and minor versions, then make a symlink to major-version-only.
 ifneq ($(shlib), $(shlib_major))
 	rm -f $(shlib_major)
@@ -452,12 +461,14 @@ endif # SHLIB_EXPORTS
 ## INSTALL
 ##
 
-.PHONY: install-lib install-lib-static install-lib-shared installdirs-lib
-install-lib: install-lib-shared
-ifdef soname
+#.PHONY: install-lib install-lib-static install-lib-shared installdirs-lib
+#install-lib: install-lib-shared
+#ifdef soname
+#install-lib: install-lib-static
+#install-lib: install-lib-pc
+#endif
+
 install-lib: install-lib-static
-install-lib: install-lib-pc
-endif
 
 install-lib-pc: lib$(NAME).pc installdirs-lib
 	$(INSTALL_DATA) $< '$(DESTDIR)$(pkgconfigdir)/lib$(NAME).pc'

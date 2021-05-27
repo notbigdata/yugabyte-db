@@ -431,9 +431,9 @@ set(CXX_FLAGS_RELEASE "-O3 -g -DNDEBUG -fno-omit-frame-pointer")
 set(CMAKE_CXX_FLAGS_DEBUG "")
 set(CMAKE_CXX_FLAGS_RELEASE "")
 
-if (NOT "${YB_USE_LTO}" STREQUAL "")
-  set(CXX_FLAGS_RELEASE "${CXX_FLAGS_RELEASE} flto -fno-use-linker-plugin")
-endif()
+# if (NOT "${YB_USE_LTO}" STREQUAL "")
+#   set(CXX_FLAGS_RELEASE "${CXX_FLAGS_RELEASE} flto -fno-use-linker-plugin")
+# endif()
 
 set(CXX_FLAGS_PROFILE_GEN "${CXX_FLAGS_RELEASE} -fprofile-generate")
 set(CXX_FLAGS_PROFILE_BUILD "${CXX_FLAGS_RELEASE} -fprofile-use")
@@ -693,7 +693,8 @@ endif()
 include(YugabyteFindThirdParty)
 
 ADD_LINKER_FLAGS("-fuse-ld=lld")
-ADD_CXX_FLAGS("-flto")
+# TODO mbautin: re-enable
+#ADD_CXX_FLAGS("-flto")
 
 ############################################################
 # Linker setup
@@ -749,8 +750,15 @@ message("Linker flags: ${CMAKE_EXE_LINKER_FLAGS}")
 # depend on them.
 set(LIBPQ_SHARED_LIB
     "${YB_BUILD_ROOT}/postgres/lib/libpq${YB_SHARED_LIBRARY_SUFFIX}")
+
+set(LIBPQ_STATIC_LIB
+    "${YB_BUILD_ROOT}/postgres/lib/libpq.a")
+
 set(YB_PGBACKEND_SHARED_LIB
     "${YB_BUILD_ROOT}/postgres/lib/libyb_pgbackend${YB_SHARED_LIBRARY_SUFFIX}")
+
+set(YB_PGBACKEND_STATIC_LIB
+    "${YB_BUILD_ROOT}/postgres/lib/libyb_pgbackend.a")
 
 # -------------------------------------------------------------------------------------------------
 # Subdirectories
@@ -760,8 +768,11 @@ set(YB_PGBACKEND_SHARED_LIB
 add_subdirectory(src/postgres)
 
 include_directories(${YB_BUILD_ROOT}/postgres/include)
-add_postgres_shared_library(pq "${LIBPQ_SHARED_LIB}")
-add_postgres_shared_library(yb_pgbackend "${YB_PGBACKEND_SHARED_LIB}")
+#add_postgres_shared_library(pq "${LIBPQ_SHARED_LIB}")
+#add_postgres_shared_library(yb_pgbackend "${YB_PGBACKEND_SHARED_LIB}")
+
+add_postgres_static_library(pq "${LIBPQ_STATIC_LIB}")
+add_postgres_static_library(yb_pgbackend "${YB_PGBACKEND_STATIC_LIB}")
 
 add_subdirectory(src/yb/rocksdb)
 add_subdirectory(src/yb/gutil)

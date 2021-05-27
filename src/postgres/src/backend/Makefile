@@ -54,7 +54,30 @@ endif
 ifndef YB_BUILD_ROOT
 $(error YB_BUILD_ROOT is not set)
 endif
-LIBS += -L$(YB_BUILD_ROOT)/lib -lyb_pggate -lyb_common -lyb_util -lgutil -L/opt/yb-build/thirdparty/yugabyte-db-thirdparty-v20210517205733-6a4d8d4628-centos7-linuxbrew-gcc5/installed/uninstrumented/lib -lprotobuf -lglog -lgflags
+#LIBS += -L$(YB_BUILD_ROOT)/lib -lyb_pggate -lyb_pggate_flags -lyb_client -lyb_fs -lyb_common -lyb_common_proto -lyb_util -lgutil -L/opt/yb-build/thirdparty/yugabyte-db-thirdparty-v20210517205733-6a4d8d4628-centos7-linuxbrew-gcc5/installed/uninstrumented/lib -lprotobuf -lglog -lgflags -lc++abi -lunwind
+LIBS += -L$(YB_BUILD_ROOT)/lib \
+	-L/opt/yb-build/thirdparty/yugabyte-db-thirdparty-v20210430162751-d7cce0d3e4-centos7-clang11/installed/common/lib \
+	-L/opt/yb-build/thirdparty/yugabyte-db-thirdparty-v20210430162751-d7cce0d3e4-centos7-clang11/installed/uninstrumented/lib \
+	-Wl,-Bstatic \
+	-lyb_pggate -lyb_pggate_util -lconsensus_error -ltablet_error \
+	-lyb_client -lmaster_rpc -lyb_partition -ltserver_util -lmaster_util -lmaster_error \
+	-lmaster_backup_proto -lmaster_proto -lcdc_consumer_proto -lyb_pgwrapper -lyb_pggate_flags \
+	-ltserver_service_proto -lyb_docdb_encoding -lyb_rocksutil -lrocksdb -lsnappy -lz \
+	-ltserver_forward_service_proto -lremote_bootstrap_proto -lconsensus_proto \
+	-ltserver_admin_proto -lbackup_proto -ltserver_proto -ldocdb_proto -ltablet_proto \
+	-lopid_proto -lserver_process -lsqueasel -lserver_common -lyb_fs \
+	-lserver_base_proto -lyrpc -lrpc_introspection_proto -lrpc_header_proto -lyb_common \
+	-lwire_protocol_proto -lyb_bfpg -luuid -lyb_bfql \
+	-lconsensus_metadata_proto -lfs_proto -lpgsql_protocol_proto -lql_protocol_proto \
+	-lyb_common_proto -lyb_util -lcrcutil -licudata -lcds-s -licui18n -latomic \
+	-lcrypto -licuuc -lcurl -lcrypt_blowfish \
+	-lssl -lev -lz -lencryption_proto -lpb_util_proto -lbacktrace \
+	-lversion_info_proto -lhistogram_proto -lredis_protocol_proto \
+	-lprofiler -lunwind -lprotoc -lgutil -lprotobuf -lglog -lboost_thread -ltcmalloc \
+	-lgflags -lboost_system -lldap_r -llber -lc++ -lc++abi \
+	-Wl,-Bdynamic -ldl -lrt
+
+#-lyb_pggate -ltablet_error -lyb_pggate_util -lyb_client -ltserver_forward_service_proto -lmaster_util -lmaster_error -ltserver_util -lserver_process -lsqueasel -lserver_base_proto -lmaster_rpc -lmaster_backup_proto -lmaster_proto -lyb_pgwrapper -lyb_pggate_flags -lcdc_consumer_proto -lyb_partition -lyb_docdb_encoding -lserver_common -lyb_fs -lyb_rocksutil -lrocksdb -lz -lsnappy -ltserver_service_proto -lremote_bootstrap_proto -lconsensus_error -lconsensus_proto -lbackup_proto -ltserver_admin_proto -ltserver_proto -ldocdb_proto -ltablet_proto -lopid_proto -lprotoc-gen-yrpc -lyrpc -lrpc_introspection_proto -lrpc_header_proto -lyb_common -lyb_bfql -lbfql_codegen -lpgsql_protocol_proto -lql_protocol_proto -lredis_protocol_proto -lwire_protocol_proto -lyb_bfpg -lbfpg_codegen -lconsensus_metadata_proto -lfs_proto -lyb_common_proto -lyb_util -lcurl -lencryption_proto -lcds -lcrypt_blowfish -lversion_info_proto -lcrcutil -l/opt/yb-build/thirdparty/yugabyte-db-thirdparty-v20200707012649-49ca690c1f-macos/installed/common/lib/libcrypto.dylib -lhistogram_proto -licuuc -licui18n -llibev -ldl -lpb_util_proto -lzlib -l/opt/yb-build/thirdparty/yugabyte-db-thirdparty-v20200707012649-49ca690c1f-macos/installed/common/lib/libssl.dylib -licudata -lprotoc-gen-insertions -lboost_thread -lboost_system -lgutil -lgflags -lglog -lprotobuf -lprotoc -lprofiler -ltcmalloc
 
 CCLD = $(CXX)
 

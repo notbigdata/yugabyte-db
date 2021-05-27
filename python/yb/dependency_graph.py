@@ -19,7 +19,7 @@ import platform
 
 from datetime import datetime
 
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Set
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -72,14 +72,16 @@ LIST_REVERSE_DEPS_CMD = 'rev-deps'
 LIST_AFFECTED_CMD = 'affected'
 SELF_TEST_CMD = 'self-test'
 DEBUG_DUMP_CMD = 'debug-dump'
+LIBS_TO_LINK_CMD = 'libs-to-link'
 
 COMMANDS = [LIST_DEPS_CMD,
             LIST_REVERSE_DEPS_CMD,
             LIST_AFFECTED_CMD,
             SELF_TEST_CMD,
-            DEBUG_DUMP_CMD]
+            DEBUG_DUMP_CMD,
+            LIBS_TO_LINK_CMD]
 
-COMMANDS_NOT_NEEDING_TARGET_SET = [SELF_TEST_CMD, DEBUG_DUMP_CMD]
+COMMANDS_NOT_NEEDING_TARGET_SET = [SELF_TEST_CMD, DEBUG_DUMP_CMD, LIBS_TO_LINK_CMD]
 
 HOME_DIR = os.path.realpath(os.path.expanduser('~'))
 
@@ -494,6 +496,55 @@ class CMakeDepGraph:
 
         walk(cmake_target, add_this_target=False)
         return result
+
+    def get_link_order(self, cmake_targets: List[str]) -> List[str]:
+        # Produce an order such that any dependees are specified before their dependents.
+        # See https://bit.ly/3oONN2c
+
+        initial_target_set: Set[str] = set(cmake_targets)
+        on_path_from_root: Set[str] = set()
+
+        # Remove any initial targets that are dependencies (direct or tarnsitive) of any other
+        # initial target.
+        ignored_initial_targets: Set[str] = set()
+        for cmake_target in initial_target_set:
+            for other_cmake_target in initial_target_set:
+                if (other_cmake_target != cmake_target and
+                    other_cmake_target in self.get_recursive_cmake_deps(cmake_target)):
+                    ignored_initial_targets.add(other_cmake_target)
+        assert len(ignored_initial_targets) < len(initial_target_set), \
+            f"Internal error: all initial targets got ignored: {initial_target_set}"
+        topological_order = []
+        visited = set()
+
+        def walk(target: str):
+            if target in visited:
+                return
+            if target in on_path_from_root:
+                raise ValueError("Cycle detected in the dependency graph of CMake targets")
+            on_path_from_root.add(target)
+            try:
+                visited.add(target)
+                for dep in self.cmake_deps.get(target, []):
+                    walk(dep)
+                # Other substitutions:
+                # libuuid -> uuid
+                # zlib -> z
+                # libbacktrace -> backtrace
+                # libev -> ev
+                if target.startswith(('gen_', 'protoc-gen-')) and not target.endswith('_codegen'):
+                    topological_order.append(target)
+            finally:
+                assert target in on_path_from_root
+                on_path_from_root.remove(target)
+
+        for cmake_target in cmake_targets:
+            if cmake_target not in ignored_initial_targets:
+                walk(cmake_target)
+
+        # topological_order gives us the order where dependencies precede each target. We need
+        # the opposite.
+        return topological_order[::-1]
 
 
 class DependencyGraphBuilder:
@@ -1293,6 +1344,12 @@ def get_file_category(rel_path):
     return 'other'
 
 
+def compute_library_link_order(conf, initial_cmake_targets: List[str]):
+    cmake_dep_graph = CMakeDepGraph(conf.build_root)
+    link_order = cmake_dep_graph.get_link_order(initial_cmake_targets)
+    print(' '.join([f'-l{lib_name}' for lib_name in link_order]))
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='A tool for working with the dependency graph')
@@ -1333,6 +1390,10 @@ def main():
                         action='store_true',
                         help='Skip checking for file existence. Allows using the tool after '
                              'build artifacts have been deleted.')
+    parser.add_argument('--initial-cmake-targets',
+                        nargs='+',
+                        help=f'Specifies initial CMake targets to get the full list of libraries '
+                             'to link with for. To be used with {LIBS_TO_LINK_CMD}.')
     args = parser.parse_args()
 
     if args.file_regex and args.file_name_glob:
@@ -1365,6 +1426,16 @@ def main():
 
     if args.git_commit:
         args.git_diff = "{}^..{}".format(args.git_commit, args.git_commit)
+
+    # ---------------------------------------------------------------------------------------------
+    # Finished parsing arguments
+    # ---------------------------------------------------------------------------------------------
+
+    if cmd == LIBS_TO_LINK_CMD:
+        if not args.initial_cmake_targets:
+            raise ValueError(f'--initial-cmake-targets are required with {LIBS_TO_LINK_CMD}')
+        compute_library_link_order(conf, args.initial_cmake_targets)
+        return
 
     graph_cache_path = os.path.join(args.build_root, 'dependency_graph.json')
     if args.rebuild_graph or not os.path.isfile(graph_cache_path):

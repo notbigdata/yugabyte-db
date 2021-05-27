@@ -316,8 +316,7 @@ string(REGEX REPLACE "[.](so|dylib)$" ".a" ICU_I18N_LIBRARIES_STATIC "${ICU_I18N
 string(REGEX REPLACE "[.](so|dylib)$" ".a" ICU_UC_LIBRARIES_STATIC   "${ICU_UC_LIBRARIES}")
 
 # TODO: this is hacky.
-string(REGEX REPLACE "/[.]libicuuc[.]$" "/.libicudata." ICU_DATA_LIBRARIES  "${ICU_UC_LIBRARIES}")
-
+string(REGEX REPLACE "/libicuuc[.]" "/libicudata." ICU_DATA_LIBRARIES  "${ICU_UC_LIBRARIES}")
 string(REGEX REPLACE "[.](so|dylib)$" ".a" ICU_DATA_LIBRARIES_STATIC  "${ICU_DATA_LIBRARIES}")
 
 message("ICU_I18N_LIBRARIES=${ICU_I18N_LIBRARIES}")
@@ -328,6 +327,13 @@ message("ICU_UC_LIBRARIES_STATIC=${ICU_UC_LIBRARIES_STATIC}")
 
 message("ICU_DATA_LIBRARIES=${ICU_DATA_LIBRARIES}")
 message("ICU_DATA_LIBRARIES_STATIC=${ICU_DATA_LIBRARIES_STATIC}")
+
+if ("${ICU_DATA_LIBRARIES}" STREQUAL "${ICU_UC_LIBRARIES}")
+  message(
+      FATAL_ERROR
+      "Wrong value of ICU_DATA_LIBRARIES, did regex replacement failed? ${ICU_DATA_LIBRARIES}")
+endif()
+
 
 ADD_THIRDPARTY_LIB(icudata
   STATIC_LIB "${ICU_DATA_LIBRARIES_STATIC}"

@@ -505,6 +505,21 @@ function(ADD_POSTGRES_SHARED_LIBRARY LIB_NAME SHARED_LIB_PATH)
           "${SHARED_LIB_PATH} (invoked from ${CMAKE_CURRENT_LIST_FILE})")
 endfunction()
 
+function(ADD_POSTGRES_STATIC_LIBRARY LIB_NAME STATIC_LIB_PATH)
+  if ("${STATIC_LIB_PATH}" STREQUAL "")
+    message(FATAL_ERROR
+            "Static library path cannot be empty. "
+            "LIB_NAME=${LIB_NAME} "
+            "CMAKE_CURRENT_LIST_DIR=${CMAKE_CURRENT_LIST_DIR}")
+  endif()
+  add_library(${LIB_NAME} STATIC IMPORTED)
+  set_target_properties(${LIB_NAME} PROPERTIES IMPORTED_LOCATION "${STATIC_LIB_PATH}")
+  # "postgres" is the target that actually builds this shared library.
+  add_dependencies(${LIB_NAME} postgres)
+  message("Added target ${LIB_NAME} for a static library built as part of PostgreSQL code: "
+          "${STATIC_LIB_PATH} (invoked from ${CMAKE_CURRENT_LIST_FILE})")
+endfunction()
+
 function(parse_build_root_basename)
   get_filename_component(YB_BUILD_ROOT_BASENAME "${CMAKE_CURRENT_BINARY_DIR}" NAME)
   string(REPLACE "-" ";" YB_BUILD_ROOT_BASENAME_COMPONENTS ${YB_BUILD_ROOT_BASENAME})
