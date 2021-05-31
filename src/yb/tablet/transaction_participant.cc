@@ -65,6 +65,7 @@
 #include "yb/util/scope_exit.h"
 #include "yb/util/thread_restrictions.h"
 #include "yb/util/tsan_util.h"
+#include "yb/util/unique_lock.h"
 
 using namespace std::literals;
 using namespace std::placeholders;
@@ -159,7 +160,7 @@ class TransactionParticipant::Impl
     return true;
   }
 
-  void CompleteShutdown() {
+  void CompleteShutdown() EXCLUDES(mutex_) {
     LOG_IF_WITH_PREFIX(DFATAL, !closing_.load()) << __func__ << " w/o StartShutdown";
 
     decltype(status_resolvers_) status_resolvers;
@@ -189,7 +190,7 @@ class TransactionParticipant::Impl
   }
 
   // Adds new running transaction.
-  bool Add(const TransactionMetadataPB& data, rocksdb::WriteBatch *write_batch) {
+  bool Add(const TransactionMetadataPB& data, rocksdb::WriteBatch *write_batch) EXCLUDES(mutex_) {
     auto metadata = TransactionMetadata::FromPB(data);
     if (!metadata.ok()) {
       LOG_WITH_PREFIX(DFATAL) << "Invalid transaction id: " << metadata.status().ToString();
@@ -264,10 +265,10 @@ class TransactionParticipant::Impl
     return result;
   }
 
-  Result<TransactionMetadata> PrepareMetadata(const TransactionMetadataPB& pb) {
+  Result<TransactionMetadata> PrepareMetadata(const TransactionMetadataPB& pb) EXCLUDES(mutex_) {
     if (pb.has_isolation()) {
       auto metadata = VERIFY_RESULT(TransactionMetadata::FromPB(pb));
-      std::unique_lock<std::mutex> lock(mutex_);
+      UNIQUE_LOCK(lock, mutex_);
       auto it = transactions_.find(metadata.transaction_id);
       if (it != transactions_.end()) {
         RETURN_NOT_OK((**it).CheckAborted());
@@ -288,6 +289,8 @@ class TransactionParticipant::Impl
                     Format("Unknown transaction, could be recently aborted: $0", id), Slice(),
                     PgsqlError(YBPgErrorCode::YB_PG_T_R_SERIALIZATION_FAILURE));
     }
+
+    FakeUniqueLock<std::mutex> fake_lock(mutex_);
     RETURN_NOT_OK(lock_and_iterator.transaction().CheckAborted());
     return lock_and_iterator.transaction().metadata();
   }
@@ -302,6 +305,8 @@ class TransactionParticipant::Impl
     if (!lock_and_iterator.found()) {
       return boost::none;
     }
+
+    FakeUniqueLock<std::mutex> fake_lock(mutex_);
     auto& transaction = lock_and_iterator.transaction();
     transaction.AddReplicatedBatch(batch_idx, encoded_replicated_batches);
     return std::make_pair(transaction.metadata().isolation, transaction.last_batch_data());
@@ -325,6 +330,7 @@ class TransactionParticipant::Impl
           STATUS_FORMAT(NotFound, "Request status of unknown transaction: $0", *request.id));
       return;
     }
+    lock_and_iterator.ensure_locked(&mutex_);
     lock_and_iterator.transaction().RequestStatusAt(request, &lock_and_iterator.lock);
   }
 
@@ -462,7 +468,8 @@ class TransactionParticipant::Impl
 
     if (data.state.status() == TransactionStatus::APPLYING) {
       return ReplicatedApplying(*id, data);
-    } else if (data.state.status() == TransactionStatus::ABORTED) {
+    }
+    if (data.state.status() == TransactionStatus::ABORTED) {
       return ReplicatedAborted(*id, data);
     }
 
@@ -480,7 +487,7 @@ class TransactionParticipant::Impl
     participant_context_.StrandEnqueue(cleanup_aborts_task.get());
   }
 
-  CHECKED_STATUS ProcessApply(const TransactionApplyData& data) {
+  CHECKED_STATUS ProcessApply(const TransactionApplyData& data) EXCLUDES(mutex_) {
     VLOG_WITH_PREFIX(2) << "Apply: " << data.ToString();
 
     loader_.WaitLoaded(data.transaction_id);
@@ -500,7 +507,9 @@ class TransactionParticipant::Impl
       // has intents of not.
       auto lock_and_iterator = LockAndFind(
           data.transaction_id, "pre apply"s, TransactionLoadFlags{TransactionLoadFlag::kMustExist});
-      if (!lock_and_iterator.found()) {
+      if (lock_and_iterator.found()) {
+        lock_and_iterator.ensure_locked(mutex_);
+      } else {
         // This situation is normal and could be caused by 2 scenarios:
         // 1) Write batch failed, but originator doesn't know that.
         // 2) Failed to notify status tablet that we applied transaction.
@@ -519,7 +528,7 @@ class TransactionParticipant::Impl
             << "Transaction was previously applied with another commit ht: " << existing_commit_ht
             << ", new commit ht: " << data.commit_ht;
       } else {
-        transactions_.modify(lock_and_iterator.iterator, [&data](auto& txn) {
+        transactions_.modify(lock_and_iterator.iterator, [&data](auto& txn) REQUIRES(mutex_) {
           txn->SetLocalCommitTime(data.commit_ht);
         });
 
@@ -636,7 +645,7 @@ class TransactionParticipant::Impl
 
   void SetDB(
       const docdb::DocDB& db, const docdb::KeyBounds* key_bounds,
-      RWOperationCounter* pending_op_counter) {
+      RWOperationCounter* pending_op_counter) EXCLUDES(mutex_) {
     bool had_db = db_.intents != nullptr;
     db_ = db;
     key_bounds_ = key_bounds;
@@ -661,7 +670,7 @@ class TransactionParticipant::Impl
       size_t required_num_replicated_batches,
       int64_t term,
       tserver::GetTransactionStatusAtParticipantResponsePB* response,
-      rpc::RpcContext* context) {
+      rpc::RpcContext* context) EXCLUDES(mutex_) {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = transactions_.find(transaction_id);
     if (it == transactions_.end()) {
@@ -681,7 +690,7 @@ class TransactionParticipant::Impl
     return &participant_context_;
   }
 
-  HybridTime MinRunningHybridTime() {
+  HybridTime MinRunningHybridTime() EXCLUDES(mutex_) {
     auto result = min_running_ht_.load(std::memory_order_acquire);
     if (result == HybridTime::kMax || result == HybridTime::kInvalid) {
       return result;
@@ -693,7 +702,7 @@ class TransactionParticipant::Impl
               current_next_check_min_running,
               now + 1ms * FLAGS_transaction_min_running_check_interval_ms,
               std::memory_order_acq_rel)) {
-        std::unique_lock<std::mutex> lock(mutex_);
+        UNIQUE_LOCK(lock, mutex_);
         if (transactions_.empty()) {
           return HybridTime::kMax;
         }
@@ -723,14 +732,14 @@ class TransactionParticipant::Impl
     return result;
   }
 
-  void WaitMinRunningHybridTime(HybridTime ht) {
+  void WaitMinRunningHybridTime(HybridTime ht) EXCLUDES(mutex_) {
     MinRunningNotifier min_running_notifier(&applier_);
-    std::unique_lock<std::mutex> lock(mutex_);
+    UNIQUE_LOCK(lock, mutex_);
     waiting_for_min_running_ht_ = ht;
     CheckMinRunningHybridTimeSatisfiedUnlocked(&min_running_notifier);
   }
 
-  CHECKED_STATUS ResolveIntents(HybridTime resolve_at, CoarseTimePoint deadline) {
+  CHECKED_STATUS ResolveIntents(HybridTime resolve_at, CoarseTimePoint deadline) EXCLUDES(mutex_) {
     RETURN_NOT_OK(WaitUntil(participant_context_.clock_ptr().get(), resolve_at, deadline));
 
     if (FLAGS_max_transactions_in_status_request == 0) {
@@ -796,7 +805,7 @@ class TransactionParticipant::Impl
             }
             resolver.Add((**it).metadata().status_tablet, id);
           }
-          auto filter = [this](const TransactionId& id) {
+          auto filter = [this](const TransactionId& id) REQUIRES(mutex_) {
             auto it = transactions_.find(id);
             return it == transactions_.end() || (**it).local_commit_time().is_valid();
           };
@@ -813,11 +822,10 @@ class TransactionParticipant::Impl
       if (recheck_ids.empty()) {
         if (committed_ids.empty()) {
           break;
-        } else {
-          // We are waiting only for committed transactions to be applied.
-          // So just add some delay.
-          std::this_thread::sleep_for(10ms * std::min<size_t>(10, committed_ids.size()));
         }
+        // We are waiting only for committed transactions to be applied.
+        // So just add some delay.
+        std::this_thread::sleep_for(10ms * std::min<size_t>(10, committed_ids.size()));
       }
     }
 
@@ -834,13 +842,13 @@ class TransactionParticipant::Impl
     return transactions_.size();
   }
 
-  OneWayBitmap TEST_TransactionReplicatedBatches(const TransactionId& id) {
+  OneWayBitmap TEST_TransactionReplicatedBatches(const TransactionId& id) EXCLUDES(mutex_) {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = transactions_.find(id);
     return it != transactions_.end() ? (**it).replicated_batches() : OneWayBitmap();
   }
 
-  std::string DumpTransactions() {
+  std::string DumpTransactions() EXCLUDES(mutex_) {
     std::string result;
     std::lock_guard<std::mutex> lock(mutex_);
 
@@ -862,7 +870,8 @@ class TransactionParticipant::Impl
     return result;
   }
 
-  CHECKED_STATUS StopActiveTxnsPriorTo(HybridTime cutoff, CoarseTimePoint deadline) {
+  CHECKED_STATUS StopActiveTxnsPriorTo(HybridTime cutoff, CoarseTimePoint deadline)
+      EXCLUDES(mutex_) {
     vector<TransactionId> ids_to_abort;
     {
       std::lock_guard<std::mutex> lock(mutex_);
@@ -938,14 +947,14 @@ class TransactionParticipant::Impl
       >
   > Transactions;
 
-  void CompleteLoad(const std::function<void()>& functor) override {
+  void CompleteLoad(const std::function<void()>& functor) EXCLUDES(mutex_) override {
     MinRunningNotifier min_running_notifier(&applier_);
     std::lock_guard<std::mutex> lock(mutex_);
     functor();
     TransactionsModifiedUnlocked(&min_running_notifier);
   }
 
-  void LoadFinished(const ApplyStatesMap& pending_applies) override {
+  void LoadFinished(const ApplyStatesMap& pending_applies) EXCLUDES(mutex_) override {
     start_latch_.Wait();
     std::vector<ScopedRWOperation> operations;
     operations.reserve(pending_applies.size());
@@ -1131,31 +1140,88 @@ class TransactionParticipant::Impl
     return false;
   }
 
-  struct LockAndFindResult {
+  struct SCOPED_CAPABILITY LockAndFindResult {
     static Transactions::const_iterator UninitializedIterator() {
       static const Transactions empty_transactions;
       return empty_transactions.end();
     }
 
-    std::unique_lock<std::mutex> lock;
-    Transactions::const_iterator iterator = UninitializedIterator();
-    bool recently_removed = false;
+    LockAndFindResult() = default;
+
+    // Move-only.
+    LockAndFindResult(LockAndFindResult&&) = default;
+    LockAndFindResult& operator=(LockAndFindResult&&) = default;
+    LockAndFindResult(const LockAndFindResult&) = delete;
+    LockAndFindResult& operator=(const LockAndFindResult&) = delete;
+
+    ~LockAndFindResult() = default;
 
     bool found() const {
       return lock.owns_lock();
     }
 
+    void ensure_locked(std::mutex* mutex) ACQUIRE(*mutex) {
+      DCHECK(lock.owns_lock());
+      DCHECK_EQ(mutex, lock.mutex());
+    }
+
     RunningTransaction& transaction() const {
       return **iterator;
     }
+
+    // bool TryLock(
+    //     const TransactionId& id, const std::string& reason, TransactionLoadFlags flags,
+    //     TransactionParticipant::Impl* txn_participant) TRY_ACQUIRE(true) {
+    //   txn_participant->loader_.WaitLoaded(id);
+    //   bool recently_removed;
+    //   {
+    //     UNIQUE_LOCK(lock, mutex_);
+    //     auto it = txn_participant->transactions_.find(id);
+    //     if (it != txn_participant->transactions_.end()) {
+    //       this->lock = std::move(lock);
+    //       this->iterator = it;
+    //       return true;
+    //     }
+    //     recently_removed = txn_participant->WasTransactionRecentlyRemoved(id);
+    //   }
+    //   if (recently_removed) {
+    //     VLOG_WITH_PREFIX(1)
+    //         << "Attempt to load recently removed transaction: " << id << ", for: " << reason;
+    //     recently_removed = true;
+    //     return false;
+    //   }
+    //   txn_participant->metric_transaction_not_found_->Increment();
+    //   if (flags.Test(TransactionLoadFlag::kMustExist)) {
+    //     YB_LOG_WITH_PREFIX_EVERY_N_SECS(WARNING, 1)
+    //         << "Transaction not found: " << id << ", for: " << reason;
+    //   } else {
+    //     YB_LOG_WITH_PREFIX_EVERY_N_SECS(INFO, 1)
+    //         << "Transaction not found: " << id << ", for: " << reason;
+    //   }
+    //   if (flags.Test(TransactionLoadFlag::kCleanup)) {
+    //     VLOG_WITH_PREFIX(2) << "Schedule cleanup for: " << id;
+    //     auto cleanup_task = std::make_shared<CleanupIntentsTask>(
+    //         &participant_context_, &applier_, id);
+    //     cleanup_task->Prepare(cleanup_task);
+    //     participant_context_.StrandEnqueue(cleanup_task.get());
+    //   }
+    //   return false;
+    // }
+
+    UniqueLock<std::mutex> lock;
+    Transactions::const_iterator iterator = UninitializedIterator();
+    bool recently_removed = false;
+
+    // std::mutex& mutex_;
   };
 
   LockAndFindResult LockAndFind(
-      const TransactionId& id, const std::string& reason, TransactionLoadFlags flags) {
+      const TransactionId& id, const std::string& reason, TransactionLoadFlags flags)
+      EXCLUDES(mutex_) {
     loader_.WaitLoaded(id);
     bool recently_removed;
     {
-      std::unique_lock<std::mutex> lock(mutex_);
+      UNIQUE_LOCK(lock, mutex_);
       auto it = transactions_.find(id);
       if (it != transactions_.end()) {
         return LockAndFindResult{ std::move(lock), it };
@@ -1191,7 +1257,7 @@ class TransactionParticipant::Impl
       TransactionMetadata&& metadata,
       TransactionalBatchData&& last_batch_data,
       OneWayBitmap&& replicated_batches,
-      const ApplyStateWithCommitHt* pending_apply) override {
+      const ApplyStateWithCommitHt* pending_apply) EXCLUDES(mutex_) override {
     MinRunningNotifier min_running_notifier(&applier_);
     std::lock_guard<std::mutex> lock(mutex_);
     auto txn = std::make_shared<RunningTransaction>(
@@ -1455,13 +1521,16 @@ class TransactionParticipant::Impl
   // Owned externally, should be guaranteed that would not be destroyed before this.
   RWOperationCounter* pending_op_counter_ = nullptr;
 
-  Transactions transactions_;
+  Transactions transactions_ GUARDED_BY(mutex_);
+
   // Ids of running requests, stored in increasing order.
-  std::deque<int64_t> running_requests_;
+  std::deque<int64_t> running_requests_ GUARDED_BY(mutex_);
+
   // Ids of complete requests, minimal request is on top.
   // Contains only ids greater than first running request id, otherwise entry is removed
   // from both collections.
-  std::priority_queue<int64_t, std::vector<int64_t>, std::greater<void>> complete_requests_;
+  std::priority_queue<int64_t, std::vector<int64_t>, std::greater<void>>
+      complete_requests_ GUARDED_BY(mutex_);
 
   // Queues of transaction ids that should be cleaned, paired with request that should be completed
   // in order to be able to do clean.

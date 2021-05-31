@@ -31,6 +31,15 @@ namespace yb {
 template<typename Mutex>
 class SCOPED_CAPABILITY UniqueLock {
  public:
+
+  UniqueLock() = default;
+
+  // Move-only.
+  UniqueLock(UniqueLock&&) = default;
+  UniqueLock& operator=(UniqueLock&&) = default;
+  UniqueLock(const UniqueLock&) = delete;
+  UniqueLock& operator=(const UniqueLock&) = delete;
+
   explicit UniqueLock(Mutex &mutex) ACQUIRE(mutex) : unique_lock_(mutex) {}
 
   explicit UniqueLock(Mutex &mutex, std::defer_lock_t defer) : unique_lock_(mutex, defer) {}
@@ -44,8 +53,30 @@ class SCOPED_CAPABILITY UniqueLock {
 
   Mutex* mutex() RETURN_CAPABILITY(unique_lock_.mutex()) { return unique_lock_.mutex(); }
 
+  bool owns_lock() const noexcept { return unique_lock_.owns_lock(); }
+
  private:
   std::unique_lock<Mutex> unique_lock_;
+};
+
+template<typename Mutex>
+class SCOPED_CAPABILITY FakeUniqueLock {
+ public:
+
+  FakeUniqueLock() = default;
+
+  // Move-only.
+  FakeUniqueLock(FakeUniqueLock&&) = default;
+  FakeUniqueLock& operator=(FakeUniqueLock&&) = default;
+  FakeUniqueLock(const FakeUniqueLock&) = delete;
+  FakeUniqueLock& operator=(const FakeUniqueLock&) = delete;
+
+  explicit FakeUniqueLock(Mutex &mutex) ACQUIRE(mutex) {}
+
+  ~FakeUniqueLock() RELEASE() = default;
+
+  void unlock() RELEASE() { }
+  void lock() ACQUIRE() { }
 };
 
 template<typename Mutex>

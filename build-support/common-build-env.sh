@@ -1843,8 +1843,8 @@ find_or_download_thirdparty() {
     if [[ -f $BUILD_ROOT/thirdparty_path.txt ]]; then
       local thirdparty_dir_from_file
       thirdparty_dir_from_file=$(<"$BUILD_ROOT/thirdparty_path.txt")
-      if [[ -n ${YB_THIRDPARTY_DIR:-} && "$YB_THIRDPARTY_DIR" != "$thirdparty_dir_from_file" ]]
-      then
+      if [[ -n ${YB_THIRDPARTY_DIR:-} &&
+            "$YB_THIRDPARTY_DIR" != "$thirdparty_dir_from_file" ]]; then
         fatal "YB_THIRDPARTY_DIR is explicitly set to '$YB_THIRDPARTY_DIR' but file" \
               "'$BUILD_ROOT/thirdparty_path.txt' contains '$thirdparty_dir_from_file'"
       fi

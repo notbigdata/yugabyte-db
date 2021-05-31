@@ -20,6 +20,7 @@
 #include "yb/util/flag_tags.h"
 #include "yb/util/tsan_util.h"
 #include "yb/util/yb_pg_errcodes.h"
+#include "yb/util/unique_lock.h"
 
 using namespace std::placeholders;
 using namespace std::literals;
@@ -84,8 +85,9 @@ void RunningTransaction::Aborted() {
   last_known_status_hybrid_time_ = HybridTime::kMax;
 }
 
-void RunningTransaction::RequestStatusAt(const StatusRequest& request,
-                                         std::unique_lock<std::mutex>* lock) {
+// TODO(mbautin) fix thread safety analysis
+void RunningTransaction::RequestStatusAt(
+    const StatusRequest& request, UniqueLock<std::mutex>* lock) NO_THREAD_SAFETY_ANALYSIS {
   DCHECK_LE(request.global_limit_ht, HybridTime::kMax);
   DCHECK_LE(request.read_ht, request.global_limit_ht);
 
@@ -131,7 +133,7 @@ CHECKED_STATUS RunningTransaction::CheckAborted() const {
 
 void RunningTransaction::Abort(client::YBClient* client,
                                TransactionStatusCallback callback,
-                               std::unique_lock<std::mutex>* lock) {
+                               UniqueLock<std::mutex>* lock) NO_THREAD_SAFETY_ANALYSIS {
   if (last_known_status_ == TransactionStatus::ABORTED ||
       last_known_status_ == TransactionStatus::COMMITTED) {
     // Transaction is already in final state, so no reason to send abort request.

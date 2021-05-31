@@ -26,6 +26,7 @@
 
 #include "yb/util/bitmap.h"
 #include "yb/util/operation_counter.h"
+#include "yb/util/unique_lock.h"
 
 namespace yb {
 namespace tablet {
@@ -86,14 +87,14 @@ class RunningTransaction : public std::enable_shared_from_this<RunningTransactio
       size_t batch_idx, boost::container::small_vector_base<uint8_t>* encoded_replicated_batches);
   void BatchReplicated(const TransactionalBatchData& value);
   void RequestStatusAt(const StatusRequest& request,
-                       std::unique_lock<std::mutex>* lock);
+                       UniqueLock<std::mutex>* lock);
   bool WasAborted() const;
   CHECKED_STATUS CheckAborted() const;
   void Aborted();
 
   void Abort(client::YBClient* client,
              TransactionStatusCallback callback,
-             std::unique_lock<std::mutex>* lock);
+             UniqueLock<std::mutex>* lock);
 
   std::string ToString() const;
   void ScheduleRemoveIntents(const RunningTransactionPtr& shared_self);
