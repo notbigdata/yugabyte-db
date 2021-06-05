@@ -45,6 +45,8 @@ from yb.linuxbrew import get_linuxbrew_dir  # nopep8
 from yb.common_util import get_thirdparty_dir, YB_SRC_ROOT, sorted_grouped_by, \
                            safe_path_join  # nopep8
 
+from typing import List
+
 # A resolved shared library dependency shown by ldd.
 # Example (split across two lines):
 #   libmaster.so => /home/mbautin/code/yugabyte/build/debug-gcc-dynamic/lib/libmaster.so
@@ -68,7 +70,8 @@ YB_BUILD_SUPPORT_DIR = os.path.join(YB_SRC_ROOT, 'build-support')
 PATCHELF_NOT_AN_ELF_EXECUTABLE = 'not an ELF executable'
 
 LIBRARY_PATH_RE = re.compile('^(.*[.]so)(?:$|[.].*$)')
-LIBRARY_CATEGORIES = ['system', 'yb', 'yb-thirdparty', 'linuxbrew']
+LIBRARY_CATEGORIES_NO_LINUXBREW = ['system', 'yb', 'yb-thirdparty']
+LIBRARY_CATEGORIES = LIBRARY_CATEGORIES_NO_LINUXBREW + ['linuxbrew']
 
 linuxbrew_home = None
 
@@ -198,6 +201,10 @@ def symlink(source, link_path):
         os.symlink(source, link_path)
 
 
+def using_linuxbrew():
+    return linuxbrew_home is not None and linuxbrew_home.is_enabled()
+
+
 class LibraryPackager:
     """
     A utility for starting with a set of 'seed' executables, and walking the dependency tree of
@@ -209,6 +216,7 @@ class LibraryPackager:
                  dest_dir,
                  verbose_mode=False):
         build_dir = os.path.realpath(build_dir)
+        dest_dir = os.path.realpath(dest_dir)
         if not os.path.exists(build_dir):
             raise IOError("Build directory '{}' does not exist".format(build_dir))
         self.seed_executable_patterns = seed_executable_patterns
@@ -224,11 +232,30 @@ class LibraryPackager:
         self.main_dest_bin_dir = os.path.join(self.dest_dir, 'bin')
         self.postgres_dest_bin_dir = os.path.join(self.dest_dir, 'postgres', 'bin')
 
+    def get_absolute_rpath_items(self) -> List[str]:
+        assert not using_linuxbrew()
+        return [
+            os.path.abspath(os.path.join(self.dest_dir, 'lib', library_category))
+            for library_category in LIBRARY_CATEGORIES_NO_LINUXBREW
+        ]
+
+    def get_relative_rpath_items(self, dest_abs_dir: str) -> List[str]:
+        return [
+            f'$ORIGIN/{os.path.relpath(rpath_item, dest_abs_dir)}'
+            for rpath_item in self.get_absolute_rpath_items()
+        ]
+
     def install_dyn_linked_binary(self, src_path, dest_dir):
         if not os.path.isdir(dest_dir):
             raise RuntimeError("Not a directory: '{}'".format(dest_dir))
         shutil.copy(src_path, dest_dir)
         installed_binary_path = os.path.join(dest_dir, os.path.basename(src_path))
+        dest_abs_dir = os.path.abspath(dest_dir)
+        if not using_linuxbrew():
+            run_patchelf(
+                    installed_binary_path, '--set-rpath',
+                    ':'.join(self.get_relative_rpath_items(dest_abs_dir)))
+
         self.installed_dyn_linked_binaries.append(installed_binary_path)
         return installed_binary_path
 
@@ -241,7 +268,7 @@ class LibraryPackager:
         """
 
         elf_file_path = os.path.realpath(elf_file_path)
-        if SYSTEM_LIBRARY_PATH_RE.match(elf_file_path) or not linuxbrew_home.ldd_path:
+        if SYSTEM_LIBRARY_PATH_RE.match(elf_file_path) or not using_linuxbrew():
             ldd_path = '/usr/bin/ldd'
         else:
             ldd_path = linuxbrew_home.ldd_path
@@ -300,7 +327,6 @@ class LibraryPackager:
         starting with the given set of "seed executables", in the destination directory so that
         the executables can find all of their dependencies.
         """
-        using_linuxbrew = linuxbrew_home.is_enabled()
 
         all_deps = []
 
@@ -333,7 +359,7 @@ class LibraryPackager:
                     # This is probably a script.
                     shutil.copy(executable, dest_bin_dir)
 
-        if linuxbrew_home.patchelf_path:
+        if using_linuxbrew():
             # Not using the install_dyn_linked_binary method for copying patchelf and ld.so as we
             # won't need to do any post-processing on these two later.
             shutil.copy(linuxbrew_home.patchelf_path, self.main_dest_bin_dir)
@@ -357,7 +383,7 @@ class LibraryPackager:
 
         # Add libresolv and libnss_* libs explicitly because they are loaded by glibc at runtime.
         additional_libs = set()
-        if linuxbrew_home.cellar_glibc_dir:
+        if using_linuxbrew():
             for additional_lib_name_glob in ADDITIONAL_LIB_NAME_GLOBS:
                 additional_libs.update(lib_path for lib_path in
                                        glob.glob(os.path.join(linuxbrew_home.cellar_glibc_dir,
@@ -375,6 +401,9 @@ class LibraryPackager:
             for dep in sorted(deps_in_category, key=lambda dep: dep.target):
                 logging.info("    {} -> {}".format(
                     dep.name + ' ' * (max_name_len - len(dep.name)), dep.target))
+            if category == 'system':
+                logging.info("Not packaging any dependencies from a system-wide directory")
+                continue
 
             if category == 'linuxbrew':
                 category_dest_dir = linuxbrew_lib_dest_dir
@@ -407,11 +436,11 @@ class LibraryPackager:
         for installed_binary in self.installed_dyn_linked_binaries:
             # Sometimes files that we copy from other locations are not even writable by user!
             subprocess.check_call(['chmod', 'u+w', installed_binary])
-            if using_linuxbrew:
+            if using_linuxbrew():
                 # Remove rpath (we will set it appropriately in post_install.sh).
                 run_patchelf('--remove-rpath', installed_binary)
 
-        if using_linuxbrew:
+        if using_linuxbrew():
             # Add other files used by glibc at runtime.
             linuxbrew_glibc_real_path = os.path.normpath(
                 os.path.join(os.path.realpath(linuxbrew_home.ldd_path), '..', '..'))
