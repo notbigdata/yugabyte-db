@@ -176,7 +176,8 @@ def add_common_arguments(parser):
 
 
 def run_patchelf(*args):
-    patchelf_result = run_program([linuxbrew_home.patchelf_path] + list(args), error_ok=True)
+    patchelf_path = linuxbrew_home.patchelf_path or 'patchelf'
+    patchelf_result = run_program([patchelf_path] + list(args), error_ok=True)
     if patchelf_result.returncode != 0 and patchelf_result.stderr not in [
             'cannot find section .interp',
             'cannot find section .dynamic',
@@ -240,7 +241,7 @@ class LibraryPackager:
         """
 
         elf_file_path = os.path.realpath(elf_file_path)
-        if SYSTEM_LIBRARY_PATH_RE.match(elf_file_path):
+        if SYSTEM_LIBRARY_PATH_RE.match(elf_file_path) or not linuxbrew_home.ldd_path:
             ldd_path = '/usr/bin/ldd'
         else:
             ldd_path = linuxbrew_home.ldd_path
@@ -299,6 +300,8 @@ class LibraryPackager:
         starting with the given set of "seed executables", in the destination directory so that
         the executables can find all of their dependencies.
         """
+        using_linuxbrew = linuxbrew_home.is_enabled()
+
         all_deps = []
 
         dest_lib_dir = os.path.join(self.dest_dir, 'lib')
@@ -330,12 +333,14 @@ class LibraryPackager:
                     # This is probably a script.
                     shutil.copy(executable, dest_bin_dir)
 
-        # Not using the install_dyn_linked_binary method for copying patchelf and ld.so as we won't
-        # need to do any post-processing on these two later.
-        shutil.copy(linuxbrew_home.patchelf_path, self.main_dest_bin_dir)
+        if linuxbrew_home.patchelf_path:
+            # Not using the install_dyn_linked_binary method for copying patchelf and ld.so as we
+            # won't need to do any post-processing on these two later.
+            shutil.copy(linuxbrew_home.patchelf_path, self.main_dest_bin_dir)
 
         ld_path = linuxbrew_home.ld_so_path
-        shutil.copy(ld_path, dest_lib_dir)
+        if ld_path:
+            shutil.copy(ld_path, dest_lib_dir)
 
         all_deps = sorted(set(all_deps))
 
@@ -352,13 +357,14 @@ class LibraryPackager:
 
         # Add libresolv and libnss_* libs explicitly because they are loaded by glibc at runtime.
         additional_libs = set()
-        for additional_lib_name_glob in ADDITIONAL_LIB_NAME_GLOBS:
-            additional_libs.update(lib_path for lib_path in
-                                   glob.glob(os.path.join(linuxbrew_home.cellar_glibc_dir,
-                                                          '*',
-                                                          'lib',
-                                                          additional_lib_name_glob))
-                                   if not lib_path.endswith('.a'))
+        if linuxbrew_home.cellar_glibc_dir:
+            for additional_lib_name_glob in ADDITIONAL_LIB_NAME_GLOBS:
+                additional_libs.update(lib_path for lib_path in
+                                       glob.glob(os.path.join(linuxbrew_home.cellar_glibc_dir,
+                                                              '*',
+                                                              'lib',
+                                                              additional_lib_name_glob))
+                                       if not lib_path.endswith('.a'))
 
         for category, deps_in_category in sorted_grouped_by(all_deps,
                                                             lambda dep: dep.get_category()):
@@ -401,70 +407,74 @@ class LibraryPackager:
         for installed_binary in self.installed_dyn_linked_binaries:
             # Sometimes files that we copy from other locations are not even writable by user!
             subprocess.check_call(['chmod', 'u+w', installed_binary])
-            # Remove rpath (we will set it appropriately in post_install.sh).
-            run_patchelf('--remove-rpath', installed_binary)
+            if using_linuxbrew:
+                # Remove rpath (we will set it appropriately in post_install.sh).
+                run_patchelf('--remove-rpath', installed_binary)
 
-        # Add other files used by glibc at runtime.
-        linuxbrew_glibc_real_path = os.path.normpath(
-            os.path.join(os.path.realpath(linuxbrew_home.ldd_path), '..', '..'))
+        if using_linuxbrew:
+            # Add other files used by glibc at runtime.
+            linuxbrew_glibc_real_path = os.path.normpath(
+                os.path.join(os.path.realpath(linuxbrew_home.ldd_path), '..', '..'))
 
-        linuxbrew_glibc_rel_path = os.path.relpath(
-            linuxbrew_glibc_real_path, os.path.realpath(linuxbrew_home.linuxbrew_dir))
-        # We expect glibc to live under a path like "Cellar/glibc/2.23" in the Linuxbrew directory.
-        if not linuxbrew_glibc_rel_path.startswith('Cellar/glibc/'):
-            raise ValueError(
-                "Expected to find glibc under Cellar/glibc/<version> in Linuxbrew, but found it "
-                "at: '%s'" % linuxbrew_glibc_rel_path)
+            linuxbrew_glibc_rel_path = os.path.relpath(
+                linuxbrew_glibc_real_path, os.path.realpath(linuxbrew_home.linuxbrew_dir))
 
-        rel_paths = []
-        for glibc_rel_path in [
-            'etc/ld.so.cache',
-            'etc/localtime',
-            'lib/locale/locale-archive',
-            'lib/gconv',
-            'libexec/getconf',
-            'share/locale',
-            'share/zoneinfo',
-        ]:
-            rel_paths.append(os.path.join(linuxbrew_glibc_rel_path, glibc_rel_path))
+            # We expect glibc to live under a path like "Cellar/glibc/2.23" in
+            # the Linuxbrew directory.
+            if not linuxbrew_glibc_rel_path.startswith('Cellar/glibc/'):
+                raise ValueError(
+                    "Expected to find glibc under Cellar/glibc/<version> in Linuxbrew, but found it"
+                    " at: '%s'" % linuxbrew_glibc_rel_path)
 
-        terminfo_glob_pattern = os.path.join(
-                linuxbrew_home.linuxbrew_dir, 'Cellar/ncurses/*/share/terminfo')
-        terminfo_paths = glob.glob(terminfo_glob_pattern)
-        if len(terminfo_paths) != 1:
-            raise ValueError(
-                "Failed to find the terminfo directory using glob pattern %s. "
-                "Found: %s" % (terminfo_glob_pattern, terminfo_paths))
-        terminfo_rel_path = os.path.relpath(terminfo_paths[0], linuxbrew_home.linuxbrew_dir)
-        rel_paths.append(terminfo_rel_path)
+            rel_paths = []
+            for glibc_rel_path in [
+                'etc/ld.so.cache',
+                'etc/localtime',
+                'lib/locale/locale-archive',
+                'lib/gconv',
+                'libexec/getconf',
+                'share/locale',
+                'share/zoneinfo',
+            ]:
+                rel_paths.append(os.path.join(linuxbrew_glibc_rel_path, glibc_rel_path))
 
-        for rel_path in rel_paths:
-            src = os.path.join(linuxbrew_home.linuxbrew_dir, rel_path)
-            dst = os.path.join(linuxbrew_dest_dir, rel_path)
-            copy_deep(src, dst, create_dst_dir=True)
+            terminfo_glob_pattern = os.path.join(
+                    linuxbrew_home.linuxbrew_dir, 'Cellar/ncurses/*/share/terminfo')
+            terminfo_paths = glob.glob(terminfo_glob_pattern)
+            if len(terminfo_paths) != 1:
+                raise ValueError(
+                    "Failed to find the terminfo directory using glob pattern %s. "
+                    "Found: %s" % (terminfo_glob_pattern, terminfo_paths))
+            terminfo_rel_path = os.path.relpath(terminfo_paths[0], linuxbrew_home.linuxbrew_dir)
+            rel_paths.append(terminfo_rel_path)
 
-        post_install_path = os.path.join(self.main_dest_bin_dir, 'post_install.sh')
-        with open(post_install_path) as post_install_script_input:
-            post_install_script = post_install_script_input.read()
+            for rel_path in rel_paths:
+                src = os.path.join(linuxbrew_home.linuxbrew_dir, rel_path)
+                dst = os.path.join(linuxbrew_dest_dir, rel_path)
+                copy_deep(src, dst, create_dst_dir=True)
 
-        new_post_install_script = post_install_script
-        replacements = [
-            ("original_linuxbrew_path_to_patch", linuxbrew_home.linuxbrew_dir),
-            ("original_linuxbrew_path_length", len(linuxbrew_home.linuxbrew_dir)),
-        ]
-        for macro_var_name, list_of_binary_names in [
-            ("main_elf_names_to_patch", main_elf_names_to_patch),
-            ("postgres_elf_names_to_patch", postgres_elf_names_to_patch),
-        ]:
-            replacements.append(
-                (macro_var_name, self.join_binary_names_for_bash(list_of_binary_names)))
+            post_install_path = os.path.join(self.main_dest_bin_dir, 'post_install.sh')
+            with open(post_install_path) as post_install_script_input:
+                post_install_script = post_install_script_input.read()
 
-        for macro_var_name, value in replacements:
-            new_post_install_script = new_post_install_script.replace(
-                '${%s}' % macro_var_name, str(value))
+            new_post_install_script = post_install_script
+            replacements = [
+                ("original_linuxbrew_path_to_patch", linuxbrew_home.linuxbrew_dir),
+                ("original_linuxbrew_path_length", len(linuxbrew_home.linuxbrew_dir)),
+            ]
+            for macro_var_name, list_of_binary_names in [
+                ("main_elf_names_to_patch", main_elf_names_to_patch),
+                ("postgres_elf_names_to_patch", postgres_elf_names_to_patch),
+            ]:
+                replacements.append(
+                    (macro_var_name, self.join_binary_names_for_bash(list_of_binary_names)))
 
-        with open(post_install_path, 'w') as post_install_script_output:
-            post_install_script_output.write(new_post_install_script)
+            for macro_var_name, value in replacements:
+                new_post_install_script = new_post_install_script.replace(
+                    '${%s}' % macro_var_name, str(value))
+
+            with open(post_install_path, 'w') as post_install_script_output:
+                post_install_script_output.write(new_post_install_script)
 
 
 def set_build_root(build_root):
