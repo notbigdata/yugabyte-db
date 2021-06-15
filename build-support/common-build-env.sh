@@ -2223,7 +2223,7 @@ set_prebuilt_thirdparty_url() {
     # we do need to upgrade these build types to a non-Linuxbrew toolchain, though.
     if [[ $YB_COMPILER_TYPE == "clang" ||
           $build_type == "asan" ||
-          $build_type == "tsan" ]]; then
+          $build_type == "tsan" ]] && is_centos; then
       thirdparty_url_file+="_legacy_clang7_linuxbrew"
     fi
     thirdparty_url_file+=.txt
