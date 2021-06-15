@@ -128,21 +128,7 @@ string YBTest::GetTestPath(const string& relative_path) {
 ///////////////////////////////////////////////////
 
 bool AllowSlowTests() {
-  char *e = getenv(kSlowTestsEnvVariable);
-  if ((e == nullptr) ||
-      (strlen(e) == 0) ||
-      (strcasecmp(e, "false") == 0) ||
-      (strcasecmp(e, "0") == 0) ||
-      (strcasecmp(e, "no") == 0)) {
-    return false;
-  }
-  if ((strcasecmp(e, "true") == 0) ||
-      (strcasecmp(e, "1") == 0) ||
-      (strcasecmp(e, "yes") == 0)) {
-    return true;
-  }
-  LOG(FATAL) << "Unrecognized value for " << kSlowTestsEnvVariable << ": " << e;
-  return false;
+  return true;
 }
 
 void OverrideFlagForSlowTests(const std::string& flag_name,
