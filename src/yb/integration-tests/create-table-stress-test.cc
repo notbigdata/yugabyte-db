@@ -476,7 +476,7 @@ TEST_F(CreateTableStressTest, TestHeartbeatDeadline) {
 
 
 TEST_F(CreateTableStressTest, TestGetTableLocationsOptions) {
-DontVerifyClusterBeforeNextTearDown();
+  DontVerifyClusterBeforeNextTearDown();
   if (!AllowSlowTests()) {
     LOG(INFO) << "Skipping slow test";
     return;
@@ -522,7 +522,9 @@ DontVerifyClusterBeforeNextTearDown();
     ASSERT_EQ(resp.tablet_locations_size(), 1);
     // empty since it's the first
     ASSERT_EQ(resp.tablet_locations(0).partition().partition_key_start(), "");
-    ASSERT_EQ(resp.tablet_locations(0).partition().partition_key_end(), string("\x80\0\0\1", 4));
+    // 0x0444 is the end key of the first partition for a hash-partitioned table with 60 tablets.
+    // 65536 / 60 is approximately 1092, or 0x0444.
+    ASSERT_EQ(resp.tablet_locations(0).partition().partition_key_end(), string("\x04\x44", 2));
   }
 
   int half_tablets = FLAGS_num_test_tablets / 2;
@@ -554,7 +556,16 @@ DontVerifyClusterBeforeNextTearDown();
   auto tables = cluster_->mini_master()->master()->catalog_manager()->GetTables(
       master::GetTablesMode::kAll);
   for (const scoped_refptr<master::TableInfo>& table_info : tables) {
+    const auto table_name = table_info->name();
+    const auto namespace_name = table_info->namespace_name();
+    if (namespace_name == "system" ||
+        namespace_name.find("system_") == 0 ||
+        table_name.find("sys.") == 0) {
+      LOG(INFO) << "Skipping system table " << table_name << " in namespace " << namespace_name;
+      continue;
+    }
     LOG(INFO) << "Table: " << table_info->ToString();
+
     std::vector<scoped_refptr<master::TabletInfo> > tablets;
     table_info->GetAllTablets(&tablets);
     for (const scoped_refptr<master::TabletInfo>& tablet_info : tablets) {
@@ -569,7 +580,9 @@ DontVerifyClusterBeforeNextTearDown();
                     ? metadata.partition().partition_key_end() : "<< none >>")
                 << ", running = " << tablet_info->metadata().state().is_running() << " }";
     }
-    ASSERT_EQ(FLAGS_num_test_tablets, tablets.size());
+    size_t num_tablets = tablets.size();
+    ASSERT_EQ(num_tablets, FLAGS_num_test_tablets)
+        << "Table name: '" << table_name << "', namespace: '" << namespace_name << "'";
   }
   LOG(INFO) << "========================================================";
 
