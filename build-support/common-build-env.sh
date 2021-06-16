@@ -187,9 +187,19 @@ make_regex_from_list VALID_CMAKE_BUILD_TYPES "${VALID_CMAKE_BUILD_TYPES[@]}"
 
 readonly -a VALID_COMPILER_TYPES=(
   clang
+  clang7
+  clang8
+  clang9
+  clang10
+  clang11
+  clang12
   gcc
+  gcc5
+  gcc6
+  gcc7
   gcc8
   gcc9
+  gcc10
   zapcc
 )
 make_regex_from_list VALID_COMPILER_TYPES "${VALID_COMPILER_TYPES[@]}"
