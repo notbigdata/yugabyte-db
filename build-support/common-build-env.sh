@@ -1544,6 +1544,7 @@ detect_num_cpus_and_set_make_parallelism() {
 }
 
 validate_thirdparty_dir() {
+  expect_vars_to_be_set YB_THIRDPARTY_DIR
   ensure_file_exists "$YB_THIRDPARTY_DIR/build_thirdparty.sh"
   ensure_directory_exists "$YB_THIRDPARTY_DIR/installed"
 }
