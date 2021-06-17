@@ -284,6 +284,11 @@ yb_mvn_parameters_already_set=false
 # Functions
 # -------------------------------------------------------------------------------------------------
 
+yb_activate_debug_mode() {
+  PS4='[${BASH_SOURCE[0]}:${LINENO} ${FUNCNAME[0]:-}] '
+  set -x
+}
+
 is_thirdparty_build() {
   [[ ${YB_IS_THIRDPARTY_BUILD:-0} == "1" ]]
 }
@@ -1695,6 +1700,7 @@ using_default_thirdparty_dir() {
 }
 
 find_or_download_thirdparty() {
+  yb_activate_debug_mode
   if [[ ${YB_IS_THIRDPARTY_BUILD:-} == "1" ]]; then
     return
   fi
