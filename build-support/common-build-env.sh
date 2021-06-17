@@ -1700,7 +1700,6 @@ using_default_thirdparty_dir() {
 }
 
 find_or_download_thirdparty() {
-  yb_activate_debug_mode
   if [[ ${YB_IS_THIRDPARTY_BUILD:-} == "1" ]]; then
     return
   fi
@@ -1740,14 +1739,6 @@ find_or_download_thirdparty() {
     if ! using_default_thirdparty_dir; then
       export NO_REBUILD_THIRDPARTY=1
     fi
-    return
-  fi
-
-  if [[ -n ${YB_COMPILER_TYPE:-} &&
-        ${YB_COMPILER_TYPE} != "gcc" &&
-        ${YB_COMPILER_TYPE} != "clang" ]]; then
-    # For compiler types like clang11 or gcc8, don't attempt to use a prebuilt thirdparty archive
-    # yet (as of 11/01/2020). We will do that when we pre-build those archives.
     return
   fi
 
