@@ -249,12 +249,19 @@ if(NOT INCLUDE_COMPILER_INFO_EARLY)
   include(CompilerInfo)
 endif()
 
-# Generate a Clang compile_commands.json "compilation database" file for use
-# with various development tools, such as Vim's YouCompleteMe plugin.
+# Generate a compile_commands.json "compilation database" file.
 # See http://clang.llvm.org/docs/JSONCompilationDatabase.html
-if ("$ENV{YB_EXPORT_COMPILE_COMMANDS}" STREQUAL "1" OR
-    "$ENV{YB_RUN_AFFECTED_TESTS_ONLY}" STREQUAL "1")
-  set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
+if (CMAKE_EXPORT_COMPILE_COMMANDS) 
+  message("CMAKE_EXPORT_COMPILE_COMMANDS is already enabled, will export compile_commands.json.")
+elseif ("$ENV{YB_EXPORT_COMPILE_COMMANDS}" STREQUAL "1")
+  message("The YB_EXPORT_COMPILE_COMMANDS environment variable is set to 1, will export "
+          "compile_commands.json.")
+  set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+elseif ("$ENV{YB_RUN_AFFECTED_TESTS_ONLY}" STREQUAL "1")
+  message("YB_RUN_AFFECTED_TESTS_ONLY is set to 1, will export compile_commands.json.")
+  set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+else()
+  message("CMake will not export the compilation database")
 endif()
 
 # -------------------------------------------------------------------------------------------------

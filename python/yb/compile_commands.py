@@ -7,7 +7,10 @@ import json
 import re
 import subprocess
 
-from yugabyte_pycommon import WorkDirContext
+from typing import List, Dict, Set, Union, Any, Optional
+
+# TODO: add types to yugabyte_pycommon and remove "type: ignore" here.
+from yugabyte_pycommon import WorkDirContext  # type: ignore
 
 from yb.common_util import (
     YB_SRC_ROOT,
@@ -16,27 +19,26 @@ from yb.common_util import (
     get_absolute_path_aliases
 )
 
-
 # We build PostgreSQL code in a separate directory (postgres_build) rsynced from the source tree to
 # support out-of-source builds. Then, after generating the compilation commands, we rewrite them
 # to work with original files (in src/postgres) so that clangd can use them.
 
 # The "combined compilation commands" file contains all compilation commands for C++ code and
 # PostgreSQL C code. This is the file that is symlinked in the YugabyteDB source root directory and
-# used with Clangd. These commands are post-processed.
-COMBINED_POSTPROCESSED_COMPILE_COMMANDS_FILE_NAME = 'combined_compile_commands.json'
+# used with Clangd.
+COMBINED_POSTPROCESSED_COMPILE_COMMANDS_FILE_NAME = 'combined_postprocessed_compile_commands.json'
+PG_POSTPROCESSED_COMPILE_COMMANDS_FILE_NAME = 'pg_postprocessed_compile_commands.json'
+YB_POSTPROCESSED_COMPILE_COMMANDS_FILE_NAME = 'yb_postprocessed_compile_commands.json'
 
-# The same as above but without postprocessing, just concatenated from C++ and Postgres C
-# compile_commands.json files.
 COMBINED_RAW_COMPILE_COMMANDS_FILE_NAME = 'combined_raw_compile_commands.json'
+YB_RAW_COMPILE_COMMANDS_FILE_NAME = 'yb_raw_compile_commands.json'
+PG_RAW_COMPILE_COMMANDS_FILE_NAME = 'pg_raw_compile_commands.json'
 
 
-def create_compile_commands_symlink(combined_compile_commands_path, build_type):
+def create_compile_commands_symlink(
+        combined_compile_commands_path: str,
+        build_type: str) -> None:
     dest_link_path = os.path.join(YB_SRC_ROOT, 'compile_commands.json')
-    if build_type != 'compilecmds':
-        logging.info("Not creating a symlink at %s for build type %s",
-                     dest_link_path, build_type)
-        return
 
     if (not os.path.exists(dest_link_path) or
             os.path.realpath(dest_link_path) != os.path.realpath(combined_compile_commands_path)):
@@ -52,7 +54,7 @@ def create_compile_commands_symlink(combined_compile_commands_path, build_type):
         logging.info("Created symlink at %s", dest_link_path)
 
 
-def get_include_path_arg(include_path):
+def get_include_path_arg(include_path: str) -> str:
     return '-I%s' % include_path
 
 
@@ -61,11 +63,20 @@ class IncludePathRewriter:
     Rewrites include paths in a compilation command line so that they refer to sources in
     src/postgres, not to rsynced sources in build/.../postgres_build.
     """
+    original_working_directory: str
+    new_working_directory: str
+    already_added_include_paths: Set[str]
+    original_include_paths: List[str]
+    additional_postgres_include_paths: List[str]
+    build_root: str
+    postgres_install_dir_include_realpath: str
+    new_args: List[str]
+
     def __init__(
             self,
-            original_working_directory,
-            new_working_directory,
-            build_root):
+            original_working_directory: str,
+            new_working_directory: str,
+            build_root: str) -> None:
         self.original_working_directory = original_working_directory
         self.new_working_directory = new_working_directory
         self.already_added_include_paths = set()
@@ -76,12 +87,12 @@ class IncludePathRewriter:
             os.path.join(self.build_root, 'postgres', 'include'))
         self.new_args = []
 
-    def remember_original_include_path(self, original_include_path):
+    def remember_original_include_path(self, original_include_path: str) -> None:
         if (original_include_path not in self.already_added_include_paths and
                 original_include_path not in self.original_include_paths):
             self.original_include_paths.append(original_include_path)
 
-    def check_for_postgres_installed_include_path(self, include_path):
+    def check_for_postgres_installed_include_path(self, include_path: str) -> None:
         assert os.path.isabs(include_path)
         if (not self.additional_postgres_include_paths and
                 os.path.realpath(include_path) == self.postgres_install_dir_include_realpath):
@@ -96,10 +107,10 @@ class IncludePathRewriter:
                     self.build_root, 'postgres_build', 'interfaces', 'libpq')
             ])
 
-    def append_include_path_arg(self, include_path):
+    def append_include_path_arg(self, include_path: str) -> None:
         self.new_args.append(get_include_path_arg(include_path))
 
-    def append_new_absolute_include_path(self, new_absolute_include_path):
+    def append_new_absolute_include_path(self, new_absolute_include_path: str) -> None:
         assert os.path.isabs(new_absolute_include_path)
         self.append_include_path_arg(new_absolute_include_path)
 
@@ -108,7 +119,7 @@ class IncludePathRewriter:
         self.already_added_include_paths.add(os.path.abspath(new_absolute_include_path))
         self.already_added_include_paths.add(os.path.realpath(new_absolute_include_path))
 
-    def handle_include_path(self, include_path):
+    def handle_include_path(self, include_path: str) -> None:
         if os.path.isabs(include_path):
             # This is already an absolute path, append it as is.
             self.check_for_postgres_installed_include_path(include_path)
@@ -126,7 +137,7 @@ class IncludePathRewriter:
         new_include_path = os.path.realpath(os.path.join(self.new_working_directory, include_path))
         self.append_new_absolute_include_path(new_include_path)
 
-    def rewrite(self, args):
+    def rewrite(self, args: List[str]) -> List[str]:
         for arg in args:
             if not arg.startswith('-I'):
                 self.new_args.append(arg)
@@ -141,7 +152,7 @@ class IncludePathRewriter:
 
 
 class CompileCommandProcessor:
-    def __init__(self, build_root):
+    def __init__(self, build_root: str) -> None:
         self.build_root = build_root
 
         self.pg_build_root = os.path.join(build_root, 'postgres_build')
@@ -149,7 +160,7 @@ class CompileCommandProcessor:
 
         self.postgres_src_root = os.path.join(YB_SRC_ROOT, 'src', 'postgres')
 
-    def postprocess_compile_command(self, compile_command_item):
+    def postprocess_compile_command(self, compile_command_item: Dict[str, Any]) -> Dict[str, Any]:
         original_working_directory = compile_command_item['directory']
         if 'command' in compile_command_item:
             if 'arguments' in compile_command_item:
@@ -214,7 +225,7 @@ class CompileCommandProcessor:
         }
 
 
-def filter_compile_commands(input_path, output_path, file_name_regex_str):
+def filter_compile_commands(input_path: str, output_path: str, file_name_regex_str: str) -> None:
     compiled_re = re.compile(file_name_regex_str)
     input_cmds = read_json_file(input_path)
     output_cmds = [
