@@ -3296,12 +3296,15 @@ Status CatalogManager::CreateTableInMemory(const CreateTableRequestPB& req,
 
 Result<bool> DoesTableExist(const Result<TableInfoPtr>& result) {
   if (result.ok()) {
+    LOG(INFO) << "DEBUG mbautin -- in " << __func__;
     return true;
   }
   if (result.status().IsNotFound()
       && MasterError(result.status()) == MasterErrorPB::OBJECT_NOT_FOUND) {
+    LOG(INFO) << "DEBUG mbautin -- in " << __func__ << ", result.status()=" << result.status();
     return false;
   }
+  LOG(INFO) << "DEBUG mbautin -- in " << __func__ << ", returning: " << result.status();
   return result.status();
 }
 
@@ -4141,31 +4144,53 @@ Status CatalogManager::DeleteTable(
 Status CatalogManager::DeleteTableInternal(
     const DeleteTableRequestPB* req, DeleteTableResponsePB* resp, rpc::RpcContext* rpc) {
 
+  LOG(INFO) << "DEBUG mbautin -- in " << __func__;
   auto schedules_to_tables_map = VERIFY_RESULT(
       MakeSnapshotSchedulesToObjectIdsMap(SysRowEntry::TABLE));
 
+  LOG(INFO) << "DEBUG mbautin -- in " << __func__;
   vector<DeletingTableData> tables;
+
+  LOG(INFO) << "DEBUG mbautin -- in " << __func__;
   RETURN_NOT_OK(DeleteTableInMemory(req->table(), req->is_index_table(),
                                     true /* update_indexed_table */, schedules_to_tables_map,
                                     &tables, resp, rpc));
+
+  LOG(INFO) << "DEBUG mbautin -- in " << __func__;
 
   // Delete any CDC streams that are set up on this table.
   TRACE("Deleting CDC streams on table");
   RETURN_NOT_OK(DeleteCDCStreamsForTable(resp->table_id()));
 
+  LOG(INFO) << "DEBUG mbautin -- in " << __func__
+            << ": committing in-memory state for " << tables.size() << " tables";
   // Update the in-memory state.
   TRACE("Committing in-memory state");
   for (auto& table : tables) {
+    LOG(INFO) << "DEBUG mbautin: is_dirty=" << table.write_lock.is_dirty() << " for object "
+              << table.write_lock->pb.DebugString();
     table.write_lock.Commit();
   }
 
+  {
+    for (auto& table : tables) {
+      auto l = table.info->LockForRead();
+      LOG(INFO) << "DEBUG mbautin: after committing and re-locking, table state: "
+                << l->pb.DebugString();
+    }
+  }
+
+  LOG(INFO) << "DEBUG mbautin -- in " << __func__;
   if (PREDICT_FALSE(FLAGS_catalog_manager_inject_latency_in_delete_table_ms > 0)) {
+    LOG(INFO) << "DEBUG mbautin -- in " << __func__;
     LOG(INFO) << "Sleeping in CatalogManager::DeleteTable for " <<
         FLAGS_catalog_manager_inject_latency_in_delete_table_ms << " ms";
     SleepFor(MonoDelta::FromMilliseconds(FLAGS_catalog_manager_inject_latency_in_delete_table_ms));
   }
 
+  LOG(INFO) << "DEBUG mbautin -- in " << __func__;
   for (const auto& table : tables) {
+    LOG(INFO) << "DEBUG mbautin -- in " << __func__;
     // Send a DeleteTablet() request to each tablet replica in the table.
     RETURN_NOT_OK(DeleteTabletsAndSendRequests(table.info, table.retained_by_snapshot_schedules));
     // Send a RemoveTableFromTablet() request to each colocated parent tablet replica in the table.
@@ -4184,17 +4209,29 @@ Status CatalogManager::DeleteTableInternal(
   // (in the same keyspace where the previous one existed), and the permissions were not deleted at
   // the time of the previous table deletion, then the permissions that existed for the previous
   // table will automatically be granted to the new table even though this wasn't the intention.
+  LOG(INFO) << "DEBUG mbautin -- in " << __func__;
   string canonical_resource = get_canonical_table(req->table().namespace_().name(),
                                                   req->table().table_name());
+
+  LOG(INFO) << "DEBUG mbautin -- in " << __func__;
   RETURN_NOT_OK(permissions_manager_->RemoveAllPermissionsForResource(canonical_resource, resp));
 
+  LOG(INFO) << "DEBUG mbautin -- in " << __func__;
   LOG(INFO) << "Successfully initiated deletion of "
             << (req->is_index_table() ? "index" : "table") << " with "
             << req->table().DebugString() << " per request from " << RequestorString(rpc);
   // Asynchronously cleans up the final memory traces of the deleted database.
   background_tasks_->Wake();
+  LOG(INFO) << "DEBUG mbautin -- in " << __func__;
   return Status::OK();
 }
+
+#define MB_TABLE_DEL_LOG() \
+    LOG(INFO) << "DEBUG mbautin, func=" << __func__ \
+              << ", table_identifier=" << table_identifier.ShortDebugString() \
+              << ", is_index_table=" << is_index_table \
+              << ", update_indexed_table=" << update_indexed_table \
+              << " | "
 
 Status CatalogManager::DeleteTableInMemory(
     const TableIdentifierPB& table_identifier,
@@ -4204,142 +4241,200 @@ Status CatalogManager::DeleteTableInMemory(
     vector<DeletingTableData>* tables,
     DeleteTableResponsePB* resp,
     rpc::RpcContext* rpc) {
+  MB_TABLE_DEL_LOG();
   // TODO(NIC): How to handle a DeleteTable request when the namespace is being deleted?
   const char* const object_type = is_index_table ? "index" : "table";
   const bool cascade_delete_index = is_index_table && !update_indexed_table;
 
+  MB_TABLE_DEL_LOG();
   VLOG_WITH_PREFIX_AND_FUNC(1) << YB_STRUCT_TO_STRING(
       table_identifier, is_index_table, update_indexed_table) << "\n" << GetStackTrace();
 
+  MB_TABLE_DEL_LOG();
   // Lookup the table and verify if it exists.
   TRACE(Substitute("Looking up $0", object_type));
   auto table_result = FindTable(table_identifier);
   if (!VERIFY_RESULT(DoesTableExist(table_result))) {
+    LOG(INFO) << "It looks like table does not exist: " << table_result.ToString();
+    MB_TABLE_DEL_LOG();
     if (cascade_delete_index) {
+      MB_TABLE_DEL_LOG();
       LOG(WARNING) << "Index " << table_identifier.DebugString() << " not found";
       return Status::OK();
     } else {
+      MB_TABLE_DEL_LOG();
       return table_result.status();
     }
   }
+  MB_TABLE_DEL_LOG();
   auto table = std::move(*table_result);
 
   TRACE(Substitute("Locking $0", object_type));
+  MB_TABLE_DEL_LOG();
   auto data = DeletingTableData {
     .info = table,
     .write_lock = table->LockForWrite(),
   };
+  MB_TABLE_DEL_LOG();
   auto& l = data.write_lock;
   resp->set_table_id(table->id());
 
   if (is_index_table == IsTable(l->pb)) {
+    MB_TABLE_DEL_LOG();
     Status s = STATUS(NotFound, "The object does not exist");
     return SetupError(resp->mutable_error(), MasterErrorPB::OBJECT_NOT_FOUND, s);
   }
 
+  MB_TABLE_DEL_LOG();
+
   for (const auto& entry : schedules_to_tables_map) {
+    MB_TABLE_DEL_LOG();
     if (std::binary_search(entry.second.begin(), entry.second.end(), table->id())) {
+      MB_TABLE_DEL_LOG();
       data.retained_by_snapshot_schedules.Add()->assign(
           entry.first.AsSlice().cdata(), entry.first.size());
     }
   }
 
+  MB_TABLE_DEL_LOG();
   bool hide_only = !data.retained_by_snapshot_schedules.empty();
 
   if (l->started_deleting() || (hide_only && l->started_hiding())) {
+    MB_TABLE_DEL_LOG();
     if (cascade_delete_index) {
       LOG(WARNING) << "Index " << table_identifier.ShortDebugString() << " was "
                    << (l->started_deleting() ? "deleted" : "hidden");
+      MB_TABLE_DEL_LOG();
       return Status::OK();
     } else {
       Status s = STATUS(NotFound, "The object was deleted", l->pb.state_msg());
+      MB_TABLE_DEL_LOG();
       return SetupError(resp->mutable_error(), MasterErrorPB::OBJECT_NOT_FOUND, s);
     }
   }
 
+  MB_TABLE_DEL_LOG();
   bool was_hiding = l->started_hiding();
 
   TRACE("Updating metadata on disk");
+  MB_TABLE_DEL_LOG();
   // Update the metadata for the on-disk state.
   if (hide_only) {
+    MB_TABLE_DEL_LOG() << ": setting table status to HIDING "
+              << "for table " << l.mutable_data()->pb.DebugString();
     l.mutable_data()->pb.set_hide_state(SysTablesEntryPB::HIDING);
   } else {
+    MB_TABLE_DEL_LOG() << ": setting table status to DELETING "
+              << "for table " << l.mutable_data()->pb.DebugString();
     l.mutable_data()->set_state(SysTablesEntryPB::DELETING,
                                  Substitute("Started deleting at $0", LocalTimeAsString()));
   }
+  MB_TABLE_DEL_LOG();
 
   auto now = master_->clock()->Now();
+  MB_TABLE_DEL_LOG();
   DdlLogEntry ddl_log_entry(now, table->id(), l->pb, "Drop");
   if (is_index_table) {
+    MB_TABLE_DEL_LOG() << ": writing DdlLogEntry for indexed table";
     const auto& indexed_table_id = GetIndexedTableId(l->pb);
     auto indexed_table = FindTableById(indexed_table_id);
     if (indexed_table.ok()) {
       auto lock = (**indexed_table).LockForRead();
+      MB_TABLE_DEL_LOG()
+                << ": found indexed_table" << lock->pb.DebugString();
       ddl_log_entry = DdlLogEntry(
           now, indexed_table_id, lock->pb, Format("Drop index $0", l->name()));
     }
   }
 
   // Update sys-catalog with the removed table state.
+  MB_TABLE_DEL_LOG();
   Status s = sys_catalog_->AddAndUpdateItems(
       std::initializer_list<DdlLogEntry*>{&ddl_log_entry},
       std::initializer_list<TableInfo*>{table.get()}, leader_ready_term());
 
+  MB_TABLE_DEL_LOG();
   if (PREDICT_FALSE(FLAGS_TEST_simulate_crash_after_table_marked_deleting)) {
+    MB_TABLE_DEL_LOG();
     return Status::OK();
   }
 
+  MB_TABLE_DEL_LOG();
   if (!s.ok()) {
+    MB_TABLE_DEL_LOG();
     // The mutation will be aborted when 'l' exits the scope on early return.
     s = s.CloneAndPrepend("An error occurred while updating sys tables");
     LOG(WARNING) << s;
     return CheckIfNoLongerLeaderAndSetupError(s, resp);
   }
 
+  MB_TABLE_DEL_LOG();
+
   // Update the internal table maps.
   // Exclude Postgres tables which are not in the name map.
   // Also exclude hidden tables, that were already removed from this map.
   if (l.data().table_type() != PGSQL_TABLE_TYPE && !was_hiding) {
     TRACE("Removing from by-name map");
+    MB_TABLE_DEL_LOG()
+              << ": removing from by-name map: namespace_id=" << l->namespace_id()
+              << ", name=" << l->name();
     LockGuard lock(mutex_);
     if (table_names_map_.erase({l->namespace_id(), l->name()}) != 1) {
+      MB_TABLE_DEL_LOG();
       PANIC_RPC(rpc, "Could not remove table from map, name=" + table->ToString());
     }
+    MB_TABLE_DEL_LOG();
     // We commit another map to increment its version and reset cache.
     // Since table_name_map_ does not have version.
     table_ids_map_.Commit();
   }
 
+  MB_TABLE_DEL_LOG() << ": is_index_table=" << is_index_table;
+
   // For regular (indexed) table, delete all its index tables if any. Else for index table, delete
   // index info from the indexed table.
   if (!is_index_table) {
+    MB_TABLE_DEL_LOG();
     TableIdentifierPB index_identifier;
     for (const auto& index : l->pb.indexes()) {
+      MB_TABLE_DEL_LOG() << ": index=" << yb::ToString(index);
       index_identifier.set_table_id(index.table_id());
       RETURN_NOT_OK(DeleteTableInMemory(index_identifier, true /* is_index_table */,
                                         false /* update_indexed_table */, schedules_to_tables_map,
                                         tables, resp, rpc));
     }
   } else if (update_indexed_table) {
+    MB_TABLE_DEL_LOG() << ": " << update_indexed_table;
     s = MarkIndexInfoFromTableForDeletion(
         GetIndexedTableId(l->pb), table->id(), /* multi_stage */ false, resp);
+    MB_TABLE_DEL_LOG();
     if (!s.ok()) {
       s = s.CloneAndPrepend(Substitute("An error occurred while deleting index info: $0",
                                        s.ToString()));
+      MB_TABLE_DEL_LOG();
       LOG(WARNING) << s.ToString();
       return CheckIfNoLongerLeaderAndSetupError(s, resp);
     }
   }
 
+  MB_TABLE_DEL_LOG();
+
   if (!hide_only) {
+    MB_TABLE_DEL_LOG();
     // If table is being hidden we should not abort snapshot related tasks.
     table->AbortTasks();
   }
+
+  MB_TABLE_DEL_LOG();
 
   // For regular (indexed) table, insert table info and lock in the front of the list. Else for
   // index table, append them to the end. We do so so that we will commit and delete the indexed
   // table first before its indexes.
   tables->insert(is_index_table ? tables->end() : tables->begin(), std::move(data));
+
+  MB_TABLE_DEL_LOG();
+
+  // l.Commit();
 
   return Status::OK();
 }
@@ -6407,6 +6502,8 @@ Status CatalogManager::DeleteNamespace(const DeleteNamespaceRequestPB* req,
       auto ltm = entry.second->LockForRead();
 
       if (!ltm->started_deleting() && ltm->namespace_id() == ns->id()) {
+        LOG(INFO) << "DEBUG mbautin: found table or index in keyspace we are trying to delete: "
+                  << ltm->pb.DebugString();
         Status s = STATUS(InvalidArgument,
                           Substitute("Cannot delete keyspace which has $0: $1 [id=$2]",
                                      IsTable(ltm->pb) ? "table" : "index",

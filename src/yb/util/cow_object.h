@@ -40,6 +40,7 @@
 #include "yb/gutil/macros.h"
 #include "yb/util/rwc_lock.h"
 #include "yb/util/logging.h"
+#include "yb/util/debug-util.h"
 
 namespace yb {
 

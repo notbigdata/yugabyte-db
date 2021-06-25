@@ -274,23 +274,28 @@ Status MultiStageAlterTable::ClearFullyAppliedAndUpdateState(
   l.mutable_data()->pb.clear_fully_applied_schema_version();
   l.mutable_data()->pb.clear_fully_applied_indexes();
   l.mutable_data()->pb.clear_fully_applied_index_info();
-  if (update_state_to_running) {
-    l.mutable_data()->set_state(
-        SysTablesEntryPB::RUNNING, Substitute("Current schema version=$0", current_version));
+
+  if (l.data().started_deleting()) {
+    LOG(INFO) << "Table is already being deleted or deleted: " << l->pb.ShortDebugString()
+              << ", not setting state to RUNNING or ALTERING";
   } else {
-    l.mutable_data()->set_state(
-        SysTablesEntryPB::ALTERING, Substitute("Current schema version=$0", current_version));
-  }
+    if (update_state_to_running) {
+      l.mutable_data()->set_state(
+          SysTablesEntryPB::RUNNING, Substitute("Current schema version=$0", current_version));
+    } else {
+      l.mutable_data()->set_state(
+          SysTablesEntryPB::ALTERING, Substitute("Current schema version=$0", current_version));
+    }
+    Status s =
+        catalog_manager->sys_catalog_->UpdateItem(table.get(), catalog_manager->leader_ready_term());
+    if (!s.ok()) {
+      LOG(WARNING) << "An error occurred while updating sys-tables: " << s.ToString()
+                  << ". This master may not be the leader anymore.";
+      return s;
+    }
 
-  Status s =
-      catalog_manager->sys_catalog_->UpdateItem(table.get(), catalog_manager->leader_ready_term());
-  if (!s.ok()) {
-    LOG(WARNING) << "An error occurred while updating sys-tables: " << s.ToString()
-                 << ". This master may not be the leader anymore.";
-    return s;
+    l.Commit();
   }
-
-  l.Commit();
   LOG(INFO) << table->ToString() << " - Alter table completed version=" << current_version;
   return Status::OK();
 }
