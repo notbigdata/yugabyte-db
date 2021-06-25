@@ -652,14 +652,18 @@ void TabletPeer::Submit(std::unique_ptr<Operation> operation, int64_t term) {
   }
 }
 
-Status TabletPeer::SubmitUpdateTransaction(
+void TabletPeer::SubmitUpdateTransaction(
     std::unique_ptr<UpdateTxnOperationState> state, int64_t term) {
-  auto tablet = VERIFY_RESULT(shared_tablet_must_be_set());
-  if (!state->tablet()) {
-    state->SetTablet(tablet.get());
+  auto tablet_result = shared_tablet_must_be_set();
+  if (tablet_result.ok() && !state->tablet()) {
+    state->SetTablet((*tablet_result).get());
   }
   auto operation = std::make_unique<tablet::UpdateTxnOperation>(std::move(state));
-  Submit(std::move(operation), term);
+  if (tablet_result.ok()) {
+    Submit(std::move(operation), term);
+  } else {
+    operation->Aborted(tablet_result.status());
+  }
 }
 
 HybridTime TabletPeer::SafeTimeForTransactionParticipant() {
