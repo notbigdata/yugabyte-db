@@ -33,6 +33,7 @@
 #include "yb/util/thread.h"
 
 #include <string>
+#include <regex>
 
 #include <gtest/gtest.h>
 
@@ -75,7 +76,15 @@ TEST_F(ThreadTest, TestFailedJoin) {
   Status s = ThreadJoiner(holder.get())
     .give_up_after(50ms)
     .Join();
-  ASSERT_STR_CONTAINS(s.ToString(), "Timed out after 50ms joining on sleeper thread");
+  ASSERT_TRUE(s.IsAborted()) << s;
+  static const std::regex kExpectedMsgRegex(
+      ".*Timed out after ([0-9.]+)s joining on sleeper thread.*");
+  std::smatch matches;
+  const std::string status_as_str = s.ToString();
+  ASSERT_TRUE(std::regex_search(status_as_str, matches, kExpectedMsgRegex))
+      << "Status did not match the expected pattern: " << s;
+  double waited_sec = std::stod(matches[1]);
+  ASSERT_GE(waited_sec, 0.05);
 }
 
 static void TryJoinOnSelf() {
