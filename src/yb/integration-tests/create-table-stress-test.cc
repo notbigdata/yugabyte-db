@@ -595,16 +595,11 @@ TEST_F(CreateTableStressTest, TestGetTableLocationsOptions) {
 
   // Get a single tablet in the middle, make sure we get that one back
 
-  std::unique_ptr<YBPartialRow> row(schema_.NewRow());
-  ASSERT_OK(row->SetInt32(0, half_tablets - 1));
-  string start_key_middle;
-  ASSERT_OK(row->EncodeRowKey(&start_key_middle));
-
-  // // One might wonder why the first key of the 30th range out of 60 possible into which the
-  // // 65536 hash values are divided is 0x7ff8 and not 0x8000. The answer is that we are dividing
-  // // 65535, not 65536, by the total number of tablets, and rounding that value down to get the
-  // // step. 65536 / 60 is 1092.25, and 1092 * 30 is 32760, or 0x7ff8.
-  // const std::string start_key_middle("\x7f\xf8", 2);
+  // One might wonder why the first key of the 30th range out of 60 possible into which the
+  // 65536 hash values are divided is 0x7ff8 and not 0x8000. The answer is that we are dividing
+  // 65535, not 65536, by the total number of tablets, and rounding that value down to get the
+  // step. 65536 / 60 is 1092.25, and 1092 * 30 is 32760, or 0x7ff8.
+  const std::string start_key_middle("\x7f\xf8", 2);
 
   // // For the query, we will just use the middle of the hash key range.
   // const std::string start_key_middle_to_query("\x80\x00", 2);
@@ -615,7 +610,7 @@ TEST_F(CreateTableStressTest, TestGetTableLocationsOptions) {
     resp.Clear();
     table_name.SetIntoTableIdentifierPB(req.mutable_table());
     req.set_max_returned_locations(1);
-    req.set_partition_key_start(start_key_middle_to_query);
+    req.set_partition_key_start(start_key_middle);
     ASSERT_OK(cluster_->mini_master()->master()->catalog_manager()->GetTableLocations(&req, &resp));
     ASSERT_EQ(1, resp.tablet_locations_size()) << "Response: [" << resp.DebugString() << "]";
     ASSERT_EQ(start_key_middle, resp.tablet_locations(0).partition().partition_key_start());
