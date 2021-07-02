@@ -98,6 +98,8 @@
 #include "yb/gutil/atomicops-internals-powerpc.h"
 #elif defined(OS_WINDOWS)
 #include "yb/gutil/atomicops-internals-windows.h"
+#elif defined(__GNUC__) && defined(__aarch64__)
+#include "yb/gutil/atomicops-internals-arm64.h"
 #else
 #error You need to implement atomic operations for this architecture
 #endif

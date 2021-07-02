@@ -144,7 +144,8 @@ class CompletionFlag {
     sys_futex(reinterpret_cast<int32_t*>(&complete_),
               FUTEX_WAKE | FUTEX_PRIVATE_FLAG,
               INT_MAX, // wake all
-              0 /* ignored */);
+              nullptr, nullptr,
+	      0 /* ignored */);
 #endif
   }
 
@@ -162,13 +163,13 @@ class CompletionFlag {
 #if USE_FUTEX
       struct timespec ts;
       (deadline - now).ToTimeSpec(&ts);
-      kernel_timespec kernel_ts;
+      // kernel_timespec kernel_ts;
       ts.tv_sec = ts.tv_sec;
       ts.tv_nsec = ts.tv_nsec;
       sys_futex(reinterpret_cast<int32_t*>(&complete_),
                 FUTEX_WAIT | FUTEX_PRIVATE_FLAG,
                 0, // wait if value is still 0
-                &kernel_ts);
+                reinterpret_cast<struct kernel_timespec *>(&ts), nullptr, 0);
 #else
       std::this_thread::sleep_for(wait_time);
       wait_time = std::min(wait_time * 2, 100ms);

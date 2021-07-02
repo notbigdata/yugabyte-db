@@ -100,7 +100,9 @@ template <class T>
 class LockFreeStack {
  public:
   LockFreeStack() {
-    CHECK(head_.is_lock_free());
+#if !defined(__aarch64__)
+    CHECK(head_.is_lock_free());  // What if it is not?
+#endif
   }
 
   void Push(T* value) {
