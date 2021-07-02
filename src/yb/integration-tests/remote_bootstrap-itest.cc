@@ -137,7 +137,6 @@ class RemoteBootstrapITest : public YBTest {
                     const vector<string>& extra_master_flags = vector<string>(),
                     int num_tablet_servers = 3);
 
-  void RejectRogueLeader(YBTableType table_type);
   void DeleteTabletDuringRemoteBootstrap(YBTableType table_type);
   void RemoteBootstrapFollowerWithHigherTerm(YBTableType table_type);
   void ConcurrentRemoteBootstraps(YBTableType table_type);
@@ -363,137 +362,6 @@ void RemoteBootstrapITest::StartCrashedTabletServer(TabletDataState expected_dat
   ASSERT_OK(cluster_->tablet_server(crash_test_leader_index_)->Start());
   ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(
       crash_test_leader_index_, crash_test_tablet_id_, expected_data_state));
-}
-
-// If a rogue (a.k.a. zombie) leader tries to remote bootstrap a tombstoned
-// tablet, make sure its term isn't older than the latest term we observed.
-// If it is older, make sure we reject the request, to avoid allowing old
-// leaders to create a parallel universe. This is possible because config
-// change could cause nodes to move around. The term check is reasonable
-// because only one node can be elected leader for a given term.
-//
-// A leader can "go rogue" due to a VM pause, CTRL-z, partition, etc.
-void RemoteBootstrapITest::RejectRogueLeader(YBTableType table_type) {
-  // This test pauses for at least 10 seconds. Only run in slow-test mode.
-  if (!AllowSlowTests()) {
-    LOG(INFO) << "Skipping test in fast-test mode.";
-    return;
-  }
-
-  std::vector<std::string> ts_flags = {
-    "--enable_leader_failure_detection=false"s,
-  };
-  std::vector<std::string> master_flags = {
-    "--catalog_manager_wait_for_new_tablets_to_elect_leader=false"s,
-    "--use_create_table_leader_hint=false"s,
-  };
-  ASSERT_NO_FATALS(StartCluster(ts_flags, master_flags));
-
-  const MonoDelta timeout = MonoDelta::FromSeconds(30);
-  const int kTsIndex = 0; // We'll test with the first TS.
-  TServerDetails* ts = ts_map_[cluster_->tablet_server(kTsIndex)->uuid()].get();
-
-  TestWorkload workload(cluster_.get());
-  workload.Setup(table_type);
-
-  // Figure out the tablet id of the created tablet.
-  vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets;
-  ASSERT_OK(WaitForNumTabletsOnTS(ts, 1, timeout, &tablets));
-  string tablet_id = tablets[0].tablet_status().tablet_id();
-
-  // Wait until all replicas are up and running.
-  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-    ASSERT_OK(itest::WaitUntilTabletRunning(ts_map_[cluster_->tablet_server(i)->uuid()].get(),
-                                            tablet_id, timeout));
-  }
-
-  // Elect a leader for term 1, then run some data through the cluster.
-  int zombie_leader_index = 1;
-  string zombie_leader_uuid = cluster_->tablet_server(zombie_leader_index)->uuid();
-  ASSERT_OK(itest::StartElection(ts_map_[zombie_leader_uuid].get(), tablet_id, timeout));
-  workload.Start();
-  workload.WaitInserted(100);
-  workload.StopAndJoin();
-
-  ASSERT_OK(WaitForServersToAgree(timeout, ts_map_, tablet_id, workload.batches_completed()));
-
-  // Come out of the blue and try to remotely bootstrap a running server while
-  // specifying an old term. That running server should reject the request.
-  // We are essentially masquerading as a rogue leader here.
-  Status s = itest::StartRemoteBootstrap(ts, tablet_id, zombie_leader_uuid,
-                                         HostPort(cluster_->tablet_server(1)->bound_rpc_addr()),
-                                         0, // Say I'm from term 0.
-                                         timeout);
-  ASSERT_TRUE(s.IsInvalidArgument());
-  ASSERT_STR_CONTAINS(s.ToString(), "term 0 lower than last logged term 1");
-
-  // Now pause the actual leader so we can bring him back as a zombie later.
-  ASSERT_OK(cluster_->tablet_server(zombie_leader_index)->Pause());
-
-  // Trigger TS 2 to become leader of term 2.
-  int new_leader_index = 2;
-  string new_leader_uuid = cluster_->tablet_server(new_leader_index)->uuid();
-  ASSERT_OK(itest::StartElection(ts_map_[new_leader_uuid].get(), tablet_id, timeout));
-  ASSERT_OK(itest::WaitUntilLeader(ts_map_[new_leader_uuid].get(), tablet_id, timeout));
-
-  auto active_ts_map = CreateTabletServerMapUnowned(ts_map_);
-  ASSERT_EQ(1, active_ts_map.erase(zombie_leader_uuid));
-
-  // Wait for the NO_OP entry from the term 2 election to propagate to the
-  // remaining nodes' logs so that we are guaranteed to reject the rogue
-  // leader's remote bootstrap request when we bring it back online.
-  int log_index = workload.batches_completed() + 2; // 2 terms == 2 additional NO_OP entries.
-  ASSERT_OK(WaitForServersToAgree(timeout, active_ts_map, tablet_id, log_index));
-  // TODO: Write more rows to the new leader once KUDU-1034 is fixed.
-
-  // Now kill the new leader and tombstone the replica on TS 0.
-  cluster_->tablet_server(new_leader_index)->Shutdown();
-  ASSERT_OK(itest::DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, boost::none, timeout));
-
-  // Zombies!!! Resume the rogue zombie leader.
-  // He should attempt to remote bootstrap TS 0 but fail.
-  ASSERT_OK(cluster_->tablet_server(zombie_leader_index)->Resume());
-
-  // Loop for a few seconds to ensure that the tablet doesn't transition to READY.
-  MonoTime deadline = MonoTime::Now();
-  deadline.AddDelta(MonoDelta::FromSeconds(5));
-  while (MonoTime::Now().ComesBefore(deadline)) {
-    ASSERT_OK(itest::ListTablets(ts, timeout, &tablets));
-    ASSERT_EQ(1, tablets.size());
-    ASSERT_EQ(TABLET_DATA_TOMBSTONED, tablets[0].tablet_status().tablet_data_state());
-    SleepFor(MonoDelta::FromMilliseconds(10));
-  }
-
-  // Force the rogue leader to step down.
-  // Then, send a remote bootstrap start request from a "fake" leader that
-  // sends an up-to-date term in the RB request but the actual term stored
-  // in the bootstrap source's consensus metadata would still be old.
-  LOG(INFO) << "Forcing rogue leader T " << tablet_id << " P " << zombie_leader_uuid
-            << " to step down...";
-  ASSERT_OK(itest::LeaderStepDown(ts_map_[zombie_leader_uuid].get(), tablet_id, nullptr, timeout));
-  ExternalTabletServer* zombie_ets = cluster_->tablet_server(zombie_leader_index);
-  // It's not necessarily part of the API but this could return faliure due to
-  // rejecting the remote. We intend to make that part async though, so ignoring
-  // this return value in this test.
-  ignore_result(itest::StartRemoteBootstrap(ts, tablet_id, zombie_leader_uuid,
-                                            HostPort(zombie_ets->bound_rpc_addr()),
-                                            2, // Say I'm from term 2.
-                                            timeout));
-
-  // Wait another few seconds to be sure the remote bootstrap is rejected.
-  deadline = MonoTime::Now();
-  deadline.AddDelta(MonoDelta::FromSeconds(5));
-  while (MonoTime::Now().ComesBefore(deadline)) {
-    ASSERT_OK(itest::ListTablets(ts, timeout, &tablets));
-    ASSERT_EQ(1, tablets.size());
-    ASSERT_EQ(TABLET_DATA_TOMBSTONED, tablets[0].tablet_status().tablet_data_state());
-    SleepFor(MonoDelta::FromMilliseconds(10));
-  }
-
-  ClusterVerifier cluster_verifier(cluster_.get());
-  ASSERT_NO_FATALS(cluster_verifier.CheckCluster());
-  ASSERT_NO_FATALS(cluster_verifier.CheckRowCount(workload.table_name(), ClusterVerifier::EXACTLY,
-      workload.rows_inserted()));
 }
 
 // Start remote bootstrap session and delete the tablet in the middle.
@@ -1452,10 +1320,6 @@ TEST_F(RemoteBootstrapITest, TestFailedTabletIsRemoteBootstrapped) {
   ASSERT_NO_FATALS(cluster_verifier.CheckRowCount(workload.table_name(),
                                                   ClusterVerifier::AT_LEAST,
                                                   workload.rows_inserted()));
-}
-
-TEST_F(RemoteBootstrapITest, TestRejectRogueLeaderKeyValueType) {
-  RejectRogueLeader(YBTableType::YQL_TABLE_TYPE);
 }
 
 TEST_F(RemoteBootstrapITest, TestDeleteTabletDuringRemoteBootstrapKeyValueType) {
