@@ -871,6 +871,7 @@ TEST_F(DeleteTableTest, TestDeleteFollowerWithReplicatingOperation) {
   std::vector<std::string> master_flags = {
     "--catalog_manager_wait_for_new_tablets_to_elect_leader=false"s,
     "--use_create_table_leader_hint=false"s,
+    "--replication_factor=5"s
   };
   ASSERT_NO_FATALS(StartCluster(ts_flags, master_flags, kNumTabletServers));
 
