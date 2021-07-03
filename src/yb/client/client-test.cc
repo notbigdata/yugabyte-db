@@ -513,13 +513,6 @@ int CountRowsFromClient(const TableHandle& table) {
   return CountRowsFromClient(table, kNoBound, kNoBound);
 }
 
-// Count the rows of a table, checking that the operation succeeds.
-//
-// Must be public to use as a thread closure.
-void CheckRowCount(const TableHandle& table) {
-  CountRowsFromClient(table);
-}
-
 } // namespace
 
 constexpr int kLookupWaitTimeSecs = 30;
@@ -1977,49 +1970,6 @@ TEST_F(ClientTest, DISABLED_TestCreateTableWithTooManyReplicas) {
   ASSERT_STR_CONTAINS(s.ToString(),
                       "Not enough live tablet servers to create table with the requested "
                       "replication factor 3. 1 tablet servers are alive");
-}
-
-// Test that scanners will retry after receiving ERROR_SERVER_TOO_BUSY from an
-// overloaded tablet server. Regression test for KUDU-1079.
-TEST_F(ClientTest, TestServerTooBusyRetry) {
-  ASSERT_NO_FATALS(InsertTestRows(client_table_, FLAGS_test_scan_num_rows));
-
-  // Introduce latency in each scan to increase the likelihood of
-  // ERROR_SERVER_TOO_BUSY.
-  FLAGS_TEST_scanner_inject_latency_on_each_batch_ms = 10;
-
-  // Reduce the service queue length of each tablet server in order to increase
-  // the likelihood of ERROR_SERVER_TOO_BUSY.
-  FLAGS_tablet_server_svc_queue_length = 1;
-  // Set the backoff limits to be small for this test, so that we finish in a reasonable
-  // amount of time.
-  FLAGS_min_backoff_ms_exponent = 0;
-  FLAGS_max_backoff_ms_exponent = 3;
-  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-    MiniTabletServer* ts = cluster_->mini_tablet_server(i);
-    ASSERT_OK(ts->Restart());
-    ASSERT_OK(ts->WaitStarted());
-  }
-
-  bool stop = false;
-  vector<scoped_refptr<yb::Thread> > threads;
-  int t = 0;
-  while (!stop) {
-    scoped_refptr<yb::Thread> thread;
-    ASSERT_OK(yb::Thread::Create("test", strings::Substitute("t$0", t++),
-                                 &CheckRowCount, std::cref(client_table_), &thread));
-    threads.push_back(thread);
-
-    for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-      scoped_refptr<Counter> counter = METRIC_rpcs_queue_overflow.Instantiate(
-          cluster_->mini_tablet_server(i)->server()->metric_entity());
-      stop = counter->value() > 0;
-    }
-  }
-
-  for (const scoped_refptr<yb::Thread>& thread : threads) {
-    thread->Join();
-  }
 }
 
 TEST_F(ClientTest, TestReadFromFollower) {
