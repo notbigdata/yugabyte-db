@@ -802,10 +802,7 @@ TEST_F(LogTest, TestLogReopenAndGC) {
 
 // Helper to measure the performance of the log.
 TEST_F(LogTest, TestWriteManyBatches) {
-  uint64_t num_batches = 10;
-  if (AllowSlowTests()) {
-    num_batches = FLAGS_num_batches;
-  }
+  uint64_t num_batches = FLAGS_num_batches;
   BuildLog();
 
   LOG(INFO)<< "Starting to write " << num_batches << " to log";
@@ -1018,7 +1015,7 @@ static int RandInRange(Random* r, int min_inclusive, int max_inclusive) {
 // always see the correct term for each REPLICATE message (i.e whichever term
 // was the last to append it).
 TEST_F(LogTest, TestReadLogWithReplacedReplicates) {
-  const int kSequenceLength = AllowSlowTests() ? 1000 : 50;
+  const int kSequenceLength = 1000;
 
   Random rng(SeedRandom());
   vector<int64_t> terms_by_index;

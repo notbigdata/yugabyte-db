@@ -52,11 +52,6 @@ class ThreadTest : public YBTest {};
 // Join with a thread and emit warnings while waiting to join.
 // This has to be manually verified.
 TEST_F(ThreadTest, TestJoinAndWarn) {
-  if (!AllowSlowTests()) {
-    LOG(INFO) << "Skipping test in quick test mode, since this sleeps";
-    return;
-  }
-
   scoped_refptr<Thread> holder;
   ASSERT_OK(Thread::Create("test", "sleeper thread", usleep, 1000*1000, &holder));
   ASSERT_OK(ThreadJoiner(holder.get())
@@ -66,11 +61,6 @@ TEST_F(ThreadTest, TestJoinAndWarn) {
 }
 
 TEST_F(ThreadTest, TestFailedJoin) {
-  if (!AllowSlowTests()) {
-    LOG(INFO) << "Skipping test in quick test mode, since this sleeps";
-    return;
-  }
-
   scoped_refptr<Thread> holder;
   ASSERT_OK(Thread::Create("test", "sleeper thread", usleep, 1000*1000, &holder));
   Status s = ThreadJoiner(holder.get())

@@ -394,11 +394,6 @@ TEST_P(AlterTableTest, TestShutdownWithPendingTasks) {
 //  - get the new schema state, and mark the alter as complete
 //  - get the old schema state, and ask the TS again to perform the alter.
 TEST_P(AlterTableTest, TestRestartTSDuringAlter) {
-  if (!AllowSlowTests()) {
-    LOG(INFO) << "Skipping slow test";
-    return;
-  }
-
   ASSERT_EQ(0, tablet_peer_->tablet()->metadata()->schema_version());
 
   Status s = AddNewI32Column(kTableName, "new-i32", MonoDelta::FromMilliseconds(1));

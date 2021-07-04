@@ -241,12 +241,7 @@ INSTANTIATE_TEST_CASE_P(
 // This test fails as of KUDU-1138, since the tablet servers haven't
 // registered with the follower master, and thus it's likely to deny
 // the CreateTable request thinking there are no TS available.
-TEST_F(MasterFailoverTest, DISABLED_TestCreateTableSync) {
-  if (!AllowSlowTests()) {
-    LOG(INFO) << "This test can only be run in slow mode.";
-    return;
-  }
-
+TEST_F(MasterFailoverTest, TestCreateTableSync) {
   int leader_idx = -1;
   ASSERT_OK(cluster_->GetLeaderMasterIndex(&leader_idx));
 

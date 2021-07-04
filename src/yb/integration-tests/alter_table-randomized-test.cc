@@ -441,7 +441,7 @@ TEST_F(AlterTableRandomized, TestRandomSequence) {
 
   Random rng(SeedRandom());
 
-  const int n_iters = AllowSlowTests() ? 2000 : 1000;
+  const int n_iters = 2000;
   for (int i = 0; i < n_iters; i++) {
     // Perform different operations with varying probability.
     // We mostly insert and update, with occasional deletes,

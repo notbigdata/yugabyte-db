@@ -141,11 +141,7 @@ TEST_F(RWCLockTest, TestCorrectBehavior) {
     threads.emplace_back(std::bind(ReaderThread, &state));
   }
 
-  if (AllowSlowTests()) {
-    SleepFor(MonoDelta::FromSeconds(1));
-  } else {
-    SleepFor(MonoDelta::FromMilliseconds(100));
-  }
+  SleepFor(MonoDelta::FromSeconds(1));
 
   Release_Store(&state.stop, 1);
 

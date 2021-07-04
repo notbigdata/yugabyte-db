@@ -333,7 +333,7 @@ TEST_F(BitRle, Flush) {
 // Test some random sequences.
 TEST_F(BitRle, Random) {
   int iters = 0;
-  const int n_iters = AllowSlowTests() ? 1000 : 20;
+  const int n_iters = 1000;
   while (iters < n_iters) {
     srand(iters++);
     if (iters % 10000 == 0) LOG(ERROR) << "Seed: " << iters;

@@ -479,10 +479,6 @@ TEST_F(CreateTableStressTest, TestHeartbeatDeadline) {
 
 TEST_F(CreateTableStressTest, TestGetTableLocationsOptions) {
   DontVerifyClusterBeforeNextTearDown();
-  if (!AllowSlowTests()) {
-    LOG(INFO) << "Skipping slow test";
-    return;
-  }
 
   YBTableName table_name(YQL_DATABASE_CQL, "my_keyspace", "test_table");
   LOG(INFO) << CURRENT_TEST_NAME() << ": Step 1. Creating big table "
