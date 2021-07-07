@@ -91,7 +91,7 @@ class CAPABILITY("mutex") SpinLock {
     ANNOTATE_RWLOCK_ACQUIRED(this, 1);
 #ifdef __aarch64__
     __asm__ __volatile__ ("dmb ish" ::: "memory");
-#endif //__aarch64__
+#endif
   }
 
   // Try to acquire this SpinLock without blocking and return true if the
@@ -107,7 +107,7 @@ class CAPABILITY("mutex") SpinLock {
     }
 #ifdef __aarch64__
     __asm__ __volatile__ ("dmb ish" ::: "memory");
-#endif //__aarch64__
+#endif
     return res;
   }
 
@@ -126,7 +126,7 @@ class CAPABILITY("mutex") SpinLock {
     }
 #ifdef __aarch64__
     __asm__ __volatile__ ("dmb ish" ::: "memory");
-#endif //__aarch64__
+#endif
   }
 
   // Determine if the lock is held.  When the lock is held by the invoking
