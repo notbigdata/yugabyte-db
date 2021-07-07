@@ -33,8 +33,10 @@ class TServerSharedData {
     // for shared memory! Some atomics claim to be lock-free but still require
     // read-write access for a `load()`.
     // E.g. for 128 bit objects: https://stackoverflow.com/questions/49816855.
+#ifndef __aarch64__
     LOG_IF(FATAL, !catalog_version_.is_lock_free())
         << "Shared memory atomics must be lock-free";
+#endif
     host_[0] = 0;
   }
 

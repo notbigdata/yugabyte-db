@@ -89,7 +89,9 @@ ReplicaState::ReplicaState(
     retryable_requests_ = std::move(*retryable_requests);
   }
 
+#ifndef __aarch64__
   CHECK(leader_state_cache_.is_lock_free());
+#endif
 
   // Actually we don't need this lock, but GetActiveRoleUnlocked checks that we are holding the
   // lock.
