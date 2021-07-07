@@ -48,6 +48,7 @@
 #include "yb/util/threadpool.h"
 #include "yb/util/thread_restrictions.h"
 #include "yb/util/trace.h"
+#include "yb/util/lockfree.h"
 
 using namespace std::literals;
 
@@ -89,9 +90,7 @@ OperationDriver::OperationDriver(OperationTracker *operation_tracker,
   if (Trace::CurrentTrace()) {
     Trace::CurrentTrace()->AddChildTrace(trace_.get());
   }
-#ifndef __aarch64__
-  DCHECK(op_id_copy_.is_lock_free());
-#endif
+  DCHECK(IsAcceptableAtomic(op_id_copy_));
 }
 
 Status OperationDriver::Init(std::unique_ptr<Operation>* operation, int64_t term) {

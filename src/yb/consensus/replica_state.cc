@@ -53,6 +53,7 @@
 #include "yb/util/trace.h"
 #include "yb/util/thread_restrictions.h"
 #include "yb/util/enums.h"
+#include "yb/util/lockfree.h"
 
 using namespace std::literals;
 
@@ -89,9 +90,7 @@ ReplicaState::ReplicaState(
     retryable_requests_ = std::move(*retryable_requests);
   }
 
-#ifndef __aarch64__
-  CHECK(leader_state_cache_.is_lock_free());
-#endif
+  CHECK(IsAcceptableAtomic(leader_state_cache_));
 
   // Actually we don't need this lock, but GetActiveRoleUnlocked checks that we are holding the
   // lock.

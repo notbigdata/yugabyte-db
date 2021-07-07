@@ -22,6 +22,36 @@
 
 namespace yb {
 
+// ------------------------------------------------------------------------------------------------
+// A utility for testing if an atomic is lock-free.
+
+namespace lockfree_internal {
+
+template <class T>
+bool IsAcceptableAtomic(const T& atomic_variable) {
+#ifdef __aarch64__
+  // TODO: ensure we are using proper 16-bit atomics on aarch64.
+  // https://github.com/yugabyte/yugabyte-db/issues/9196
+  return true;
+#else
+  return atomic_variable.is_lock_free();
+#endif
+}
+
+}  // namespace lockfree_internal
+
+template <class T>
+bool IsAcceptableAtomic(const boost::atomics::atomic<T>& atomic_variable) {
+  return lockfree_internal::IsAcceptableAtomic(atomic_variable);
+}
+
+template <class T>
+bool IsAcceptableAtomic(const std::atomic<T>& atomic_variable) {
+  return lockfree_internal::IsAcceptableAtomic(atomic_variable);
+}
+
+// ------------------------------------------------------------------------------------------------
+
 // Multi producer - singe consumer queue.
 template <class T>
 class MPSCQueue {
@@ -100,9 +130,7 @@ template <class T>
 class LockFreeStack {
  public:
   LockFreeStack() {
-#ifndef __aarch64__
-    CHECK(head_.is_lock_free());  // What if it is not?
-#endif
+    CHECK(IsAcceptableAtomic(head_));
   }
 
   void Push(T* value) {

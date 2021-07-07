@@ -19,6 +19,7 @@
 #include "yb/util/shared_mem.h"
 
 #include "yb/tserver/tserver_util_fwd.h"
+#include "yb/util/lockfree.h"
 
 namespace yb {
 namespace tserver {
@@ -33,10 +34,8 @@ class TServerSharedData {
     // for shared memory! Some atomics claim to be lock-free but still require
     // read-write access for a `load()`.
     // E.g. for 128 bit objects: https://stackoverflow.com/questions/49816855.
-#ifndef __aarch64__
-    LOG_IF(FATAL, !catalog_version_.is_lock_free())
+    LOG_IF(FATAL, !IsAcceptableAtomic(catalog_version_))
         << "Shared memory atomics must be lock-free";
-#endif
     host_[0] = 0;
   }
 

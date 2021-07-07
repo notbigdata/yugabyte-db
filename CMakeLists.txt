@@ -297,8 +297,6 @@ DETECT_BREW()
 
 message("Using COMPILER_FAMILY=${COMPILER_FAMILY}")
 
-message("CMAKE_SYSTEM_PROCESSOR: ${CMAKE_SYSTEM_PROCESSOR}")
-
 # We can only use IS_CLANG after calling VALIDATE_COMPILER_TYPE.
 if (NOT APPLE AND "${CMAKE_SYSTEM_PROCESSOR}" STREQUAL "x86_64")
   # To enable 16-byte atomics support we should specify appropriate architecture.
