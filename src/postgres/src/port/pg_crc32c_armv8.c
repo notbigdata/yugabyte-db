@@ -19,7 +19,8 @@
 #include <arm_acle.h>
 
 pg_crc32c
-pg_comp_crc32c_armv8(pg_crc32c crc, const void *data, size_t len) {
+pg_comp_crc32c_armv8(pg_crc32c crc, const void *data, size_t len)
+{
 	const unsigned char *p = data;
 	const unsigned char *pend = p + len;
 

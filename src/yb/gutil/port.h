@@ -1,12 +1,39 @@
 //
 // Copyright (C) 1999 and onwards Google, Inc.
 //
+// The following only applies to changes made to this file as part of YugaByte development.
+//
+// Portions Copyright (c) YugaByte, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
+// in compliance with the License.  You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software distributed under the License
+// is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
+// or implied.  See the License for the specific language governing permissions and limitations
+// under the License.
+//
+// The following only applies to changes made to this file as part of YugaByte development.
+//
+// Portions Copyright (c) YugaByte, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
+// in compliance with the License.  You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software distributed under the License
+// is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
+// or implied.  See the License for the specific language governing permissions and limitations
+// under the License.
 //
 // These are weird things we need to do to get this compiling on
 // random systems (and on SWIG).
 
-#ifndef BASE_PORT_H_
-#define BASE_PORT_H_
+#ifndef YB_GUTIL_PORT_H
+#define YB_GUTIL_PORT_H
 
 #include <limits.h>         // So we can set the bounds of our types
 #include <stdlib.h>         // for free()
@@ -36,7 +63,7 @@
 /* We use SIGPWR since that seems unlikely to be used for other reasons. */
 #define GOOGLE_OBSCURE_SIGNAL  SIGPWR
 
-#if defined OS_LINUX || defined OS_CYGWIN
+#if defined __linux__ || defined OS_CYGWIN
 
 // _BIG_ENDIAN
 #include <endian.h>
@@ -54,11 +81,11 @@ typedef unsigned int uint;
 #endif
 #if !defined(HAVE_USHORT)
 #define HAVE_USHORT 1
-typedef unsigned short ushort;
+typedef unsigned short ushort; // NOLINT
 #endif
 #if !defined(HAVE_ULONG)
 #define HAVE_ULONG 1
-typedef unsigned long ulong;
+typedef unsigned long ulong; // NOLINT
 #endif
 #endif
 
@@ -187,7 +214,7 @@ const char PATH_SEPARATOR = '/';
 
 // Windows has O_BINARY as a flag to open() (like "b" for fopen).
 // Linux doesn't need make this distinction.
-#if defined OS_LINUX && !defined O_BINARY
+#if defined __linux__ && !defined O_BINARY
 #define O_BINARY 0
 #endif
 
@@ -200,7 +227,7 @@ const char PATH_SEPARATOR = '/';
 // a compiler error here.
 //
 #include <stdarg.h>
-inline void va_copy(va_list& a, va_list& b) {
+inline void va_copy(va_list& a, va_list& b) { // NOLINT
   a = b;
 }
 
@@ -417,37 +444,18 @@ inline void* memrchr(const void* bytes, int find_char, size_t len) {
 // Tell ThreadSanitizer to ignore a given function. This can dramatically reduce
 // the running time and memory requirements for racy code when TSAN is active.
 // GCC does not support this attribute at the time of this writing (GCC 4.8).
+// Also a similar macro for AddressSanitizer.
 #if defined(__llvm__)
 #define ATTRIBUTE_NO_SANITIZE_THREAD \
     __attribute__((no_sanitize_thread))
+#define ATTRIBUTE_NO_SANITIZE_ADDRESS \
+    __attribute__((no_sanitize("address")))
+#define ATTRIBUTE_NO_SANITIZE_UNDEFINED \
+    __attribute__((no_sanitize("undefined")))
 #else
 #define ATTRIBUTE_NO_SANITIZE_THREAD
-#endif
-
-// Tell UBSAN to ignore a given function completely. There is no
-// __has_feature(undefined_sanitizer) or equivalent, so ASAN support is used as
-// a proxy.
-#if defined(__has_feature)
-#  if __has_feature(address_sanitizer)
-#  define ATTRIBUTE_NO_SANITIZE_UNDEFINED \
-      __attribute__((no_sanitize("undefined")))
-#  endif
-#endif
-#ifndef ATTRIBUTE_NO_SANITIZE_UNDEFINED
+#define ATTRIBUTE_NO_SANITIZE_ADDRESS
 #define ATTRIBUTE_NO_SANITIZE_UNDEFINED
-#endif
-
-// Tell UBSAN to ignore integer overflows in a given function. There is no
-// __has_feature(undefined_sanitizer) or equivalent, so ASAN support is used as
-// a proxy.
-#if defined(__has_feature)
-#  if __has_feature(address_sanitizer)
-#  define ATTRIBUTE_NO_SANITIZE_INTEGER \
-      __attribute__((no_sanitize("integer")))
-#  endif
-#endif
-#ifndef ATTRIBUTE_NO_SANITIZE_INTEGER
-#define ATTRIBUTE_NO_SANITIZE_INTEGER
 #endif
 
 #ifndef HAVE_ATTRIBUTE_SECTION  // may have been pre-set to 0, e.g. for Darwin
@@ -493,22 +501,6 @@ inline void* memrchr(const void* bytes, int find_char, size_t len) {
 #define MUST_USE_RESULT __attribute__ ((warn_unused_result))
 #else
 #define MUST_USE_RESULT
-#endif
-
-// Annotate a virtual method indicating it must be overriding a virtual
-// method in the parent class.
-// Use like:
-//   virtual void foo() OVERRIDE;
-#if defined(COMPILER_MSVC)
-#define OVERRIDE override
-#elif defined(__clang__)
-#define OVERRIDE override
-#elif defined(COMPILER_GCC) && __cplusplus >= 201103 && \
-      (__GNUC__ * 10000 + __GNUC_MINOR__ * 100) >= 40700
-// GCC 4.7 supports explicit virtual overrides when C++11 support is enabled.
-#define OVERRIDE override
-#else
-#define OVERRIDE
 #endif
 
 // Annotate a virtual method indicating that subclasses must not override it,
@@ -583,22 +575,22 @@ extern inline void prefetch(const char *x, int hint) {
       break;
   }
 #elif defined(__GNUC__)
- #if !defined(__i386) || defined(__SSE__)
-  if (__builtin_constant_p(hint)) {
-    __builtin_prefetch(x, 0, hint);
-  } else {
-    // Defaults to PREFETCH_HINT_T0
-    __builtin_prefetch(x);
-  }
-#else
-  // We want a __builtin_prefetch, but we build with the default -march=i386
-  // where __builtin_prefetch quietly turns into nothing.
-  // Once we crank up to -march=pentium3 or higher the __SSE__
-  // clause above will kick in with the builtin.
-  // -- mec 2006-06-06
-  if (hint == PREFETCH_HINT_NTA)
-    __asm__ __volatile__("prefetchnta (%0)" : : "r"(x));
- #endif
+  #if !defined(__i386) || defined(__SSE__)
+    if (__builtin_constant_p(hint)) {
+      __builtin_prefetch(x, 0, hint);
+    } else {
+      // Defaults to PREFETCH_HINT_T0
+      __builtin_prefetch(x);
+    }
+  #else
+    // We want a __builtin_prefetch, but we build with the default -march=i386
+    // where __builtin_prefetch quietly turns into nothing.
+    // Once we crank up to -march=pentium3 or higher the __SSE__
+    // clause above will kick in with the builtin.
+    // -- mec 2006-06-06
+    if (hint == PREFETCH_HINT_NTA)
+      __asm__ __volatile__("prefetchnta (%0)" : : "r"(x));
+  #endif
 #else
   // You get no effect.  Feel free to add more sections above.
 #endif
@@ -780,7 +772,7 @@ struct AlignType { typedef char result[Size]; };
 // This compiler flag can be easily overlooked on MSVC.
 // _CHAR_UNSIGNED gets set with the /J flag.
 #ifndef _CHAR_UNSIGNED
-#error chars must be unsigned!  Use the /J flag on the compiler command line.
+#error chars must be unsigned! Use the /J flag on the compiler command line. // NOLINT
 #endif
 
 // MSVC is a little hyper-active in its warnings
@@ -817,7 +809,7 @@ struct AlignType { typedef char result[Size]; };
 #endif
 
 namespace std {}  // Avoid error if we didn't see std.
-using namespace std;
+using namespace std; // NOLINT
 
 // VC++ doesn't understand "uint"
 #ifndef HAVE_UINT
@@ -907,7 +899,7 @@ enum {
 };
 
 inline int fpclassify_double(double x) {
-  const int float_point_class =_fpclass(x);
+  const int float_point_class = _fpclass(x);
   int c99_class;
   switch  (float_point_class) {
   case _FPCLASS_SNAN:  // Signaling NaN
@@ -957,7 +949,7 @@ inline int fpclassify_float(float x) {
 #define isnan _isnan
 
 inline int isinf(double x) {
-  const int float_point_class =_fpclass(x);
+  const int float_point_class = _fpclass(x);
   if (float_point_class == _FPCLASS_PINF) return 1;
   if (float_point_class == _FPCLASS_NINF) return -1;
   return 0;
@@ -999,8 +991,8 @@ typedef int pid_t;
 typedef unsigned int mode_t;
 
 // u_int16_t, int16_t don't exist in MSVC
-typedef unsigned short u_int16_t;
-typedef short int16_t;
+typedef unsigned short u_int16_t; // NOLINT
+typedef short int16_t; // NOLINT
 
 // ----- END VC++ STUBS & FAKE DEFINITIONS ----------------------------------
 
@@ -1258,10 +1250,13 @@ inline void UnalignedStore(void* dst, const T& src) {
      &reinterpret_cast<t*>(16)->f) -  \
    reinterpret_cast<char*>(16))
 
+#define OBJECT_FROM_MEMBER(T, f, p) \
+    (reinterpret_cast<T*>(reinterpret_cast<char*>(p) - OFFSETOF_MEMBER(T, f)))
+
 #ifdef PTHREADS_REDHAT_WIN32
-#include <iosfwd>
-using std::ostream;     // NOLINT(build/include)
-#include <pthread.h>  // NOLINT(build/include)
+#include <iosfwd>    // NOLINT(build/include)
+using std::ostream;  // NOLINT(build/include)
+#include <pthread.h> // NOLINT(build/include)
 // pthread_t is not a simple integer or pointer on Win32
 std::ostream& operator << (std::ostream& out, const pthread_t& thread_id);
 #endif
@@ -1292,4 +1287,4 @@ enum { kPlatformUsesOPDSections = 0 };
 #define FUNC_PTR_TO_CHAR_PTR(func)  (reinterpret_cast<char *>(func))
 #endif
 
-#endif  // BASE_PORT_H_
+#endif  // YB_GUTIL_PORT_H
