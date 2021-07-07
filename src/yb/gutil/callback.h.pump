@@ -28,12 +28,12 @@ $var MAX_ARITY = 7
 #ifndef YB_GUTIL_CALLBACK_H_
 #define YB_GUTIL_CALLBACK_H_
 
-#include "kudu/gutil/callback_forward.h"
-#include "kudu/gutil/callback_internal.h"
-#include "kudu/gutil/template_util.h"
+#include "yb/gutil/callback_forward.h"
+#include "yb/gutil/callback_internal.h"
+#include "yb/gutil/template_util.h"
 
 // NOTE: Header files that do not require the full definition of Callback or
-// Closure should #include "kudu/gutil/callback_forward.h" instead of this file.
+// Closure should #include "yb/gutil/callback_forward.h" instead of this file.
 
 // -----------------------------------------------------------------------------
 // Introduction

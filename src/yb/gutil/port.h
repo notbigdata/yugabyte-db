@@ -963,7 +963,7 @@ inline int isinf(double x) {
   return 0;
 }
 
-// #include "kudu/conflict-signal.h"
+// #include "yb/conflict-signal.h"
 typedef void (*sig_t)(int);
 
 // These actually belong in errno.h but there's a name confilict in errno
@@ -1007,7 +1007,7 @@ typedef short int16_t;
 #endif  // _MSC_VER
 
 #ifdef STL_MSVC  // not always the same as _MSC_VER
-#include "kudu/base/port_hash.h"
+#include "yb/base/port_hash.h"
 #else
 struct PortableHashBase { };
 #endif
@@ -1086,7 +1086,7 @@ struct PortableHashBase { };
 // and 32-bit values (not 64-bit); older versions either raise a fatal signal,
 // do an unaligned read and rotate the words around a bit, or do the reads very
 // slowly (trip through kernel mode). There's no simple #define that says just
-// “ARMv7 or higher”, so we have to filter away all ARMv5 and ARMv6
+// "ARMv7 or higher", so we have to filter away all ARMv5 and ARMv6
 // sub-architectures. Newer gcc (>= 4.6) set an __ARM_FEATURE_ALIGNED #define,
 // so in time, maybe we can move on to that.
 //
@@ -1293,4 +1293,3 @@ enum { kPlatformUsesOPDSections = 0 };
 #endif
 
 #endif  // BASE_PORT_H_
-

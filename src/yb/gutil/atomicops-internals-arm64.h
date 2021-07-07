@@ -29,8 +29,8 @@
 
 // This file is an internal atomic implementation, use atomicops.h instead.
 
-#ifndef GUTIL_ATOMICOPS_INTERNALS_ARM64_H_
-#define GUTIL_ATOMICOPS_INTERNALS_ARM64_H_
+#ifndef YB_GUTIL_ATOMICOPS_INTERNALS_ARM64_H
+#define YB_GUTIL_ATOMICOPS_INTERNALS_ARM64_H
 
 typedef int32_t Atomic32;
 typedef int64_t Atomic64;
@@ -352,4 +352,4 @@ inline Atomic64 Release_Load(volatile const Atomic64* ptr) {
 }  // namespace subtle
 }  // namespace base
 
-#endif  // GUTIL_ATOMICOPS_INTERNALS_ARM64_GCC_H_
+#endif  // YB_GUTIL_ATOMICOPS_INTERNALS_ARM64_H

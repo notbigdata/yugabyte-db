@@ -349,7 +349,7 @@ struct KeyEncoderTraits<BINARY, Buffer> {
     *dstp += LEN;
     *srcp += LEN;
     return true;
- #endif
+#endif
   }
 
   // Non-SSE loop which encodes 'len' bytes from 'srcp' into 'dst'.

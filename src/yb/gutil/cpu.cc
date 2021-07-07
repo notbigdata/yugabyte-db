@@ -168,7 +168,7 @@ class LazyCpuInfoValue {
           // handle that.
           char* endptr;
           std::string value(value_sp.as_string());
-          unsigned long int result = strtoul(value.c_str(), &endptr, 0);
+          unsigned long int result = strtoul(value.c_str(), &endptr, 0);  // NOLINT
           if (*endptr == 0 && result <= UINT_MAX) {
             *kUnsignedValues[i].result = result;
           }

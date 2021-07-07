@@ -45,8 +45,8 @@ $var MAX_ARITY = 7
 #ifndef YB_GUTIL_BIND_H_
 #define YB_GUTIL_BIND_H_
 
-#include "kudu/gutil/bind_internal.h"
-#include "kudu/gutil/callback_internal.h"
+#include "yb/gutil/bind_internal.h"
+#include "yb/gutil/callback_internal.h"
 
 // -----------------------------------------------------------------------------
 // Usage documentation

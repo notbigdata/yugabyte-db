@@ -17,10 +17,6 @@
 // under the License.
 //
 
-#if defined(__aarch64__)
-#include <unistd.h>
-#endif
-
 #include "yb/gutil/threading/thread_collision_warner.h"
 
 #include <glog/logging.h>
@@ -54,8 +50,6 @@ static subtle::Atomic64 CurrentThread() {
   uint64_t tid;
   CHECK_EQ(0, pthread_threadid_np(NULL, &tid));
   return tid;
-#elif defined(__aarch64__)
-  return getpid();
 #elif defined(__linux__)
   return syscall(__NR_gettid);
 #endif
