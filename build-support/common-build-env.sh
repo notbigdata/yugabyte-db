@@ -1257,7 +1257,7 @@ detect_brew() {
   fi
   if is_linux; then
     local cpu_type=$( uname --processor )
-    if [[ $cpu_type == "x86_64" ]]; open
+    if [[ $cpu_type == "x86_64" ]]; then
       detect_linuxbrew
     else
       disable_linuxbrew
