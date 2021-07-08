@@ -130,12 +130,6 @@ struct ThreadStackEntry : public MPSCQueueEntry<ThreadStackEntry> {
   StackTrace stack;
 };
 
-#if !defined(__APPLE__) && !defined(THREAD_SANITIZER) && !defined(ADDRESS_SANITIZER)
-#define USE_FUTEX 1
-#else
-#define USE_FUTEX 0
-#endif
-
 class CompletionFlag {
  public:
   void Signal() {
