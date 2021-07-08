@@ -98,7 +98,7 @@ void SpinLockDelay(volatile Atomic32 *w, int32 value, int loop) {
                 value, reinterpret_cast<struct kernel_timespec *>(&tm),
                 nullptr, 0);
     } else {
-      nanosleep(&tm, NULL);
+      nanosleep(&tm, nullptr);
     }
     errno = save_errno;
   }
@@ -106,8 +106,9 @@ void SpinLockDelay(volatile Atomic32 *w, int32 value, int loop) {
 
 void SpinLockWake(volatile Atomic32 *w, bool all) {
   if (have_futex) {
-    syscall(__NR_futex, reinterpret_cast<int *>(const_cast<Atomic32 *>(w)),
-              FUTEX_WAKE | futex_private_flag, all? INT_MAX : 1, 0);
+    sys_futex(reinterpret_cast<int *>(const_cast<Atomic32 *>(w)),
+              FUTEX_WAKE | futex_private_flag, all? INT_MAX : 1,
+              nullptr, nullptr, 0);
   }
 }
 

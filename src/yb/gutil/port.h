@@ -260,8 +260,10 @@ inline size_t strnlen(const char *s, size_t maxlen) {
   return maxlen;
 }
 
-// Doesn't exist on OSX; used in google.cc for send() to mean "no flags".
+// Doesn't exist on some versions on macOS; used in google.cc for send() to mean "no flags".
+#ifndef MSG_NOSIGNAL
 #define MSG_NOSIGNAL 0
+#endif
 
 // No SIGPWR on MacOSX.  SIGINFO seems suitably obscure.
 #undef GOOGLE_OBSCURE_SIGNAL
@@ -352,6 +354,8 @@ inline void* memrchr(const void* bytes, int find_char, size_t len) {
 // Need to check if this is appropriate for other PowerPC64 systems.
 #define CACHELINE_SIZE 128
 #elif defined(__aarch64__)
+// TODO: confirm whether this is always correct and how exactly we are using this.
+// https://github.com/yugabyte/yugabyte-db/issues/9218
 #define CACHELINE_SIZE 64
 #elif defined(__arm__)
 // Cache line sizes for ARM: These values are not strictly correct since
