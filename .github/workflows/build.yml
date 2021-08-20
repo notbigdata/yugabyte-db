@@ -29,7 +29,7 @@ on:
 jobs:
   # This workflow contains a single job called "build"
   build:
-    runs-on: ubuntu-20.04
+    runs-on: self-hosted
     name: ${{ matrix.name }}
 
     # Grab the latest CentOS 7 image from here:
